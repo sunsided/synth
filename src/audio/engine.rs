@@ -148,7 +148,7 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
         .default_output_config()
         .context("failed to query default output config")?;
 
-    let sample_rate = config.sample_rate().0 as f32;
+    let sample_rate = config.sample_rate() as f32;
     let channels = config.channels() as usize;
 
     // Convert from the device's native format config to a plain StreamConfig.
