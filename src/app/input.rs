@@ -123,11 +123,9 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
         KeyCode::Up => state.adjust_param(1.0),
         KeyCode::Down => state.adjust_param(-1.0),
 
-        KeyCode::Enter => {
-            if state.selected_section == crate::app::state::Section::Presets {
-                let idx = state.selected_preset;
-                state.load_preset(idx);
-            }
+        KeyCode::Enter if state.selected_section == crate::app::state::Section::Presets => {
+            let idx = state.selected_preset;
+            state.load_preset(idx);
         }
 
         KeyCode::Char('+' | '=') => state.volume_up(),

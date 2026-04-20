@@ -274,10 +274,8 @@ impl AppState {
             1 => self.params.env.decay = (self.params.env.decay + d * 0.01).clamp(0.001, 4.0),
             2 => self.params.env.sustain = (self.params.env.sustain + d * 0.05).clamp(0.0, 1.0),
             3 => self.params.env.release = (self.params.env.release + d * 0.05).clamp(0.001, 8.0),
-            4 => {
-                if d != 0.0 {
-                    self.params.env.env_reverse = !self.params.env.env_reverse;
-                }
+            4 if d != 0.0 => {
+                self.params.env.env_reverse = !self.params.env.env_reverse;
             }
             5 => {
                 self.params.global.glide_time =
@@ -290,10 +288,8 @@ impl AppState {
     /// Apply `delta` to the focused filter parameter.
     fn adjust_filter(&mut self, d: f32) {
         match self.selected_param {
-            0 => {
-                if d != 0.0 {
-                    self.params.filter.filter_mode = self.params.filter.filter_mode.next();
-                }
+            0 if d != 0.0 => {
+                self.params.filter.filter_mode = self.params.filter.filter_mode.next();
             }
             1 => {
                 self.params.filter.cutoff = (self.params.filter.cutoff
@@ -322,10 +318,8 @@ impl AppState {
             1 => {
                 self.params.lfo.lfo_depth = (self.params.lfo.lfo_depth + d * 0.05).clamp(0.0, 1.0);
             }
-            2 => {
-                if d != 0.0 {
-                    self.params.lfo.lfo_target = self.params.lfo.lfo_target.next();
-                }
+            2 if d != 0.0 => {
+                self.params.lfo.lfo_target = self.params.lfo.lfo_target.next();
             }
             _ => {}
         }
