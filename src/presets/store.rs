@@ -7,10 +7,10 @@ use std::path::{Path, PathBuf};
 /// Return the path used to persist user presets.
 /// Stored next to the executable (or current directory as fallback).
 pub fn user_presets_path() -> PathBuf {
-    if let Ok(exe) = std::env::current_exe() {
-        if let Some(dir) = exe.parent() {
-            return dir.join("synth_presets.json");
-        }
+    if let Ok(exe) = std::env::current_exe()
+        && let Some(dir) = exe.parent()
+    {
+        return dir.join("synth_presets.json");
     }
     PathBuf::from("synth_presets.json")
 }

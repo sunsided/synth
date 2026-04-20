@@ -150,7 +150,7 @@ mod tests {
         let mut osc = Oscillator::default();
         for _ in 0..4410 {
             let s = osc.next_sample(440.0, 44100.0, Waveform::Sawtooth, 0.5, 0.0);
-            assert!(s >= -1.0 && s <= 1.0, "sawtooth out of bounds: {s}");
+            assert!((-1.0..=1.0).contains(&s), "sawtooth out of bounds: {s}");
         }
     }
 

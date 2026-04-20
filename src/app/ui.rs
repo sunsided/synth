@@ -187,7 +187,7 @@ fn draw_section(frame: &mut Frame, area: Rect, state: &AppState, section: Sectio
                 Span::styled("  ", Style::default())
             };
             let val_span = Span::styled(
-                format!("{val}"),
+                val.to_string(),
                 Style::default()
                     .fg(if selected { FG_HIGHLIGHT } else { FG_VALUE })
                     .add_modifier(if selected {
