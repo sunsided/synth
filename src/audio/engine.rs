@@ -6,7 +6,7 @@
 
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-use crossbeam_channel::{bounded, Receiver, Sender};
+use crossbeam_channel::{Receiver, Sender, bounded};
 
 use crate::audio::voice::{NoteStack, Voice};
 use crate::params::{AudioEvent, SynthParams};

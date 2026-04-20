@@ -2,6 +2,7 @@
 
 use crate::app::state::{AppState, Section};
 use ratatui::{
+    Frame,
     layout::{Alignment, Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols,
@@ -9,7 +10,6 @@ use ratatui::{
     widgets::{
         Axis, Block, Borders, Chart, Dataset, GraphType, List, ListItem, ListState, Paragraph, Wrap,
     },
-    Frame,
 };
 
 /// Primary foreground colour (active text).
@@ -224,12 +224,14 @@ fn draw_scope(frame: &mut Frame, area: Rect, data: &[(f64, f64)]) {
 
     let x_max = data.len() as f64;
 
-    let datasets = vec![Dataset::default()
-        .name("")
-        .marker(symbols::Marker::Braille)
-        .graph_type(GraphType::Line)
-        .style(Style::default().fg(FG))
-        .data(data)];
+    let datasets = vec![
+        Dataset::default()
+            .name("")
+            .marker(symbols::Marker::Braille)
+            .graph_type(GraphType::Line)
+            .style(Style::default().fg(FG))
+            .data(data),
+    ];
 
     let chart = Chart::new(datasets)
         .block(block)

@@ -1068,7 +1068,6 @@ dependencies = [
  "ratatui",
  "serde",
  "serde_json",
- "thiserror",
 ]
 
 [[package]]

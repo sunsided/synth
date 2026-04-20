@@ -147,11 +147,7 @@ impl Envelope {
         }
 
         let out = self.level.clamp(0.0, 1.0);
-        if reverse {
-            1.0 - out
-        } else {
-            out
-        }
+        if reverse { 1.0 - out } else { out }
     }
 }
 

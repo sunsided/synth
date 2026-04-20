@@ -1,18 +1,24 @@
 [package]
 name = "synth"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
+authors = ["Markus Mayer <widemeadows@gmail.com>"]
+description = "A terminal-based polyphonic synthesizer"
+repository = "https://github.com/sunsided/synth"
+license = "EUPL-1.2"
+readme = "README.md"
+keywords = ["synthesizer", "audio", "tui", "terminal", "midi"]
+categories = ["command-line-utilities", "multimedia::audio"]
 
 [[bin]]
 name = "synth"
 path = "src/main.rs"
 
 [dependencies]
-ratatui = "0.28"
-crossterm = "0.27"
+anyhow = "1"
 cpal = "0.15"
+crossbeam-channel = "0.5"
+crossterm = "0.27"
+ratatui = "0.28"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
-crossbeam-channel = "0.5"
-anyhow = "1"
-thiserror = "1"

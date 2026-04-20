@@ -97,11 +97,7 @@ impl SvFilter {
 /// Flush denormals to zero (avoids CPU performance degradation).
 #[inline]
 fn clamp_denormal(x: f32) -> f32 {
-    if x.abs() < 1e-15 {
-        0.0
-    } else {
-        x
-    }
+    if x.abs() < 1e-15 { 0.0 } else { x }
 }
 
 /// Fast tanh approximation (Padé 5/4) – accurate to ±0.5% for |x| < 4.

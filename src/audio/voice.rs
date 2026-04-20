@@ -7,7 +7,7 @@ use crate::audio::{
     env::{EnvStage, Envelope},
     filter::SvFilter,
     fx::Reverb,
-    osc::{detune_hz, midi_to_hz, Lfo, Oscillator},
+    osc::{Lfo, Oscillator, detune_hz, midi_to_hz},
 };
 use crate::params::SynthParams;
 
