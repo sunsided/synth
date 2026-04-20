@@ -1,3 +1,5 @@
+//! Stereo tune example with panned chords, lead, and drums.
+
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
@@ -12,11 +14,31 @@ const CHORD_HOLD_BEATS: f32 = 3.7;
 const MELODY_HOLD_BEATS: f32 = 0.85;
 const BEAT_OFFSETS: [f32; 4] = [0.0, 1.0, 2.0, 3.0];
 
+struct PanMap {
+    chord: f32,
+    melody: f32,
+    kick: f32,
+    hat_closed: f32,
+    hat_open: f32,
+}
+
+impl Default for PanMap {
+    fn default() -> Self {
+        Self {
+            chord: -0.35,
+            melody: 0.35,
+            kick: 0.0,
+            hat_closed: 0.6,
+            hat_open: -0.6,
+        }
+    }
+}
+
 #[derive(Clone, Copy)]
 enum ScheduledKind {
-    NoteOn(u8),
+    NoteOn { midi: u8, pan: f32 },
     NoteOff(u8),
-    Drum(DrumHit),
+    Drum { hit: DrumHit, pan: f32 },
 }
 
 #[derive(Clone, Copy)]
@@ -29,7 +51,7 @@ fn beats(n: f32) -> Duration {
     Duration::from_secs_f32(n * 60.0 / BPM)
 }
 
-fn build_drum_pattern() -> Vec<TimedEvent> {
+fn build_drum_pattern(pans: &PanMap) -> Vec<TimedEvent> {
     let mut drum_events = Vec::with_capacity(BARS * 10);
     let hat_offsets: [f32; 8] = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5];
 
@@ -38,11 +60,17 @@ fn build_drum_pattern() -> Vec<TimedEvent> {
 
         drum_events.push(TimedEvent {
             at: beats(bar_start_beats),
-            kind: ScheduledKind::Drum(DrumHit::Kick),
+            kind: ScheduledKind::Drum {
+                hit: DrumHit::Kick,
+                pan: pans.kick,
+            },
         });
         drum_events.push(TimedEvent {
             at: beats(bar_start_beats + 2.0),
-            kind: ScheduledKind::Drum(DrumHit::Kick),
+            kind: ScheduledKind::Drum {
+                hit: DrumHit::Kick,
+                pan: pans.kick,
+            },
         });
 
         for offset in hat_offsets {
@@ -51,9 +79,14 @@ fn build_drum_pattern() -> Vec<TimedEvent> {
             } else {
                 DrumHit::HiHatClosed
             };
+            let pan = match hit {
+                DrumHit::Kick => pans.kick,
+                DrumHit::HiHatClosed => pans.hat_closed,
+                DrumHit::HiHatOpen => pans.hat_open,
+            };
             drum_events.push(TimedEvent {
                 at: beats(bar_start_beats + offset),
-                kind: ScheduledKind::Drum(hit),
+                kind: ScheduledKind::Drum { hit, pan },
             });
         }
     }
@@ -62,6 +95,7 @@ fn build_drum_pattern() -> Vec<TimedEvent> {
 }
 
 fn build_tune() -> Vec<TimedEvent> {
+    let pans = PanMap::default();
     let progression: [[u8; 3]; 4] = [
         [60, 64, 67], // C major
         [55, 59, 62], // G major
@@ -82,7 +116,10 @@ fn build_tune() -> Vec<TimedEvent> {
         for note in chord {
             events.push(TimedEvent {
                 at: beats(bar_start_beats),
-                kind: ScheduledKind::NoteOn(note),
+                kind: ScheduledKind::NoteOn {
+                    midi: note,
+                    pan: pans.chord,
+                },
             });
             events.push(TimedEvent {
                 at: beats(bar_start_beats + CHORD_HOLD_BEATS),
@@ -96,7 +133,10 @@ fn build_tune() -> Vec<TimedEvent> {
             let start = bar_start_beats + beat_offset;
             events.push(TimedEvent {
                 at: beats(start),
-                kind: ScheduledKind::NoteOn(note),
+                kind: ScheduledKind::NoteOn {
+                    midi: note,
+                    pan: pans.melody,
+                },
             });
             events.push(TimedEvent {
                 at: beats(start + MELODY_HOLD_BEATS),
@@ -105,7 +145,7 @@ fn build_tune() -> Vec<TimedEvent> {
         }
     }
 
-    events.extend(build_drum_pattern());
+    events.extend(build_drum_pattern(&pans));
     events.sort_by_key(|event| event.at);
     events
 }
@@ -130,9 +170,9 @@ fn main() -> Result<()> {
         }
 
         let audio_event = match event.kind {
-            ScheduledKind::NoteOn(midi) => AudioEvent::NoteOn(midi),
+            ScheduledKind::NoteOn { midi, pan } => AudioEvent::note_on_panned(midi, pan),
             ScheduledKind::NoteOff(midi) => AudioEvent::NoteOff(midi),
-            ScheduledKind::Drum(hit) => AudioEvent::Drum(hit),
+            ScheduledKind::Drum { hit, pan } => AudioEvent::drum_panned(hit, pan),
         };
         event_tx.send(audio_event)?;
     }

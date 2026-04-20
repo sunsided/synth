@@ -46,6 +46,8 @@ struct KickVoice {
     pitch_coeff: f32,
     /// Precomputed per-sample amplitude decay multiplier.
     amp_coeff: f32,
+    /// Pan position in -1.0..=1.0.
+    pan: f32,
 }
 
 impl Default for KickVoice {
@@ -57,16 +59,18 @@ impl Default for KickVoice {
             pitch: KICK_START_HZ,
             pitch_coeff: 1.0,
             amp_coeff: 1.0,
+            pan: 0.0,
         }
     }
 }
 
 impl KickVoice {
     /// Start a new kick hit by resetting phase and envelopes.
-    fn trigger(&mut self) {
+    fn trigger(&mut self, pan: f32) {
         self.phase = 0.0;
         self.amp = 1.0;
         self.pitch = KICK_START_HZ;
+        self.pan = pan.clamp(-1.0, 1.0);
     }
 
     /// Immediately silence the kick voice.
@@ -105,6 +109,8 @@ struct HatVoice {
     amp_closed: f32,
     /// Open hat envelope amplitude.
     amp_open: f32,
+    /// Hi-hat pan in -1.0..=1.0.
+    pan: f32,
     /// 32-bit Galois LFSR state used as white-ish noise source.
     noise_lfsr: u32,
     /// Precomputed per-sample closed hat decay multiplier.
@@ -127,6 +133,7 @@ impl Default for HatVoice {
         Self {
             amp_closed: 0.0,
             amp_open: 0.0,
+            pan: 0.0,
             noise_lfsr: 0xACE1_FEED,
             closed_coeff: 1.0,
             open_coeff: 1.0,
@@ -140,15 +147,17 @@ impl Default for HatVoice {
 
 impl HatVoice {
     /// Trigger a closed hat and choke any currently ringing open hat.
-    fn trigger_closed(&mut self) {
+    fn trigger_closed(&mut self, pan: f32) {
         self.amp_open = 0.0;
         self.amp_closed = 1.0;
+        self.pan = pan.clamp(-1.0, 1.0);
     }
 
     /// Trigger an open hat and choke any currently sounding closed hat.
-    fn trigger_open(&mut self) {
+    fn trigger_open(&mut self, pan: f32) {
         self.amp_closed = 0.0;
         self.amp_open = 1.0;
+        self.pan = pan.clamp(-1.0, 1.0);
     }
 
     /// Immediately silence both hi-hat envelopes.
@@ -228,20 +237,31 @@ impl DrumMachine {
     }
 
     /// Trigger a drum one-shot event.
-    pub fn trigger(&mut self, hit: DrumHit) {
+    pub fn trigger(&mut self, hit: DrumHit, pan: f32) {
+        let pan = pan.clamp(-1.0, 1.0);
         match hit {
-            DrumHit::Kick => self.kick.trigger(),
-            DrumHit::HiHatClosed => self.hats.trigger_closed(),
-            DrumHit::HiHatOpen => self.hats.trigger_open(),
+            DrumHit::Kick => self.kick.trigger(pan),
+            DrumHit::HiHatClosed => self.hats.trigger_closed(pan),
+            DrumHit::HiHatOpen => self.hats.trigger_open(pan),
         }
     }
 
     /// Render one drum sample at the given sample rate.
     #[must_use]
     pub fn process(&mut self, sample_rate: f32) -> f32 {
+        let (kick, hats) = self.process_components(sample_rate);
+        kick.0 + hats.0
+    }
+
+    /// Render per-type drum components and pan values.
+    #[must_use]
+    pub fn process_components(&mut self, sample_rate: f32) -> ((f32, f32), (f32, f32)) {
         let kick = self.kick.process(sample_rate);
         let hats = self.hats.process();
-        (kick + hats) * DRUM_GAIN
+        (
+            (kick * DRUM_GAIN, self.kick.pan),
+            (hats * DRUM_GAIN, self.hats.pan),
+        )
     }
 
     /// Immediately silence all active drum voices.
