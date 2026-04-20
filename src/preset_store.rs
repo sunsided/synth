@@ -1,8 +1,11 @@
 //! User-preset persistence: file path resolution, JSON serialisation, and loading.
+//!
+//! This module is binary-local; `synth::presets` (the library) only contains
+//! the built-in SID patch bank and has no filesystem dependencies.
 
-use crate::params::Patch;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
+use synth::params::Patch;
 
 /// Return the path used to persist user presets.
 /// Stored next to the executable (or current directory as fallback).
@@ -23,6 +26,7 @@ pub fn save_patches(patches: &[Patch], path: &Path) -> Result<()> {
 }
 
 /// Load patches from disk. Returns an empty Vec if the file does not exist.
+// TODO: call this on startup to merge saved user presets with the built-in bank.
 #[allow(dead_code)]
 pub fn load_patches(path: &Path) -> Result<Vec<Patch>> {
     if !path.exists() {

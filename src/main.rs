@@ -1,17 +1,20 @@
-//! Application entry point.
+//! Binary entry point for the `synth` TUI application.
 //!
-//! Bootstraps the CPAL audio engine, configures the crossterm terminal, runs
-//! the event loop, and restores terminal state on exit (including on panics).
+//! Owns TUI runtime bootstrap, event loop, terminal lifecycle, and user-preset
+//! file I/O.  Core DSP and parameter types are imported from the `synth` library.
+//!
+//! The application layer (`app`), visualisation (`viz`), and preset persistence
+//! (`preset_store`) are binary-local modules declared here.
 
 mod app;
-mod audio;
-mod params;
-mod presets;
+mod preset_store;
 mod viz;
 
-use anyhow::Result;
 use app::{input, state::AppState, ui};
-use audio::engine::setup_audio;
+use synth::audio::engine::setup_audio;
+use viz::scope::ScopeBuf;
+
+use anyhow::Result;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, KeyboardEnhancementFlags,
@@ -26,17 +29,20 @@ use std::{
     panic,
     time::Duration,
 };
-use viz::scope::ScopeBuf;
 
 /// Number of decimated samples held in the scope display buffer
 /// (~46 ms of audio at 44100 Hz / 4× decimation).
 const SCOPE_CAPACITY: usize = 512;
 
-/// Application entry point.
+fn main() -> Result<()> {
+    run_tui()
+}
+
+/// Launch the terminal synthesiser application.
 ///
 /// Sets up the panic hook, audio engine, terminal, and event loop, then
 /// restores terminal state before returning.
-fn main() -> Result<()> {
+fn run_tui() -> Result<()> {
     // Install panic hook so the terminal is restored even on unexpected panics.
     let original_hook = panic::take_hook();
     panic::set_hook(Box::new(move |info| {
