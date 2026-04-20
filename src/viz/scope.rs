@@ -52,11 +52,12 @@ impl ScopeBuf {
     }
 
     /// Return waveform data as `(x, y)` pairs suitable for a ratatui `Dataset`.
+    #[allow(clippy::cast_precision_loss)] // scope index fits within f64 mantissa for display sizes
     pub fn as_chart_data(&self) -> Vec<(f64, f64)> {
         self.buf
             .iter()
             .enumerate()
-            .map(|(i, &s)| (i as f64, s as f64))
+            .map(|(i, &s)| (i as f64, f64::from(s)))
             .collect()
     }
 

@@ -10,6 +10,7 @@ use crate::params::{
 };
 
 /// Return the built-in C64-inspired preset bank.
+#[allow(clippy::too_many_lines)] // large static preset table; refactoring would reduce clarity
 pub fn default_patches() -> Vec<Patch> {
     vec![
         // 1. Classic C64 Bass – iconic SID pluck bass: sawtooth, short decay, LP resonance

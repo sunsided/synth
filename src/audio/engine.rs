@@ -148,6 +148,8 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
         .default_output_config()
         .context("failed to query default output config")?;
 
+    #[allow(clippy::cast_precision_loss)]
+    // sample rate fits within f32 for all practical audio rates
     let sample_rate = config.sample_rate() as f32;
     let channels = config.channels() as usize;
 

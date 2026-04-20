@@ -57,6 +57,7 @@ impl Waveform {
 }
 
 /// State-variable filter topology selector.
+#[allow(clippy::enum_variant_names)] // LP/BP/HP suffix is standard audio industry terminology
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum FilterMode {
     /// Low-pass output.
@@ -172,6 +173,7 @@ pub struct FilterParams {
 }
 
 /// LFO section parameters.
+#[allow(clippy::struct_field_names)] // lfo_ prefix is intentional for clarity in a flat params struct
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct LfoParams {
     /// LFO rate in Hz.
@@ -183,6 +185,7 @@ pub struct LfoParams {
 }
 
 /// FX section parameters.
+#[allow(clippy::struct_field_names)] // reverb_ prefix is intentional; struct may gain non-reverb fields
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FxParams {
     /// Reverb wet/dry mix, 0 .. 1.

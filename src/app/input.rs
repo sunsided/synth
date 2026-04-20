@@ -55,8 +55,8 @@ fn key_to_semitone(code: KeyCode) -> Option<u8> {
 
 /// Convert octave + semitone offset to a MIDI note number, clamped to 0..=127.
 fn make_midi(octave: i8, semitone: u8) -> u8 {
-    let raw = 12_i32 * (octave as i32 + 1) + semitone as i32;
-    raw.clamp(0, 127) as u8
+    let raw = 12_i32 * (i32::from(octave) + 1) + i32::from(semitone);
+    u8::try_from(raw.clamp(0, 127)).expect("clamped to 0..=127")
 }
 
 /// Process a single key event.  Returns `true` if the application should quit.
@@ -64,7 +64,7 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
     // Ctrl+C / Ctrl+Q → quit
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
-            KeyCode::Char('c') | KeyCode::Char('q') => return true,
+            KeyCode::Char('c' | 'q') => return true,
             KeyCode::Char('s') => {
                 // Ctrl+S: save current params as user patch (quick save)
                 let name = format!("User {}", state.patches.len() + 1);
@@ -130,11 +130,11 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
             }
         }
 
-        KeyCode::Char('+') | KeyCode::Char('=') => state.volume_up(),
-        KeyCode::Char('-') | KeyCode::Char('_') => state.volume_down(),
+        KeyCode::Char('+' | '=') => state.volume_up(),
+        KeyCode::Char('-' | '_') => state.volume_down(),
 
-        KeyCode::Char('[') | KeyCode::Char(',') => state.octave_down(),
-        KeyCode::Char(']') | KeyCode::Char('.') => state.octave_up(),
+        KeyCode::Char('[' | ',') => state.octave_down(),
+        KeyCode::Char(']' | '.') => state.octave_up(),
 
         // Quick-select presets 1–8 (number keys, only in Presets section)
         KeyCode::Char(ch @ '1'..='8') => {

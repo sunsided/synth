@@ -1,5 +1,9 @@
 # synth
 
+[![Test](https://github.com/sunsided/synth/actions/workflows/test.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/test.yml)
+[![Lint](https://github.com/sunsided/synth/actions/workflows/lint.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/lint.yml)
+[![Format](https://github.com/sunsided/synth/actions/workflows/format.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/format.yml)
+
 A terminal-based polyphonic synthesizer written in Rust. Play notes with your keyboard, shape the sound with a real-time parameter editor.
 
 ![Screenshot](docs/screenshot.png)

@@ -37,7 +37,7 @@ impl Oscillator {
     /// Returns the next sample in the range -1.0 .. 1.0.
     ///
     /// * `freq_hz`     – instantaneous frequency (already LFO-modulated if needed)
-    /// * `pulse_width` – 0.05 .. 0.95 (only relevant for Pulse / PulseSaw)
+    /// * `pulse_width` – 0.05 .. 0.95 (only relevant for Pulse / `PulseSaw`)
     /// * `noise_mix`   – blend pure oscillator with raw LFSR noise
     pub fn next_sample(
         &mut self,
@@ -94,21 +94,22 @@ impl Oscillator {
     ///
     /// Feedback polynomial: 0xB4BCD35C.  The LFSR is clocked once per oscillator
     /// period (phase wrap), matching the SID chip's noise behaviour.
+    #[allow(clippy::cast_precision_loss)] // deliberate DSP normalisation; precision loss is acceptable
     fn tick_lfsr(&mut self) -> f32 {
         let bit = self.noise_lfsr & 1;
         self.noise_lfsr >>= 1;
         if bit != 0 {
             self.noise_lfsr ^= 0xB4BC_D35C;
         }
-        // Map u32 → -1..1 via signed reinterpretation
-        (self.noise_lfsr as i32) as f32 / 2_147_483_648.0
+        // Map u32 → -1..1 via signed reinterpretation (intentional wrapping cast)
+        self.noise_lfsr.cast_signed() as f32 / 2_147_483_648.0
     }
 }
 
 /// Convert a MIDI note number to Hz (A4 = 69 = 440 Hz).
 #[inline]
 pub fn midi_to_hz(midi: u8) -> f32 {
-    440.0 * 2.0_f32.powf((midi as f32 - 69.0) / 12.0)
+    440.0 * 2.0_f32.powf((f32::from(midi) - 69.0) / 12.0)
 }
 
 /// Apply detune in cents to a base frequency.
@@ -155,6 +156,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)] // pulse wave output is exactly ±1.0 by construction
     fn osc_pulse_bounds() {
         let mut osc = Oscillator::default();
         for _ in 0..4410 {

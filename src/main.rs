@@ -101,16 +101,11 @@ fn run_loop(
 
         // Poll with a short timeout so the scope stays animated.
         if event::poll(tick)? {
-            match event::read()? {
-                event::Event::Key(key) => {
-                    if input::handle_key(key, state) || state.should_quit {
-                        return Ok(());
-                    }
-                }
-                event::Event::Resize(_, _) => {
-                    // Terminal resized – ratatui handles layout on next draw.
-                }
-                _ => {}
+            // Terminal resize and other events are no-ops; ratatui redraws on next frame.
+            if let event::Event::Key(key) = event::read()?
+                && (input::handle_key(key, state) || state.should_quit)
+            {
+                return Ok(());
             }
         }
 

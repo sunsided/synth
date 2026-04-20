@@ -61,12 +61,10 @@ impl Section {
     /// Number of adjustable parameters in this section (0 = list navigation only).
     pub fn param_count(self) -> usize {
         match self {
-            Section::Osc => 4,     // waveform, pulse_width, detune, noise_mix
-            Section::Env => 6,     // attack, decay, sustain, release, env_reverse, glide
-            Section::Filter => 4,  // mode, cutoff, resonance, drive
-            Section::Lfo => 3,     // rate, depth, target
-            Section::Fx => 3,      // reverb_mix, reverb_size, reverb_damping
-            Section::Presets => 0, // list mode
+            Section::Osc | Section::Filter => 4, // waveform/mode, pulse_width/cutoff, detune/resonance, noise_mix/drive
+            Section::Env => 6, // attack, decay, sustain, release, env_reverse, glide
+            Section::Lfo | Section::Fx => 3, // rate/reverb_mix, depth/reverb_size, target/reverb_damping
+            Section::Presets => 0,           // list mode
         }
     }
 }
@@ -109,8 +107,7 @@ impl AppState {
         let patches = sid::default_patches();
         let current_patch_name = patches
             .first()
-            .map(|p| p.name.clone())
-            .unwrap_or_else(|| "Default".to_string());
+            .map_or_else(|| "Default".to_string(), |p| p.name.clone());
 
         // Seed the audio thread with the first preset.
         if let Some(p) = patches.first() {
@@ -191,8 +188,8 @@ impl AppState {
             self.patches.push(patch);
             self.selected_preset = self.patches.len() - 1;
         }
-        let path = crate::presets::store::user_presets_path();
-        if let Err(e) = crate::presets::store::save_patches(&self.patches, &path) {
+        let save_path = crate::presets::store::user_presets_path();
+        if let Err(e) = crate::presets::store::save_patches(&self.patches, &save_path) {
             self.status_msg = format!("Save failed: {e}");
         } else {
             self.status_msg = format!("Saved: {name}");
@@ -284,7 +281,7 @@ impl AppState {
             }
             5 => {
                 self.params.global.glide_time =
-                    (self.params.global.glide_time + d * 0.01).clamp(0.0, 2.0)
+                    (self.params.global.glide_time + d * 0.01).clamp(0.0, 2.0);
             }
             _ => {}
         }
@@ -339,11 +336,12 @@ impl AppState {
         match self.selected_param {
             0 => self.params.fx.reverb_mix = (self.params.fx.reverb_mix + d * 0.05).clamp(0.0, 1.0),
             1 => {
-                self.params.fx.reverb_size = (self.params.fx.reverb_size + d * 0.05).clamp(0.0, 1.0)
+                self.params.fx.reverb_size =
+                    (self.params.fx.reverb_size + d * 0.05).clamp(0.0, 1.0);
             }
             2 => {
                 self.params.fx.reverb_damping =
-                    (self.params.fx.reverb_damping + d * 0.05).clamp(0.0, 1.0)
+                    (self.params.fx.reverb_damping + d * 0.05).clamp(0.0, 1.0);
             }
             _ => {}
         }

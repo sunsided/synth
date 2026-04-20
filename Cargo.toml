@@ -22,3 +22,9 @@ crossterm = "0.29"
 ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
+
+[lints.clippy]
+# Enforce the full pedantic lint group project-wide.
+# Intentional suppressions for API/domain naming and DSP casts are handled
+# with item-level #[allow(...)] attributes at the relevant declaration sites.
+pedantic = "warn"

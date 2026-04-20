@@ -156,6 +156,7 @@ mod tests {
     use super::*;
 
     #[test]
+    #[allow(clippy::float_cmp)] // idle envelope is exactly 0.0 by construction
     fn idle_gives_zero() {
         let mut env = Envelope::default();
         let v = env.process(0.01, 0.1, 0.5, 0.2, false, 44100.0);
@@ -191,6 +192,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::float_cmp)] // reversed idle envelope is exactly 1.0 by construction
     fn reverse_mode() {
         let mut env = Envelope::default();
         // In idle with reverse=true the output should be 1.0 - 0.0 = 1.0

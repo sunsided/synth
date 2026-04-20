@@ -9,7 +9,7 @@ use crate::audio::{
     fx::Reverb,
     osc::{Lfo, Oscillator, detune_hz, midi_to_hz},
 };
-use crate::params::SynthParams;
+use crate::params::{LfoTarget, SynthParams};
 
 /// Monophonic note stack with last-note (newest-wins) priority.
 ///
@@ -158,7 +158,6 @@ impl Voice {
         let freq = self.current_freq;
 
         // Pitch modulation (vibrato)
-        use crate::params::LfoTarget;
         let modded_freq = match params.lfo.lfo_target {
             LfoTarget::Pitch => freq * 2.0_f32.powf(lfo_val * lfo_depth * 0.1),
             _ => freq,

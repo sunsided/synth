@@ -113,12 +113,14 @@ fn fast_tanh(x: f32) -> f32 {
 mod tests {
     use super::*;
 
+    #[allow(clippy::cast_precision_loss)] // small sample count; precision loss negligible
     fn rms(samples: &[f32]) -> f32 {
         let sum_sq: f32 = samples.iter().map(|&s| s * s).sum();
         (sum_sq / samples.len() as f32).sqrt()
     }
 
     #[test]
+    #[allow(clippy::cast_precision_loss)] // test signal generation; index fits well within f32
     fn lp_attenuates_high_freq() {
         // 1 kHz tone, LP at 200 Hz → should be significantly attenuated
         let mut filt = SvFilter::default();
@@ -135,6 +137,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::cast_precision_loss)] // test signal generation; index fits well within f32
     fn hp_attenuates_low_freq() {
         // 50 Hz tone, HP at 500 Hz → should be significantly attenuated
         let mut filt = SvFilter::default();

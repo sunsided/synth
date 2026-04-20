@@ -187,7 +187,7 @@ fn draw_section(frame: &mut Frame, area: Rect, state: &AppState, section: Sectio
                 Span::styled("  ", Style::default())
             };
             let val_span = Span::styled(
-                val.to_string(),
+                val.clone(),
                 Style::default()
                     .fg(if selected { FG_HIGHLIGHT } else { FG_VALUE })
                     .add_modifier(if selected {
@@ -205,6 +205,7 @@ fn draw_section(frame: &mut Frame, area: Rect, state: &AppState, section: Sectio
 }
 
 /// Render the waveform scope chart.
+#[allow(clippy::cast_precision_loss)] // sample count fits well within f64 mantissa in practice
 fn draw_scope(frame: &mut Frame, area: Rect, data: &[(f64, f64)]) {
     let block = Block::default()
         .title(Span::styled(" WAVEFORM ", Style::default().fg(FG_DIM)))
@@ -310,16 +311,16 @@ fn draw_status(frame: &mut Frame, area: Rect, state: &AppState) {
                 "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
             ];
             let name = names[(midi % 12) as usize];
-            let oct = (midi / 12) as i32 - 1;
+            let oct = i32::from(midi / 12) - 1;
             format!("{name}{oct}({midi})")
         }
         None => "---".to_string(),
     };
 
-    let msg = if !state.status_msg.is_empty() {
-        format!("  {}  ", state.status_msg)
-    } else {
+    let msg = if state.status_msg.is_empty() {
         String::new()
+    } else {
+        format!("  {}  ", state.status_msg)
     };
 
     let bar = Paragraph::new(Line::from(vec![
