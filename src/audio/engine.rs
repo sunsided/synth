@@ -77,7 +77,7 @@ impl AudioState {
             slots: std::array::from_fn(|_| VoiceSlot::default()),
             age_counter: 0,
             reverb,
-            drums: DrumMachine::new(),
+            drums: DrumMachine::new(sample_rate),
             event_rx,
             scope_tx,
             // Pre-allocate to avoid heap allocation inside the callback.
