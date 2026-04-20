@@ -250,20 +250,21 @@ impl AppState {
     fn adjust_osc(&mut self, d: f32) {
         match self.selected_param {
             0 => {
-                self.params.waveform = if d > 0.0 {
-                    self.params.waveform.next()
+                self.params.osc.waveform = if d > 0.0 {
+                    self.params.osc.waveform.next()
                 } else {
-                    self.params.waveform.prev()
+                    self.params.osc.waveform.prev()
                 };
             }
             1 => {
-                self.params.pulse_width = (self.params.pulse_width + d * 0.05).clamp(0.05, 0.95);
+                self.params.osc.pulse_width =
+                    (self.params.osc.pulse_width + d * 0.05).clamp(0.05, 0.95);
             }
             2 => {
-                self.params.detune = (self.params.detune + d * 5.0).clamp(-100.0, 100.0);
+                self.params.osc.detune = (self.params.osc.detune + d * 5.0).clamp(-100.0, 100.0);
             }
             3 => {
-                self.params.noise_mix = (self.params.noise_mix + d * 0.05).clamp(0.0, 1.0);
+                self.params.osc.noise_mix = (self.params.osc.noise_mix + d * 0.05).clamp(0.0, 1.0);
             }
             _ => {}
         }
@@ -272,16 +273,19 @@ impl AppState {
     /// Apply `delta` to the focused envelope parameter.
     fn adjust_env(&mut self, d: f32) {
         match self.selected_param {
-            0 => self.params.attack = (self.params.attack + d * 0.01).clamp(0.001, 4.0),
-            1 => self.params.decay = (self.params.decay + d * 0.01).clamp(0.001, 4.0),
-            2 => self.params.sustain = (self.params.sustain + d * 0.05).clamp(0.0, 1.0),
-            3 => self.params.release = (self.params.release + d * 0.05).clamp(0.001, 8.0),
+            0 => self.params.env.attack = (self.params.env.attack + d * 0.01).clamp(0.001, 4.0),
+            1 => self.params.env.decay = (self.params.env.decay + d * 0.01).clamp(0.001, 4.0),
+            2 => self.params.env.sustain = (self.params.env.sustain + d * 0.05).clamp(0.0, 1.0),
+            3 => self.params.env.release = (self.params.env.release + d * 0.05).clamp(0.001, 8.0),
             4 => {
                 if d != 0.0 {
-                    self.params.env_reverse = !self.params.env_reverse;
+                    self.params.env.env_reverse = !self.params.env.env_reverse;
                 }
             }
-            5 => self.params.glide_time = (self.params.glide_time + d * 0.01).clamp(0.0, 2.0),
+            5 => {
+                self.params.global.glide_time =
+                    (self.params.global.glide_time + d * 0.01).clamp(0.0, 2.0)
+            }
             _ => {}
         }
     }
@@ -291,18 +295,20 @@ impl AppState {
         match self.selected_param {
             0 => {
                 if d != 0.0 {
-                    self.params.filter_mode = self.params.filter_mode.next();
+                    self.params.filter.filter_mode = self.params.filter.filter_mode.next();
                 }
             }
             1 => {
-                self.params.cutoff =
-                    (self.params.cutoff * if d > 0.0 { 1.12 } else { 0.89 }).clamp(20.0, 18000.0);
+                self.params.filter.cutoff = (self.params.filter.cutoff
+                    * if d > 0.0 { 1.12 } else { 0.89 })
+                .clamp(20.0, 18000.0);
             }
             2 => {
-                self.params.resonance = (self.params.resonance + d * 0.05).clamp(0.0, 0.99);
+                self.params.filter.resonance =
+                    (self.params.filter.resonance + d * 0.05).clamp(0.0, 0.99);
             }
             3 => {
-                self.params.drive = (self.params.drive + d * 0.05).clamp(0.0, 1.0);
+                self.params.filter.drive = (self.params.filter.drive + d * 0.05).clamp(0.0, 1.0);
             }
             _ => {}
         }
@@ -312,15 +318,16 @@ impl AppState {
     fn adjust_lfo(&mut self, d: f32) {
         match self.selected_param {
             0 => {
-                self.params.lfo_rate =
-                    (self.params.lfo_rate * if d > 0.0 { 1.15 } else { 0.87 }).clamp(0.01, 20.0);
+                self.params.lfo.lfo_rate = (self.params.lfo.lfo_rate
+                    * if d > 0.0 { 1.15 } else { 0.87 })
+                .clamp(0.01, 20.0);
             }
             1 => {
-                self.params.lfo_depth = (self.params.lfo_depth + d * 0.05).clamp(0.0, 1.0);
+                self.params.lfo.lfo_depth = (self.params.lfo.lfo_depth + d * 0.05).clamp(0.0, 1.0);
             }
             2 => {
                 if d != 0.0 {
-                    self.params.lfo_target = self.params.lfo_target.next();
+                    self.params.lfo.lfo_target = self.params.lfo.lfo_target.next();
                 }
             }
             _ => {}
@@ -330,10 +337,13 @@ impl AppState {
     /// Apply `delta` to the focused FX parameter.
     fn adjust_fx(&mut self, d: f32) {
         match self.selected_param {
-            0 => self.params.reverb_mix = (self.params.reverb_mix + d * 0.05).clamp(0.0, 1.0),
-            1 => self.params.reverb_size = (self.params.reverb_size + d * 0.05).clamp(0.0, 1.0),
+            0 => self.params.fx.reverb_mix = (self.params.fx.reverb_mix + d * 0.05).clamp(0.0, 1.0),
+            1 => {
+                self.params.fx.reverb_size = (self.params.fx.reverb_size + d * 0.05).clamp(0.0, 1.0)
+            }
             2 => {
-                self.params.reverb_damping = (self.params.reverb_damping + d * 0.05).clamp(0.0, 1.0)
+                self.params.fx.reverb_damping =
+                    (self.params.fx.reverb_damping + d * 0.05).clamp(0.0, 1.0)
             }
             _ => {}
         }
@@ -354,13 +364,13 @@ impl AppState {
 
     /// Increase master volume by one step.
     pub fn volume_up(&mut self) {
-        self.params.volume = (self.params.volume + 0.05).min(1.0);
+        self.params.global.volume = (self.params.global.volume + 0.05).min(1.0);
         self.push_params();
     }
 
     /// Decrease master volume by one step.
     pub fn volume_down(&mut self) {
-        self.params.volume = (self.params.volume - 0.05).max(0.0);
+        self.params.global.volume = (self.params.global.volume - 0.05).max(0.0);
         self.push_params();
     }
 
@@ -381,34 +391,37 @@ impl AppState {
         let p = &self.params;
         match self.selected_section {
             Section::Osc => vec![
-                ("Wave", p.waveform.name().to_string()),
-                ("PW", format!("{:.2}", p.pulse_width)),
-                ("Det", format!("{:+.0}ct", p.detune)),
-                ("Nse", format!("{:.2}", p.noise_mix)),
+                ("Wave", p.osc.waveform.name().to_string()),
+                ("PW", format!("{:.2}", p.osc.pulse_width)),
+                ("Det", format!("{:+.0}ct", p.osc.detune)),
+                ("Nse", format!("{:.2}", p.osc.noise_mix)),
             ],
             Section::Env => vec![
-                ("Atk", format!("{:.3}s", p.attack)),
-                ("Dec", format!("{:.3}s", p.decay)),
-                ("Sus", format!("{:.2}", p.sustain)),
-                ("Rel", format!("{:.2}s", p.release)),
-                ("Rev", if p.env_reverse { "ON" } else { "off" }.to_string()),
-                ("Gld", format!("{:.2}s", p.glide_time)),
+                ("Atk", format!("{:.3}s", p.env.attack)),
+                ("Dec", format!("{:.3}s", p.env.decay)),
+                ("Sus", format!("{:.2}", p.env.sustain)),
+                ("Rel", format!("{:.2}s", p.env.release)),
+                (
+                    "Rev",
+                    if p.env.env_reverse { "ON" } else { "off" }.to_string(),
+                ),
+                ("Gld", format!("{:.2}s", p.global.glide_time)),
             ],
             Section::Filter => vec![
-                ("Mode", p.filter_mode.name().to_string()),
-                ("Cut", format!("{:.0}Hz", p.cutoff)),
-                ("Res", format!("{:.2}", p.resonance)),
-                ("Drv", format!("{:.2}", p.drive)),
+                ("Mode", p.filter.filter_mode.name().to_string()),
+                ("Cut", format!("{:.0}Hz", p.filter.cutoff)),
+                ("Res", format!("{:.2}", p.filter.resonance)),
+                ("Drv", format!("{:.2}", p.filter.drive)),
             ],
             Section::Lfo => vec![
-                ("Rate", format!("{:.2}Hz", p.lfo_rate)),
-                ("Dep", format!("{:.2}", p.lfo_depth)),
-                ("Tgt", p.lfo_target.name().to_string()),
+                ("Rate", format!("{:.2}Hz", p.lfo.lfo_rate)),
+                ("Dep", format!("{:.2}", p.lfo.lfo_depth)),
+                ("Tgt", p.lfo.lfo_target.name().to_string()),
             ],
             Section::Fx => vec![
-                ("RvbMix", format!("{:.2}", p.reverb_mix)),
-                ("RvbSz", format!("{:.2}", p.reverb_size)),
-                ("RvbDmp", format!("{:.2}", p.reverb_damping)),
+                ("RvbMix", format!("{:.2}", p.fx.reverb_mix)),
+                ("RvbSz", format!("{:.2}", p.fx.reverb_size)),
+                ("RvbDmp", format!("{:.2}", p.fx.reverb_damping)),
             ],
             Section::Presets => self
                 .patches

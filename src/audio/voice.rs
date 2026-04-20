@@ -113,15 +113,15 @@ impl Voice {
         let legato = self.active;
         self.target_note = note;
         let base = midi_to_hz(note);
-        self.target_freq = detune_hz(base, params.detune);
+        self.target_freq = detune_hz(base, params.osc.detune);
         if !legato {
             // No glide on fresh attacks – snap to pitch immediately.
             self.current_freq = self.target_freq;
         }
         self.active = true;
-        self.update_glide(params.glide_time, sample_rate);
+        self.update_glide(params.global.glide_time, sample_rate);
         self.reverb
-            .set_params(params.reverb_size, params.reverb_damping);
+            .set_params(params.fx.reverb_size, params.fx.reverb_damping);
         self.env.note_on(legato);
     }
 
@@ -149,8 +149,8 @@ impl Voice {
         }
 
         // LFO
-        let lfo_val = self.lfo.next(params.lfo_rate, sample_rate); // -1..1
-        let lfo_depth = params.lfo_depth;
+        let lfo_val = self.lfo.next(params.lfo.lfo_rate, sample_rate); // -1..1
+        let lfo_depth = params.lfo.lfo_depth;
 
         // Glide (portamento)
         let gc = self.glide_coeff;
@@ -159,7 +159,7 @@ impl Voice {
 
         // Pitch modulation (vibrato)
         use crate::params::LfoTarget;
-        let modded_freq = match params.lfo_target {
+        let modded_freq = match params.lfo.lfo_target {
             LfoTarget::Pitch => freq * 2.0_f32.powf(lfo_val * lfo_depth * 0.1),
             _ => freq,
         };
@@ -168,60 +168,59 @@ impl Voice {
         let final_freq = detune_hz(modded_freq, 0.0); // detune already baked into target_freq
 
         // Pulse width modulation
-        let pw = match params.lfo_target {
+        let pw = match params.lfo.lfo_target {
             LfoTarget::PulseWidth => {
-                (params.pulse_width + lfo_val * lfo_depth * 0.4).clamp(0.05, 0.95)
+                (params.osc.pulse_width + lfo_val * lfo_depth * 0.4).clamp(0.05, 0.95)
             }
-            _ => params.pulse_width,
+            _ => params.osc.pulse_width,
         };
 
         // Oscillator
         let osc_out = self.osc.next_sample(
             final_freq,
             sample_rate,
-            params.waveform,
+            params.osc.waveform,
             pw,
-            params.noise_mix,
+            params.osc.noise_mix,
         );
 
         // Envelope
         let env_val = self.env.process(
-            params.attack,
-            params.decay,
-            params.sustain,
-            params.release,
-            params.env_reverse,
+            params.env.attack,
+            params.env.decay,
+            params.env.sustain,
+            params.env.release,
+            params.env.env_reverse,
             sample_rate,
         );
 
         // Volume LFO (tremolo)
-        let vol_mod = match params.lfo_target {
+        let vol_mod = match params.lfo.lfo_target {
             LfoTarget::Volume => 1.0 - lfo_val * lfo_depth * 0.5,
             _ => 1.0,
         };
 
         // Filter cutoff LFO
-        let cutoff_mod = match params.lfo_target {
-            LfoTarget::Cutoff => {
-                (params.cutoff * 2.0_f32.powf(lfo_val * lfo_depth * 2.0)).clamp(20.0, 18000.0)
-            }
-            _ => params.cutoff,
+        let cutoff_mod = match params.lfo.lfo_target {
+            LfoTarget::Cutoff => (params.filter.cutoff * 2.0_f32.powf(lfo_val * lfo_depth * 2.0))
+                .clamp(20.0, 18000.0),
+            _ => params.filter.cutoff,
         };
 
         // Filter stage
         let filtered = self.filter.process(
             osc_out * env_val,
-            params.filter_mode,
+            params.filter.filter_mode,
             cutoff_mod,
-            params.resonance,
-            params.drive,
+            params.filter.resonance,
+            params.filter.drive,
             sample_rate,
         );
 
         // Volume & tremolo
-        let dry = filtered * env_val * vol_mod * params.volume;
+        let dry = filtered * env_val * vol_mod * params.global.volume;
 
         // Reverb
-        self.reverb.process(dry, params.reverb_mix)
+        self.reverb.process(dry, params.fx.reverb_mix)
     }
 }

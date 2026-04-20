@@ -87,7 +87,7 @@ impl AudioState {
                     // Apply reverb params immediately without waiting for a note event.
                     self.voice
                         .reverb
-                        .set_params(self.params.reverb_size, self.params.reverb_damping);
+                        .set_params(self.params.fx.reverb_size, self.params.fx.reverb_damping);
                 }
             }
         }

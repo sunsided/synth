@@ -330,7 +330,7 @@ fn draw_status(frame: &mut Frame, area: Rect, state: &AppState) {
         ),
         Span::styled("|", Style::default().fg(FG_DIM)),
         Span::styled(
-            format!(" Vol:{:.0}% ", state.params.volume * 100.0),
+            format!(" Vol:{:.0}% ", state.params.global.volume * 100.0),
             Style::default().fg(FG_VALUE),
         ),
         Span::styled("|", Style::default().fg(FG_DIM)),

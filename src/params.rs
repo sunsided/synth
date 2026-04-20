@@ -130,13 +130,9 @@ impl LfoTarget {
     }
 }
 
-/// Full parameter snapshot shared between the UI and audio threads.
-///
-/// The UI owns the authoritative copy; the audio thread receives a boxed clone
-/// via `AudioEvent::LoadPatch` on every user edit.
+/// Oscillator section parameters.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct SynthParams {
-    // Oscillator
+pub struct OscParams {
     /// Active waveform shape.
     pub waveform: Waveform,
     /// Pulse width, 0.05 .. 0.95.
@@ -145,8 +141,11 @@ pub struct SynthParams {
     pub detune: f32,
     /// Noise blend amount, 0 .. 1.
     pub noise_mix: f32,
+}
 
-    // Amplitude envelope
+/// Amplitude envelope section parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnvParams {
     /// Attack time in seconds.
     pub attack: f32,
     /// Decay time in seconds.
@@ -157,8 +156,11 @@ pub struct SynthParams {
     pub release: f32,
     /// When true, the envelope output is inverted (swell / duck effect).
     pub env_reverse: bool,
+}
 
-    // Filter
+/// Filter section parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FilterParams {
     /// Filter topology (LP / BP / HP).
     pub filter_mode: FilterMode,
     /// Cutoff frequency in Hz, 20 .. 18000.
@@ -167,55 +169,96 @@ pub struct SynthParams {
     pub resonance: f32,
     /// Pre-filter drive amount, 0 .. 1.
     pub drive: f32,
+}
 
-    // LFO
+/// LFO section parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LfoParams {
     /// LFO rate in Hz.
     pub lfo_rate: f32,
     /// LFO modulation depth, 0 .. 1.
     pub lfo_depth: f32,
     /// Which parameter the LFO modulates.
     pub lfo_target: LfoTarget,
+}
 
-    // FX
+/// FX section parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FxParams {
     /// Reverb wet/dry mix, 0 .. 1.
     pub reverb_mix: f32,
     /// Reverb room size, 0 .. 1.
     pub reverb_size: f32,
     /// Reverb high-frequency damping, 0 .. 1.
     pub reverb_damping: f32,
+}
 
-    // Global
+/// Global section parameters.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GlobalParams {
     /// Master output volume, 0 .. 1.
     pub volume: f32,
     /// Portamento (glide) time in seconds.
     pub glide_time: f32,
 }
 
+/// Full parameter snapshot shared between the UI and audio threads.
+///
+/// The UI owns the authoritative copy; the audio thread receives a boxed clone
+/// via `AudioEvent::LoadPatch` on every user edit.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct SynthParams {
+    /// Oscillator parameters.
+    pub osc: OscParams,
+    /// Amplitude envelope parameters.
+    pub env: EnvParams,
+    /// Filter parameters.
+    pub filter: FilterParams,
+    /// LFO parameters.
+    pub lfo: LfoParams,
+    /// FX parameters.
+    pub fx: FxParams,
+    /// Global parameters.
+    pub global: GlobalParams,
+}
+
 impl Default for SynthParams {
     /// Sensible starting patch: medium pulse wave, gentle filter, light reverb.
     fn default() -> Self {
         Self {
-            waveform: Waveform::Pulse,
-            pulse_width: 0.5,
-            detune: 0.0,
-            noise_mix: 0.0,
-            attack: 0.01,
-            decay: 0.1,
-            sustain: 0.8,
-            release: 0.3,
-            env_reverse: false,
-            filter_mode: FilterMode::LowPass,
-            cutoff: 4000.0,
-            resonance: 0.3,
-            drive: 0.0,
-            lfo_rate: 3.0,
-            lfo_depth: 0.0,
-            lfo_target: LfoTarget::Pitch,
-            reverb_mix: 0.15,
-            reverb_size: 0.5,
-            reverb_damping: 0.5,
-            volume: 0.7,
-            glide_time: 0.05,
+            osc: OscParams {
+                waveform: Waveform::Pulse,
+                pulse_width: 0.5,
+                detune: 0.0,
+                noise_mix: 0.0,
+            },
+            env: EnvParams {
+                attack: 0.01,
+                decay: 0.1,
+                sustain: 0.8,
+                release: 0.3,
+                env_reverse: false,
+            },
+            filter: FilterParams {
+                filter_mode: FilterMode::LowPass,
+                cutoff: 4000.0,
+                resonance: 0.3,
+                drive: 0.0,
+            },
+            lfo: LfoParams {
+                lfo_rate: 3.0,
+                lfo_depth: 0.0,
+                lfo_target: LfoTarget::Pitch,
+            },
+            fx: FxParams {
+                reverb_mix: 0.15,
+                reverb_size: 0.5,
+                reverb_damping: 0.5,
+            },
+            global: GlobalParams {
+                volume: 0.7,
+                glide_time: 0.05,
+            },
         }
     }
 }
