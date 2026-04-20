@@ -1,4 +1,4 @@
-name: Test
+name: Lint and Test
 
 on:
   push:
@@ -9,16 +9,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
-    name: Cargo test
+  lint-and-test:
+    name: Clippy and Tests
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
+
+      - name: Install ALSA development libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
 
       - name: Install stable toolchain
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - uses: Swatinem/rust-cache@v2
+
+      - name: Run Clippy
+        run: cargo clippy --all-targets --all-features -- -D warnings
 
       - name: Run tests
         run: cargo test --all-targets --all-features
