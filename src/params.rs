@@ -292,6 +292,14 @@ impl Patch {
     }
 }
 
+/// Drum one-shot events.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum DrumHit {
+    Kick,
+    HiHatClosed,
+    HiHatOpen,
+}
+
 /// Messages sent from the UI thread to the audio thread over the event channel.
 pub enum AudioEvent {
     /// Begin sustaining a note at the given MIDI note number.
@@ -302,4 +310,6 @@ pub enum AudioEvent {
     Panic,
     /// Replace the current parameter set with a new snapshot.
     LoadPatch(Box<SynthParams>),
+    /// Trigger a one-shot synthesized drum hit.
+    Drum(DrumHit),
 }

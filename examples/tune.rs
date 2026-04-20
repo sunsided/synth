@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
 use synth::audio::engine::setup_audio;
-use synth::params::AudioEvent;
+use synth::params::{AudioEvent, DrumHit};
 use synth::presets::sid::default_patches;
 
 const BPM: f32 = 110.0;
@@ -16,6 +16,7 @@ const BEAT_OFFSETS: [f32; 4] = [0.0, 1.0, 2.0, 3.0];
 enum ScheduledKind {
     NoteOn(u8),
     NoteOff(u8),
+    Drum(DrumHit),
 }
 
 #[derive(Clone, Copy)]
@@ -26,6 +27,38 @@ struct TimedEvent {
 
 fn beats(n: f32) -> Duration {
     Duration::from_secs_f32(n * 60.0 / BPM)
+}
+
+fn build_drum_pattern() -> Vec<TimedEvent> {
+    let mut drum_events = Vec::with_capacity(BARS * 10);
+    let hat_offsets: [f32; 8] = [0.0, 0.5, 1.0, 1.5, 2.0, 2.5, 3.0, 3.5];
+
+    for (_bar_idx, bar_u8) in (0..BARS).zip(0u8..) {
+        let bar_start_beats = f32::from(bar_u8) * BEATS_PER_BAR;
+
+        drum_events.push(TimedEvent {
+            at: beats(bar_start_beats),
+            kind: ScheduledKind::Drum(DrumHit::Kick),
+        });
+        drum_events.push(TimedEvent {
+            at: beats(bar_start_beats + 2.0),
+            kind: ScheduledKind::Drum(DrumHit::Kick),
+        });
+
+        for offset in hat_offsets {
+            let hit = if (offset - 3.5).abs() < f32::EPSILON {
+                DrumHit::HiHatOpen
+            } else {
+                DrumHit::HiHatClosed
+            };
+            drum_events.push(TimedEvent {
+                at: beats(bar_start_beats + offset),
+                kind: ScheduledKind::Drum(hit),
+            });
+        }
+    }
+
+    drum_events
 }
 
 fn build_tune() -> Vec<TimedEvent> {
@@ -72,6 +105,7 @@ fn build_tune() -> Vec<TimedEvent> {
         }
     }
 
+    events.extend(build_drum_pattern());
     events.sort_by_key(|event| event.at);
     events
 }
@@ -98,6 +132,7 @@ fn main() -> Result<()> {
         let audio_event = match event.kind {
             ScheduledKind::NoteOn(midi) => AudioEvent::NoteOn(midi),
             ScheduledKind::NoteOff(midi) => AudioEvent::NoteOff(midi),
+            ScheduledKind::Drum(hit) => AudioEvent::Drum(hit),
         };
         event_tx.send(audio_event)?;
     }

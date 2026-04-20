@@ -8,6 +8,7 @@ use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, Sender, bounded};
 
+use crate::audio::drums::DrumMachine;
 use crate::audio::fx::Reverb;
 use crate::audio::voice::Voice;
 use crate::params::{AudioEvent, SynthParams};
@@ -50,6 +51,8 @@ struct AudioState {
     age_counter: u64,
     /// Shared post-mix reverb send.
     reverb: Reverb,
+    /// Parallel drum machine (kick + hi-hats).
+    drums: DrumMachine,
     /// Receives `AudioEvent` messages from the UI thread.
     event_rx: Receiver<AudioEvent>,
     /// Sends decimated waveform batches to the scope display.
@@ -74,6 +77,7 @@ impl AudioState {
             slots: std::array::from_fn(|_| VoiceSlot::default()),
             age_counter: 0,
             reverb,
+            drums: DrumMachine::new(),
             event_rx,
             scope_tx,
             // Pre-allocate to avoid heap allocation inside the callback.
@@ -132,6 +136,7 @@ impl AudioState {
         for slot in &mut self.slots {
             *slot = VoiceSlot::default();
         }
+        self.drums.panic();
         self.age_counter = 0;
     }
 
@@ -146,6 +151,7 @@ impl AudioState {
                     self.params = *p;
                     self.apply_reverb_params();
                 }
+                AudioEvent::Drum(hit) => self.drums.trigger(hit),
             }
         }
     }
@@ -161,7 +167,8 @@ impl AudioState {
                 .map(|voice| voice.process(&self.params, self.sample_rate))
                 .sum::<f32>()
                 / POLYPHONY_F32;
-            let sample = self.reverb.process(mix, self.params.fx.reverb_mix);
+            let sample = self.reverb.process(mix, self.params.fx.reverb_mix)
+                + self.drums.process(self.sample_rate);
 
             // Guard against denormals / clipping before writing to hardware.
             let sample = if sample.is_finite() {
