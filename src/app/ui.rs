@@ -1,3 +1,5 @@
+//! Terminal UI rendering: layout, widgets, and the top-level draw entry point.
+
 use crate::app::state::{AppState, Section};
 use ratatui::{
     layout::{Alignment, Constraint, Direction, Layout, Rect},
@@ -10,21 +12,25 @@ use ratatui::{
     Frame,
 };
 
-// ---------------------------------------------------------------------------
-// Colour palette (SID-era terminal feel)
-// ---------------------------------------------------------------------------
+/// Primary foreground colour (active text).
 const FG: Color = Color::Cyan;
+/// Dimmed foreground colour (inactive labels, separators).
 const FG_DIM: Color = Color::DarkGray;
+/// Highlight colour for selected items and titles.
 const FG_HIGHLIGHT: Color = Color::Yellow;
+/// Colour used for parameter values.
 const FG_VALUE: Color = Color::Green;
+/// Background colour.
 const BG: Color = Color::Black;
+/// Border colour for the currently active panel.
 const BORDER_ACTIVE: Color = Color::Cyan;
+/// Border colour for inactive panels.
 const BORDER_INACTIVE: Color = Color::DarkGray;
 
-// ---------------------------------------------------------------------------
-// Top-level draw entry point
-// ---------------------------------------------------------------------------
-
+/// Top-level draw entry point.  Called once per UI frame.
+///
+/// Routes to the help overlay when `state.show_help` is set; otherwise renders
+/// the full synth UI.
 pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
     let area = frame.area();
 
@@ -33,7 +39,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
         return;
     }
 
-    // ── Outer layout: top body + bottom bar ────────────────────────────────
+    // Outer layout: top body + bottom status bar
     let outer = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Min(0), Constraint::Length(3)])
@@ -42,7 +48,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
     let body = outer[0];
     let status_bar = outer[1];
 
-    // ── Body: left column (controls) + right column (scope + extra params) ─
+    // Body: left column (controls) + right column (scope + presets)
     let columns = Layout::default()
         .direction(Direction::Horizontal)
         .constraints([Constraint::Length(26), Constraint::Min(0)])
@@ -51,7 +57,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
     let left = columns[0];
     let right = columns[1];
 
-    // ── Left column: title + param sections ────────────────────────────────
+    // Left column: title + five param sections, plus a bottom spacer
     let left_sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
@@ -72,7 +78,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
     draw_section(frame, left_sections[4], state, Section::Lfo);
     draw_section(frame, left_sections[5], state, Section::Fx);
 
-    // ── Right column: scope (top) + presets (bottom) ───────────────────────
+    // Right column: waveform scope (top two-thirds) + presets (bottom third)
     let right_sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([Constraint::Ratio(2, 3), Constraint::Ratio(1, 3)])
@@ -81,14 +87,10 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
     draw_scope(frame, right_sections[0], scope_data);
     draw_presets(frame, right_sections[1], state);
 
-    // ── Status bar ─────────────────────────────────────────────────────────
     draw_status(frame, status_bar, state);
 }
 
-// ---------------------------------------------------------------------------
-// Title widget
-// ---------------------------------------------------------------------------
-
+/// Render the title bar showing the synth name and current patch name.
 fn draw_title(frame: &mut Frame, area: Rect, state: &AppState) {
     let title = Paragraph::new(Line::from(vec![
         Span::styled(
@@ -110,10 +112,10 @@ fn draw_title(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(title, area);
 }
 
-// ---------------------------------------------------------------------------
-// Generic parameter section
-// ---------------------------------------------------------------------------
-
+/// Render a single parameter section panel.
+///
+/// When the section is active, all parameters are listed with the selected one
+/// highlighted.  When inactive, a compact single-line summary is shown instead.
 fn draw_section(frame: &mut Frame, area: Rect, state: &AppState, section: Section) {
     let is_active = state.selected_section == section;
     let border_style = Style::default().fg(if is_active {
@@ -139,11 +141,10 @@ fn draw_section(frame: &mut Frame, area: Rect, state: &AppState, section: Sectio
 
     let params = state.section_params();
     if section == Section::Presets || section != state.selected_section {
-        // Non-active section: compact single-line overview
+        // Non-active section: compact single-line overview (up to 4 params)
         if params.is_empty() {
             return;
         }
-        // Show first few params on one line
         let max = params.len().min(4);
         let items: Vec<Span> = params[..max]
             .iter()
@@ -170,7 +171,7 @@ fn draw_section(frame: &mut Frame, area: Rect, state: &AppState, section: Sectio
         return;
     }
 
-    // Active section: show all params, highlight selected
+    // Active section: full parameter list with selection cursor
     let items: Vec<ListItem> = params
         .iter()
         .enumerate()
@@ -203,10 +204,7 @@ fn draw_section(frame: &mut Frame, area: Rect, state: &AppState, section: Sectio
     frame.render_widget(list, inner);
 }
 
-// ---------------------------------------------------------------------------
-// Waveform scope
-// ---------------------------------------------------------------------------
-
+/// Render the waveform scope chart.
 fn draw_scope(frame: &mut Frame, area: Rect, data: &[(f64, f64)]) {
     let block = Block::default()
         .title(Span::styled(" WAVEFORM ", Style::default().fg(FG_DIM)))
@@ -250,10 +248,7 @@ fn draw_scope(frame: &mut Frame, area: Rect, data: &[(f64, f64)]) {
     frame.render_widget(chart, area);
 }
 
-// ---------------------------------------------------------------------------
-// Presets panel
-// ---------------------------------------------------------------------------
-
+/// Render the preset list panel.
 fn draw_presets(frame: &mut Frame, area: Rect, state: &AppState) {
     let is_active = state.selected_section == Section::Presets;
     let border_style = Style::default().fg(if is_active {
@@ -305,10 +300,7 @@ fn draw_presets(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_stateful_widget(List::new(items), inner, &mut list_state);
 }
 
-// ---------------------------------------------------------------------------
-// Status bar
-// ---------------------------------------------------------------------------
-
+/// Render the status bar with note, octave, volume, and key binding hints.
 fn draw_status(frame: &mut Frame, area: Rect, state: &AppState) {
     let note_str = match state.active_note {
         Some(midi) => {
@@ -357,10 +349,7 @@ fn draw_status(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_widget(bar, area);
 }
 
-// ---------------------------------------------------------------------------
-// Help overlay
-// ---------------------------------------------------------------------------
-
+/// Render the full-screen help overlay.
 fn draw_help(frame: &mut Frame, area: Rect) {
     let help_text = vec![
         Line::from(Span::styled(
@@ -457,14 +446,14 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         )
         .wrap(Wrap { trim: false });
 
-    // Centre a reasonably-sized box
+    // Centre a reasonably-sized popup box and clear its background.
     let popup_area = centred_rect(60, 80, area);
-    // Clear background
     frame.render_widget(Block::default().style(Style::default().bg(BG)), popup_area);
     frame.render_widget(help, popup_area);
 }
 
-/// Return a centred `Rect` that is `percent_x`% wide and `percent_y`% tall.
+/// Return a centred `Rect` that is `percent_x`% wide and `percent_y`% tall
+/// relative to `area`.
 fn centred_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let layout = Layout::default()
         .direction(Direction::Vertical)

@@ -1,22 +1,26 @@
+//! Keyboard event handler: piano note mapping and application control keys.
+//!
+//! ## Piano keyboard layout
+//!
+//! Bottom octave row (maps to octave N):
+//! ```text
+//! Key:  Z  S  X  D  C  V  G  B  H  N  J  M
+//! Note: C  C# D  D# E  F  F# G  G# A  A# B
+//! ```
+//!
+//! Upper octave row (maps to octave N+1):
+//! ```text
+//! Key:  Q  2  W  3  E  R  5  T  6  Y  7  U
+//! Note: C  C# D  D# E  F  F# G  G# A  A# B
+//! ```
+//!
+//! MIDI note = 12 × (octave + 1) + semitone
+
 use crate::app::state::AppState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 
-// ---------------------------------------------------------------------------
-// Piano keyboard layout
-//
-// Bottom octave row (maps to octave N):
-//   Z  S  X  D  C  V  G  B  H  N  J  M
-//   C  C# D  D# E  F  F# G  G# A  A# B
-//
-// Upper octave row (maps to octave N+1):
-//   Q  2  W  3  E  R  5  T  6  Y  7  U
-//   C  C# D  D# E  F  F# G  G# A  A# B
-//
-// MIDI note = 12 * (octave + 1) + semitone
-// ---------------------------------------------------------------------------
-
 /// Map a key code to a semitone offset (0 = C of the bottom row, 12 = C of
-/// the upper row, None = not a note key).
+/// the upper row).  Returns `None` for non-note keys.
 fn key_to_semitone(code: KeyCode) -> Option<u8> {
     match code {
         // Bottom row (octave N)
@@ -49,22 +53,15 @@ fn key_to_semitone(code: KeyCode) -> Option<u8> {
     }
 }
 
-/// Convert octave + semitone-offset to MIDI note number.
-/// Clamps to valid MIDI range 0..=127.
+/// Convert octave + semitone offset to a MIDI note number, clamped to 0..=127.
 fn make_midi(octave: i8, semitone: u8) -> u8 {
     let raw = 12_i32 * (octave as i32 + 1) + semitone as i32;
     raw.clamp(0, 127) as u8
 }
 
-// ---------------------------------------------------------------------------
-// Main key handler
-// ---------------------------------------------------------------------------
-
 /// Process a single key event.  Returns `true` if the application should quit.
 pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
-    // -----------------------------------------------------------------------
     // Ctrl+C / Ctrl+Q → quit
-    // -----------------------------------------------------------------------
     if key.modifiers.contains(KeyModifiers::CONTROL) {
         match key.code {
             KeyCode::Char('c') | KeyCode::Char('q') => return true,
@@ -78,9 +75,7 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Key-release events: send note-off for piano keys
-    // -----------------------------------------------------------------------
+    // Key-release events: send note-off for piano keys.
     if key.kind == KeyEventKind::Release {
         if let Some(semi) = key_to_semitone(key.code) {
             let midi = make_midi(state.octave, semi);
@@ -92,37 +87,28 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
     // From here on we only handle Press (and Repeat for held keys – repeat
     // does NOT re-trigger note-on to avoid LFSR/envelope resets).
     if key.kind == KeyEventKind::Repeat {
-        // Don't re-trigger notes on key repeat
         return false;
     }
 
-    // -----------------------------------------------------------------------
     // Piano note keys (Press only)
-    // -----------------------------------------------------------------------
     if let Some(semi) = key_to_semitone(key.code) {
         let midi = make_midi(state.octave, semi);
         state.note_on(midi);
         return false;
     }
 
-    // -----------------------------------------------------------------------
     // Application control keys
-    // -----------------------------------------------------------------------
     match key.code {
-        // ── Quit ──────────────────────────────────────────────────────────
         KeyCode::F(12) => return true,
 
-        // ── Help overlay ──────────────────────────────────────────────────
         KeyCode::F(1) => {
             state.show_help = !state.show_help;
         }
 
-        // ── Panic (all notes off) ──────────────────────────────────────────
         KeyCode::Esc => {
             state.panic_all_notes();
         }
 
-        // ── Section navigation (Tab / Shift+Tab) ──────────────────────────
         KeyCode::Tab => {
             if key.modifiers.contains(KeyModifiers::SHIFT) {
                 state.prev_section();
@@ -131,15 +117,12 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
             }
         }
 
-        // ── Param navigation within section (Left / Right) ────────────────
         KeyCode::Left => state.prev_param(),
         KeyCode::Right => state.next_param(),
 
-        // ── Param value adjustment (Up / Down) ────────────────────────────
         KeyCode::Up => state.adjust_param(1.0),
         KeyCode::Down => state.adjust_param(-1.0),
 
-        // ── Load preset (Enter in Presets section) ────────────────────────
         KeyCode::Enter => {
             if state.selected_section == crate::app::state::Section::Presets {
                 let idx = state.selected_preset;
@@ -147,15 +130,13 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
             }
         }
 
-        // ── Volume ────────────────────────────────────────────────────────
         KeyCode::Char('+') | KeyCode::Char('=') => state.volume_up(),
         KeyCode::Char('-') | KeyCode::Char('_') => state.volume_down(),
 
-        // ── Octave shift ──────────────────────────────────────────────────
         KeyCode::Char('[') | KeyCode::Char(',') => state.octave_down(),
         KeyCode::Char(']') | KeyCode::Char('.') => state.octave_up(),
 
-        // ── Quick-select presets (1-8 number keys, only in Presets section)
+        // Quick-select presets 1–8 (number keys, only in Presets section)
         KeyCode::Char(ch @ '1'..='8') => {
             let idx = (ch as u8 - b'1') as usize;
             if state.selected_section == crate::app::state::Section::Presets {

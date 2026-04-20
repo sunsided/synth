@@ -1,14 +1,23 @@
+//! Oscillator, LFO, and supporting functions for pitch conversion.
+//!
+//! The `Oscillator` implements five waveform shapes with an integrated LFSR
+//! noise source clocked at the oscillator period boundary (SID-style behaviour).
+
 use crate::params::Waveform;
 use std::f32::consts::TAU;
 
 /// Single oscillator with LFSR-based noise (SID-style: LFSR clocked at osc frequency).
 pub struct Oscillator {
+    /// Current oscillator phase, normalised to 0.0 .. 1.0.
     phase: f32,
+    /// 32-bit Galois LFSR state (feedback polynomial 0xB4BCD35C).
     noise_lfsr: u32,
+    /// Most recent LFSR output, held between period boundaries.
     last_noise: f32,
 }
 
 impl Default for Oscillator {
+    /// Create an oscillator with a non-zero LFSR seed to avoid the zero-lock state.
     fn default() -> Self {
         Self {
             phase: 0.0,
@@ -19,15 +28,17 @@ impl Default for Oscillator {
 }
 
 impl Oscillator {
+    /// Reset the phase accumulator to zero (useful for hard-sync effects).
     #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.phase = 0.0;
     }
 
-    /// Returns next sample in the range -1.0 .. 1.0.
-    /// `freq_hz`     – instantaneous frequency (already LFO-modulated if needed)  
-    /// `pulse_width` – 0.05 .. 0.95 (only relevant for Pulse / PulseSaw)
-    /// `noise_mix`   – blend pure oscillator with raw LFSR noise
+    /// Returns the next sample in the range -1.0 .. 1.0.
+    ///
+    /// * `freq_hz`     – instantaneous frequency (already LFO-modulated if needed)
+    /// * `pulse_width` – 0.05 .. 0.95 (only relevant for Pulse / PulseSaw)
+    /// * `noise_mix`   – blend pure oscillator with raw LFSR noise
     pub fn next_sample(
         &mut self,
         freq_hz: f32,
@@ -79,9 +90,10 @@ impl Oscillator {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // 32-bit Galois LFSR – feedback polynomial 0xB4BCD35C
-    // -----------------------------------------------------------------------
+    /// Advance the 32-bit Galois LFSR by one step and return a sample in -1..1.
+    ///
+    /// Feedback polynomial: 0xB4BCD35C.  The LFSR is clocked once per oscillator
+    /// period (phase wrap), matching the SID chip's noise behaviour.
     fn tick_lfsr(&mut self) -> f32 {
         let bit = self.noise_lfsr & 1;
         self.noise_lfsr >>= 1;
@@ -105,19 +117,21 @@ pub fn detune_hz(base_hz: f32, cents: f32) -> f32 {
     base_hz * 2.0_f32.powf(cents / 1200.0)
 }
 
-/// Simple LFO (sine wave).
+/// Simple sine-wave LFO.
 pub struct Lfo {
+    /// Current LFO phase, normalised to 0.0 .. 1.0.
     phase: f32,
 }
 
 impl Default for Lfo {
+    /// Create an LFO starting at phase zero.
     fn default() -> Self {
         Self { phase: 0.0 }
     }
 }
 
 impl Lfo {
-    /// Returns a value in -1.0 .. 1.0.
+    /// Advance the LFO by one sample and return a value in -1.0 .. 1.0.
     pub fn next(&mut self, rate_hz: f32, sample_rate: f32) -> f32 {
         self.phase += rate_hz / sample_rate;
         if self.phase >= 1.0 {
@@ -126,10 +140,6 @@ impl Lfo {
         (TAU * self.phase).sin()
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

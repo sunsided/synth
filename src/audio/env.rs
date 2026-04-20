@@ -1,19 +1,26 @@
-/// ADSR envelope with optional reverse mode (ducking / swell).
-///
-/// Legato behaviour: if a note-on arrives while the envelope is still active
-/// (not Idle), the attack continues from the current level rather than
-/// restarting from zero.
+//! ADSR envelope generator with optional reverse (swell/duck) mode.
+//!
+//! Legato behaviour: when a note-on arrives while the envelope is still active
+//! (not `Idle`), the attack continues from the current level rather than
+//! restarting from zero, avoiding audible clicks on legato note changes.
 
+/// Current phase of the ADSR envelope.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum EnvStage {
+    /// Envelope is silent; no output.
     Idle,
+    /// Rising from the current level toward 1.0.
     Attack,
+    /// Falling from 1.0 toward the sustain level.
     Decay,
+    /// Holding at the sustain level until note-off.
     Sustain,
+    /// Falling from the current level toward silence.
     Release,
 }
 
 impl EnvStage {
+    /// Short display name for the current stage.
     #[allow(dead_code)]
     pub fn name(self) -> &'static str {
         match self {
@@ -26,13 +33,17 @@ impl EnvStage {
     }
 }
 
+/// ADSR envelope state.
 #[derive(Debug, Clone)]
 pub struct Envelope {
+    /// Current phase of the envelope.
     pub stage: EnvStage,
+    /// Instantaneous amplitude level (0.0 .. 1.0).
     pub level: f32,
 }
 
 impl Default for Envelope {
+    /// Create an envelope in the `Idle` stage at zero level.
     fn default() -> Self {
         Self {
             stage: EnvStage::Idle,
@@ -43,11 +54,12 @@ impl Default for Envelope {
 
 impl Envelope {
     /// Trigger note-on.
-    /// If `legato` is true and the envelope is already active, attack continues
-    /// from the current level (no click on legato note changes).
+    ///
+    /// If `legato` is true and the envelope is already active, the attack
+    /// continues from the current level (no click on legato note changes).
     pub fn note_on(&mut self, legato: bool) {
         if legato && self.stage != EnvStage::Idle {
-            // Continue from current level into attack phase
+            // Continue from current level into attack phase.
             self.stage = EnvStage::Attack;
         } else {
             self.level = 0.0;
@@ -62,12 +74,13 @@ impl Envelope {
         }
     }
 
-    /// Immediate silence.
+    /// Immediately silence the envelope.
     pub fn reset(&mut self) {
         self.level = 0.0;
         self.stage = EnvStage::Idle;
     }
 
+    /// Returns `true` if the envelope is producing non-zero output.
     pub fn is_active(&self) -> bool {
         self.stage != EnvStage::Idle
     }
@@ -75,10 +88,10 @@ impl Envelope {
     /// Advance the envelope by one sample and return the current amplitude (0..1).
     ///
     /// Parameters:
-    /// * `attack`  – attack time in seconds  
-    /// * `decay`   – decay time in seconds  
-    /// * `sustain` – sustain level 0..1  
-    /// * `release` – release time in seconds  
+    /// * `attack`  – attack time in seconds
+    /// * `decay`   – decay time in seconds
+    /// * `sustain` – sustain level 0..1
+    /// * `release` – release time in seconds
     /// * `reverse` – if true, output is `1.0 - level` (reverse/swell mode)
     pub fn process(
         &mut self,
@@ -102,7 +115,7 @@ impl Envelope {
                 }
             }
             EnvStage::Decay => {
-                // Linear decay toward sustain level
+                // Linear decay toward sustain level.
                 let rate = (1.0 - sustain) / (decay * sample_rate).max(1.0);
                 self.level -= rate;
                 if self.level <= sustain {
@@ -122,7 +135,7 @@ impl Envelope {
                     self.level = 0.0;
                     self.stage = EnvStage::Idle;
                 } else {
-                    // Exponential decay from wherever the level is now
+                    // Exponential decay from wherever the level is now.
                     let coeff = (-1.0_f32 / (release * sample_rate)).exp();
                     self.level *= coeff;
                     if self.level < 1e-3 {
@@ -141,10 +154,6 @@ impl Envelope {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {

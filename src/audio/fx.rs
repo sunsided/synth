@@ -1,25 +1,32 @@
-/// Freeverb-inspired Schroeder reverb: 4 parallel comb filters → 2 serial allpass.
-///
-/// All delay buffers are allocated once at construction; the audio callback
-/// does no heap allocation.
+//! Freeverb-inspired Schroeder reverb: 4 parallel comb filters → 2 serial allpass sections.
+//!
+//! All delay buffers are allocated once at construction; the audio callback
+//! performs no heap allocation.
 
-// Comb delay lengths tuned for 44100 Hz (Freeverb defaults, slightly reduced)
+/// Comb filter delay lengths tuned for 44100 Hz (Freeverb defaults, slightly reduced).
 const COMB_DELAYS: [usize; 4] = [1116, 1188, 1277, 1356];
+
+/// Allpass filter delay lengths tuned for 44100 Hz.
 const ALLPASS_DELAYS: [usize; 2] = [556, 441];
 
-// ---------------------------------------------------------------------------
-// Comb filter (with first-order LP damping – Schroeder/Freeverb style)
-// ---------------------------------------------------------------------------
-
+/// Feedback comb filter with first-order low-pass damping (Schroeder/Freeverb style).
+///
+/// The LP on the feedback path simulates high-frequency air absorption in a room.
 struct CombFilter {
+    /// Delay line ring buffer.
     buf: Vec<f32>,
+    /// Current write/read index into `buf`.
     idx: usize,
+    /// Feedback gain (controls room decay time).
     feedback: f32,
+    /// Damping coefficient for the LP on the feedback path.
     damp: f32,
+    /// State variable for the one-pole LP.
     damp_state: f32,
 }
 
 impl CombFilter {
+    /// Construct a comb filter with the given delay length (in samples).
     fn new(delay: usize) -> Self {
         Self {
             buf: vec![0.0; delay],
@@ -30,11 +37,13 @@ impl CombFilter {
         }
     }
 
+    /// Update feedback gain and damping without reallocating the delay line.
     fn set_params(&mut self, feedback: f32, damp: f32) {
         self.feedback = feedback;
         self.damp = damp.clamp(0.0, 0.999);
     }
 
+    /// Process one sample through the comb filter.
     fn process(&mut self, input: f32) -> f32 {
         let out = self.buf[self.idx];
         // First-order low-pass on feedback path (simulates air absorption)
@@ -45,16 +54,16 @@ impl CombFilter {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Allpass filter (Schroeder allpass section)
-// ---------------------------------------------------------------------------
-
+/// Schroeder allpass section (fixed gain of ±0.5).
 struct AllpassFilter {
+    /// Delay line ring buffer.
     buf: Vec<f32>,
+    /// Current write/read index into `buf`.
     idx: usize,
 }
 
 impl AllpassFilter {
+    /// Construct an allpass filter with the given delay length (in samples).
     fn new(delay: usize) -> Self {
         Self {
             buf: vec![0.0; delay],
@@ -62,6 +71,7 @@ impl AllpassFilter {
         }
     }
 
+    /// Process one sample through the allpass section.
     fn process(&mut self, input: f32) -> f32 {
         let buf_out = self.buf[self.idx];
         let out = buf_out - input;
@@ -71,22 +81,26 @@ impl AllpassFilter {
     }
 }
 
-// ---------------------------------------------------------------------------
-// Public Reverb unit
-// ---------------------------------------------------------------------------
-
+/// Freeverb-style plate reverb unit.
+///
+/// Four parallel comb filters feed into two serial allpass sections.
+/// Room size and damping are adjustable at runtime via `set_params`.
 pub struct Reverb {
+    /// The four parallel feedback comb filters.
     combs: [CombFilter; 4],
+    /// The two serial allpass diffusion stages.
     allpasses: [AllpassFilter; 2],
 }
 
 impl Default for Reverb {
+    /// Create a reverb with default room size and damping.
     fn default() -> Self {
         Self::new()
     }
 }
 
 impl Reverb {
+    /// Construct a new reverb unit with pre-allocated delay buffers.
     pub fn new() -> Self {
         Self {
             combs: [
@@ -102,7 +116,7 @@ impl Reverb {
         }
     }
 
-    /// Update room size and damping without reallocating.
+    /// Update room size and damping without reallocating delay buffers.
     pub fn set_params(&mut self, size: f32, damping: f32) {
         let feedback = 0.70 + size.clamp(0.0, 1.0) * 0.25; // 0.70 .. 0.95
         let damp = damping.clamp(0.0, 0.999);
@@ -111,7 +125,8 @@ impl Reverb {
         }
     }
 
-    /// Process a mono sample.  Returns wet+dry mix.
+    /// Process a mono sample.  Returns the wet+dry mix.
+    ///
     /// `mix` – 0.0 (dry) .. 1.0 (full wet).
     pub fn process(&mut self, input: f32, mix: f32) -> f32 {
         if mix < 1e-4 {

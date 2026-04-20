@@ -1,3 +1,9 @@
+//! CPAL audio stream setup and the real-time audio callback.
+//!
+//! `setup_audio` allocates all DSP state, opens the default output device, and
+//! returns the live `cpal::Stream` together with the channels used to exchange
+//! events and scope data with the UI thread.
+
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{bounded, Receiver, Sender};
@@ -5,29 +11,41 @@ use crossbeam_channel::{bounded, Receiver, Sender};
 use crate::audio::voice::{NoteStack, Voice};
 use crate::params::{AudioEvent, SynthParams};
 
-// Scope: audio thread sends Vec<f32> batches; UI thread drains them.
+/// Capacity of the scope channel (number of `Vec<f32>` batches that can be
+/// queued before the audio thread starts dropping them).
 const SCOPE_CHANNEL_CAPACITY: usize = 32;
-// Decimate: send every Nth sample to the scope (reduces channel traffic)
+
+/// Send every Nth sample to the scope to reduce channel traffic.
 const SCOPE_DECIMATION: usize = 4;
-// Batch size before flushing to scope channel
+
+/// Number of decimated samples accumulated before flushing to the scope channel.
 const SCOPE_BATCH: usize = 128;
 
-// ---------------------------------------------------------------------------
-// AudioState – everything the audio callback owns (no shared state)
-// ---------------------------------------------------------------------------
-
+/// All mutable state owned exclusively by the audio callback.
+///
+/// No fields are shared with the UI thread; synchronisation happens only
+/// through the bounded `event_rx` / `scope_tx` channels.
 struct AudioState {
+    /// Current synthesiser parameter snapshot.
     params: SynthParams,
+    /// The single monophonic voice.
     voice: Voice,
+    /// Tracks which MIDI notes are currently held (last-note priority).
     note_stack: NoteStack,
+    /// Receives `AudioEvent` messages from the UI thread.
     event_rx: Receiver<AudioEvent>,
+    /// Sends decimated waveform batches to the scope display.
     scope_tx: Sender<Vec<f32>>,
+    /// Accumulates decimated samples before a batch flush.
     scope_accum: Vec<f32>,
+    /// Counts samples between scope decimation steps.
     scope_dec_counter: usize,
+    /// Audio sample rate in Hz.
     sample_rate: f32,
 }
 
 impl AudioState {
+    /// Construct initial audio state for the given sample rate.
     fn new(sample_rate: f32, event_rx: Receiver<AudioEvent>, scope_tx: Sender<Vec<f32>>) -> Self {
         let params = SynthParams::default();
         let voice = Voice::new();
@@ -37,7 +55,7 @@ impl AudioState {
             note_stack: NoteStack::new(),
             event_rx,
             scope_tx,
-            // Pre-allocate to avoid allocation in the callback
+            // Pre-allocate to avoid heap allocation inside the callback.
             scope_accum: Vec::with_capacity(SCOPE_BATCH * 2),
             scope_dec_counter: 0,
             sample_rate,
@@ -54,7 +72,7 @@ impl AudioState {
                 }
                 AudioEvent::NoteOff(midi) => {
                     if let Some(next) = self.note_stack.release(midi) {
-                        // There is still a held note → legato retrigger
+                        // There is still a held note → legato retrigger.
                         self.voice.note_on(next, &self.params, self.sample_rate);
                     } else {
                         self.voice.note_off();
@@ -66,7 +84,7 @@ impl AudioState {
                 }
                 AudioEvent::LoadPatch(p) => {
                     self.params = *p;
-                    // Update reverb params immediately
+                    // Apply reverb params immediately without waiting for a note event.
                     self.voice
                         .reverb
                         .set_params(self.params.reverb_size, self.params.reverb_damping);
@@ -82,7 +100,7 @@ impl AudioState {
         for frame in data.chunks_mut(channels) {
             let sample = self.voice.process(&self.params, self.sample_rate);
 
-            // Guard against denormals / clipping
+            // Guard against denormals / clipping before writing to hardware.
             let sample = if sample.is_finite() {
                 sample.clamp(-1.0, 1.0)
             } else {
@@ -93,13 +111,13 @@ impl AudioState {
                 *ch = sample;
             }
 
-            // Push decimated sample to scope
+            // Push decimated sample to scope; drop batch if channel is full
+            // (never block the audio thread).
             self.scope_dec_counter += 1;
             if self.scope_dec_counter >= SCOPE_DECIMATION {
                 self.scope_dec_counter = 0;
                 self.scope_accum.push(sample);
                 if self.scope_accum.len() >= SCOPE_BATCH {
-                    // try_send: if channel full, drop (never block the audio thread)
                     let batch = std::mem::replace(
                         &mut self.scope_accum,
                         Vec::with_capacity(SCOPE_BATCH * 2),
@@ -110,10 +128,6 @@ impl AudioState {
         }
     }
 }
-
-// ---------------------------------------------------------------------------
-// Public setup function
-// ---------------------------------------------------------------------------
 
 /// Initialise CPAL audio output.
 ///
@@ -137,7 +151,7 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
     let sample_rate = config.sample_rate().0 as f32;
     let channels = config.channels() as usize;
 
-    // Require float output (convert from config's native format if needed)
+    // Convert from the device's native format config to a plain StreamConfig.
     let stream_config: cpal::StreamConfig = config.into();
 
     let mut audio_state = AudioState::new(sample_rate, event_rx, scope_tx);

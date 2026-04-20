@@ -1,22 +1,29 @@
+//! Application state: UI section navigation, parameter adjustment, and
+//! the bridge between the UI thread and the audio engine.
+
 use crate::params::{AudioEvent, Patch, SynthParams};
 use crate::presets::sid;
 use crossbeam_channel::Sender;
 
-// ---------------------------------------------------------------------------
-// UI section navigation
-// ---------------------------------------------------------------------------
-
+/// Top-level UI section, each corresponding to one panel of controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Section {
+    /// Oscillator controls (waveform, pulse width, detune, noise mix).
     Osc,
+    /// Amplitude envelope controls (ADSR, reverse, glide).
     Env,
+    /// Filter controls (mode, cutoff, resonance, drive).
     Filter,
+    /// LFO controls (rate, depth, target).
     Lfo,
+    /// Effects controls (reverb mix, size, damping).
     Fx,
+    /// Preset list (browse and load patches).
     Presets,
 }
 
 impl Section {
+    /// Ordered slice of all variants, used for Tab-cycling.
     pub const ALL: &'static [Section] = &[
         Section::Osc,
         Section::Env,
@@ -26,6 +33,7 @@ impl Section {
         Section::Presets,
     ];
 
+    /// Short uppercase display name shown in panel headers.
     pub fn name(self) -> &'static str {
         match self {
             Section::Osc => "OSC",
@@ -37,18 +45,20 @@ impl Section {
         }
     }
 
+    /// Return the next section, wrapping around.
     pub fn next(self) -> Self {
         let idx = Self::ALL.iter().position(|&s| s == self).unwrap_or(0);
         Self::ALL[(idx + 1) % Self::ALL.len()]
     }
 
+    /// Return the previous section, wrapping around.
     pub fn prev(self) -> Self {
         let idx = Self::ALL.iter().position(|&s| s == self).unwrap_or(0);
         let len = Self::ALL.len();
         Self::ALL[(idx + len - 1) % len]
     }
 
-    /// Number of adjustable params in this section (0 = list navigation).
+    /// Number of adjustable parameters in this section (0 = list navigation only).
     pub fn param_count(self) -> usize {
         match self {
             Section::Osc => 4,     // waveform, pulse_width, detune, noise_mix
@@ -61,28 +71,40 @@ impl Section {
     }
 }
 
-// ---------------------------------------------------------------------------
-// AppState
-// ---------------------------------------------------------------------------
-
+/// Central application state owned by the UI thread.
 pub struct AppState {
+    /// Live parameter snapshot; updated by `adjust_*` methods and preset loads.
     pub params: SynthParams,
+    /// Currently focused UI panel.
     pub selected_section: Section,
+    /// Index of the focused parameter within `selected_section`.
     pub selected_param: usize,
+    /// MIDI note currently held (if any), for display in the status bar.
     pub active_note: Option<u8>,
+    /// Current keyboard octave (piano keys map to this octave and octave+1).
     pub octave: i8,
+    /// Envelope stage name for potential future status feedback (unused in display).
     #[allow(dead_code)]
-    pub envelope_stage_name: String, // updated by audio feedback (future use)
+    pub envelope_stage_name: String,
+    /// Name of the currently loaded patch, shown in the title.
     pub current_patch_name: String,
+    /// All available patches (built-in + any saved user patches).
     pub patches: Vec<Patch>,
+    /// Index of the highlighted entry in the preset list.
     pub selected_preset: usize,
+    /// When `true`, the event loop exits after the current frame.
     pub should_quit: bool,
+    /// When `true`, the help overlay is drawn instead of the main UI.
     pub show_help: bool,
+    /// Transient status message shown in the status bar (e.g. "Loaded: …").
     pub status_msg: String,
+    /// Channel to send `AudioEvent` messages to the audio thread.
     audio_tx: Sender<AudioEvent>,
 }
 
 impl AppState {
+    /// Construct initial application state and seed the audio thread with the
+    /// first preset from the built-in SID bank.
     pub fn new(audio_tx: Sender<AudioEvent>) -> Self {
         let patches = sid::default_patches();
         let current_patch_name = patches
@@ -90,7 +112,7 @@ impl AppState {
             .map(|p| p.name.clone())
             .unwrap_or_else(|| "Default".to_string());
 
-        // Seed the audio thread with the first preset
+        // Seed the audio thread with the first preset.
         if let Some(p) = patches.first() {
             let _ = audio_tx.send(AudioEvent::LoadPatch(Box::new(p.params.clone())));
         }
@@ -115,19 +137,18 @@ impl AppState {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Audio event helpers
-    // -----------------------------------------------------------------------
-
+    /// Send an `AudioEvent` to the audio thread (best-effort; drops if channel full).
     fn send(&self, event: AudioEvent) {
         let _ = self.audio_tx.send(event);
     }
 
+    /// Record a note-on and forward it to the audio thread.
     pub fn note_on(&mut self, midi: u8) {
         self.active_note = Some(midi);
         self.send(AudioEvent::NoteOn(midi));
     }
 
+    /// Record a note-off and forward it to the audio thread.
     pub fn note_off(&mut self, midi: u8) {
         if self.active_note == Some(midi) {
             self.active_note = None;
@@ -135,19 +156,18 @@ impl AppState {
         self.send(AudioEvent::NoteOff(midi));
     }
 
+    /// Send a panic event (all notes off, voice reset) to the audio thread.
     pub fn panic_all_notes(&mut self) {
         self.active_note = None;
         self.send(AudioEvent::Panic);
     }
 
+    /// Push the current `params` snapshot to the audio thread as a `LoadPatch` event.
     fn push_params(&self) {
         self.send(AudioEvent::LoadPatch(Box::new(self.params.clone())));
     }
 
-    // -----------------------------------------------------------------------
-    // Preset management
-    // -----------------------------------------------------------------------
-
+    /// Load the patch at `idx` from the patch list, updating params and pushing to audio.
     pub fn load_preset(&mut self, idx: usize) {
         if let Some(patch) = self.patches.get(idx) {
             self.current_patch_name = patch.name.clone();
@@ -158,17 +178,19 @@ impl AppState {
         }
     }
 
+    /// Save current params as a named preset.
+    ///
+    /// If a patch with the same name already exists it is overwritten; otherwise
+    /// a new entry is appended.  Persists to disk as a best-effort operation.
     pub fn save_current_as_preset(&mut self, name: &str) {
         let patch = Patch::new(name, self.params.clone());
         self.current_patch_name = name.to_string();
-        // Overwrite if name exists; else append
         if let Some(existing) = self.patches.iter_mut().find(|p| p.name == name) {
             existing.params = self.params.clone();
         } else {
             self.patches.push(patch);
             self.selected_preset = self.patches.len() - 1;
         }
-        // Persist to disk (best-effort)
         let path = crate::presets::store::user_presets_path();
         if let Err(e) = crate::presets::store::save_patches(&self.patches, &path) {
             self.status_msg = format!("Save failed: {e}");
@@ -177,20 +199,19 @@ impl AppState {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Section / param navigation
-    // -----------------------------------------------------------------------
-
+    /// Advance to the next section and reset the param cursor.
     pub fn next_section(&mut self) {
         self.selected_section = self.selected_section.next();
         self.selected_param = 0;
     }
 
+    /// Retreat to the previous section and reset the param cursor.
     pub fn prev_section(&mut self) {
         self.selected_section = self.selected_section.prev();
         self.selected_param = 0;
     }
 
+    /// Move the param cursor forward within the current section (wraps).
     pub fn next_param(&mut self) {
         let count = self.selected_section.param_count();
         if count > 0 {
@@ -198,6 +219,7 @@ impl AppState {
         }
     }
 
+    /// Move the param cursor backward within the current section (wraps).
     pub fn prev_param(&mut self) {
         let count = self.selected_section.param_count();
         if count > 0 {
@@ -209,11 +231,7 @@ impl AppState {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Parameter adjustment
-    // -----------------------------------------------------------------------
-
-    /// `delta` is +1.0 for "up one step" or -1.0 for "down one step".
+    /// Adjust the currently focused parameter by `delta` (+1.0 / -1.0 per step).
     pub fn adjust_param(&mut self, delta: f32) {
         match self.selected_section {
             Section::Osc => self.adjust_osc(delta),
@@ -228,6 +246,7 @@ impl AppState {
         }
     }
 
+    /// Apply `delta` to the focused oscillator parameter.
     fn adjust_osc(&mut self, d: f32) {
         match self.selected_param {
             0 => {
@@ -250,6 +269,7 @@ impl AppState {
         }
     }
 
+    /// Apply `delta` to the focused envelope parameter.
     fn adjust_env(&mut self, d: f32) {
         match self.selected_param {
             0 => self.params.attack = (self.params.attack + d * 0.01).clamp(0.001, 4.0),
@@ -266,6 +286,7 @@ impl AppState {
         }
     }
 
+    /// Apply `delta` to the focused filter parameter.
     fn adjust_filter(&mut self, d: f32) {
         match self.selected_param {
             0 => {
@@ -287,6 +308,7 @@ impl AppState {
         }
     }
 
+    /// Apply `delta` to the focused LFO parameter.
     fn adjust_lfo(&mut self, d: f32) {
         match self.selected_param {
             0 => {
@@ -305,6 +327,7 @@ impl AppState {
         }
     }
 
+    /// Apply `delta` to the focused FX parameter.
     fn adjust_fx(&mut self, d: f32) {
         match self.selected_param {
             0 => self.params.reverb_mix = (self.params.reverb_mix + d * 0.05).clamp(0.0, 1.0),
@@ -316,6 +339,7 @@ impl AppState {
         }
     }
 
+    /// Move the preset selection cursor up or down.
     fn adjust_preset(&mut self, d: f32) {
         let n = self.patches.len();
         if n == 0 {
@@ -328,33 +352,31 @@ impl AppState {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Convenience controls not tied to section/param
-    // -----------------------------------------------------------------------
-
+    /// Increase master volume by one step.
     pub fn volume_up(&mut self) {
         self.params.volume = (self.params.volume + 0.05).min(1.0);
         self.push_params();
     }
 
+    /// Decrease master volume by one step.
     pub fn volume_down(&mut self) {
         self.params.volume = (self.params.volume - 0.05).max(0.0);
         self.push_params();
     }
 
+    /// Shift the keyboard octave up by one (max 8).
     pub fn octave_up(&mut self) {
         self.octave = (self.octave + 1).min(8);
     }
 
+    /// Shift the keyboard octave down by one (min 0).
     pub fn octave_down(&mut self) {
         self.octave = (self.octave - 1).max(0);
     }
 
-    // -----------------------------------------------------------------------
-    // Param label helpers (for UI display)
-    // -----------------------------------------------------------------------
-
-    /// Returns (label, value_string) pairs for the currently selected section.
+    /// Returns `(label, value_string)` pairs for the currently selected section.
+    ///
+    /// Used by the UI to build the parameter list display.
     pub fn section_params(&self) -> Vec<(&'static str, String)> {
         let p = &self.params;
         match self.selected_section {

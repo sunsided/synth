@@ -1,11 +1,15 @@
+//! Built-in C64/SID-inspired preset bank.
+//!
+//! Each patch targets a specific sonic archetype from classic C64 music.
+//! The inline sound-design notes next to each preset describe the intent so
+//! the parameter choices remain legible without running the synth.
+
 use crate::params::{FilterMode, LfoTarget, Patch, SynthParams, Waveform};
 
 /// Return the built-in C64-inspired preset bank.
 pub fn default_patches() -> Vec<Patch> {
     vec![
-        // ------------------------------------------------------------------
-        // 1. Classic C64 Bass – the iconic SID pluck bass
-        // ------------------------------------------------------------------
+        // 1. Classic C64 Bass – iconic SID pluck bass: sawtooth, short decay, LP resonance
         Patch::new(
             "C64 Bass",
             SynthParams {
@@ -32,9 +36,7 @@ pub fn default_patches() -> Vec<Patch> {
                 glide_time: 0.0,
             },
         ),
-        // ------------------------------------------------------------------
-        // 2. Arpeggiated Lead – fast-attack bright pulse with vibrato
-        // ------------------------------------------------------------------
+        // 2. Arpeggiated Lead – fast-attack bright pulse with pitch vibrato
         Patch::new(
             "Arp Lead",
             SynthParams {
@@ -61,9 +63,7 @@ pub fn default_patches() -> Vec<Patch> {
                 glide_time: 0.0,
             },
         ),
-        // ------------------------------------------------------------------
-        // 3. Plucky Pulse – short percussive pulse stab
-        // ------------------------------------------------------------------
+        // 3. Plucky Pulse – short percussive pulse stab, no sustain
         Patch::new(
             "Plucky Pulse",
             SynthParams {
@@ -90,9 +90,7 @@ pub fn default_patches() -> Vec<Patch> {
                 glide_time: 0.0,
             },
         ),
-        // ------------------------------------------------------------------
-        // 4. PWM Lead – pulse-width modulated flute/string character
-        // ------------------------------------------------------------------
+        // 4. PWM Lead – pulse-width modulation gives flute/cello-like timbre
         Patch::new(
             "PWM Lead",
             SynthParams {
@@ -119,9 +117,7 @@ pub fn default_patches() -> Vec<Patch> {
                 glide_time: 0.03,
             },
         ),
-        // ------------------------------------------------------------------
-        // 5. Metallic Pulse – thin, harsh, metallic timbre
-        // ------------------------------------------------------------------
+        // 5. Metallic Pulse – thin, harsh, metallic character: narrow PW + band-pass
         Patch::new(
             "Metal Pulse",
             SynthParams {
@@ -148,9 +144,7 @@ pub fn default_patches() -> Vec<Patch> {
                 glide_time: 0.0,
             },
         ),
-        // ------------------------------------------------------------------
-        // 6. Noise Snare – gated noise burst, snare-like
-        // ------------------------------------------------------------------
+        // 6. Noise Snare – gated LFSR noise burst through band-pass, snare-like
         Patch::new(
             "Noise Snare",
             SynthParams {
@@ -177,9 +171,7 @@ pub fn default_patches() -> Vec<Patch> {
                 glide_time: 0.0,
             },
         ),
-        // ------------------------------------------------------------------
-        // 7. Slide Bass – saw bass with legato glide
-        // ------------------------------------------------------------------
+        // 7. Slide Bass – sawtooth bass with legato portamento glide
         Patch::new(
             "Slide Bass",
             SynthParams {
@@ -206,9 +198,7 @@ pub fn default_patches() -> Vec<Patch> {
                 glide_time: 0.12,
             },
         ),
-        // ------------------------------------------------------------------
-        // 8. Tri Pad – soft triangle pad with reverb
-        // ------------------------------------------------------------------
+        // 8. Tri Pad – soft triangle pad, slow attack, heavy reverb wash
         Patch::new(
             "Tri Pad",
             SynthParams {

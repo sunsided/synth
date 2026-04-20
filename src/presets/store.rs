@@ -1,3 +1,5 @@
+//! User-preset persistence: file path resolution, JSON serialisation, and loading.
+
 use crate::params::Patch;
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};

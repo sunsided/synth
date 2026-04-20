@@ -1,3 +1,8 @@
+//! Trapezoidal state-variable filter (TPT SVF) with pre-drive saturation.
+//!
+//! Reference: Andrew Simper, "Solving the Continuous SVF Equations Using
+//! Trapezoidal Integration and Equivalent Circuits" (2013).
+
 use crate::params::FilterMode;
 use std::f32::consts::PI;
 
@@ -7,9 +12,6 @@ use std::f32::consts::PI;
 /// and HP simultaneously.  A subtle `tanh` saturation is applied to the
 /// band-pass state for SID-style resonance character.
 ///
-/// Reference: Andrew Simper, "Solving the Continuous SVF Equations Using
-/// Trapezoidal Integration and Equivalent Circuits" (2013).
-///
 /// Pre-drive soft-clipping of the input is also supported (maps to the SID
 /// "drive" character control).
 pub struct SvFilter {
@@ -18,6 +20,7 @@ pub struct SvFilter {
 }
 
 impl Default for SvFilter {
+    /// Create a filter with zeroed integrator states.
     fn default() -> Self {
         Self {
             ic1eq: 0.0,
@@ -27,6 +30,7 @@ impl Default for SvFilter {
 }
 
 impl SvFilter {
+    /// Zero both integrator states (use after a voice panic or hard reset).
     pub fn reset(&mut self) {
         self.ic1eq = 0.0;
         self.ic2eq = 0.0;
@@ -49,7 +53,7 @@ impl SvFilter {
         drive: f32,
         sample_rate: f32,
     ) -> f32 {
-        // --- Pre-drive soft clip (SID "grit") ---
+        // Pre-drive soft clip (SID "grit")
         let x = if drive > 0.001 {
             let gain = 1.0 + drive * 4.0;
             let x = input * gain;
@@ -59,7 +63,7 @@ impl SvFilter {
             input
         };
 
-        // --- Filter coefficient calculation ---
+        // Filter coefficient calculation
         let fc = cutoff.clamp(20.0, sample_rate * 0.499);
         let g = (PI * fc / sample_rate).tan();
         // k = 2 - 2*resonance maps resonance 0→k=2 (Q=0.5) to 0.99→k=0.02 (Q≈50)
@@ -108,10 +112,6 @@ fn fast_tanh(x: f32) -> f32 {
     let d = 135.0 + x2 * (45.0 + x2 * 9.0);
     (n / d).clamp(-1.0, 1.0)
 }
-
-// ---------------------------------------------------------------------------
-// Tests
-// ---------------------------------------------------------------------------
 
 #[cfg(test)]
 mod tests {
