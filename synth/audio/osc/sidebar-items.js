@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["detune_hz","midi_to_hz"],"struct":["Lfo","Oscillator"]};

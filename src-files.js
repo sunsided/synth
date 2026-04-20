@@ -1,0 +1,2 @@
+createSrcSidebar('[["synth",["",[["audio",[],["drums.rs","engine.rs","env.rs","filter.rs","fx.rs","osc.rs","voice.rs"]],["presets",[],["sid.rs"]]],["audio.rs","lib.rs","params.rs","presets.rs"]]]]');
+//{"start":19,"fragment_lengths":[176]}

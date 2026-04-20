@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["POLYPHONY","POLYPHONY_F32","SCOPE_BATCH","SCOPE_CHANNEL_CAPACITY","SCOPE_DECIMATION"],"fn":["setup_audio"],"struct":["AudioState","VoiceSlot"]};

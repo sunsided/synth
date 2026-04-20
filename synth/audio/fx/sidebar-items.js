@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["ALLPASS_DELAYS","COMB_DELAYS"],"struct":["AllpassFilter","CombFilter","Reverb"]};
