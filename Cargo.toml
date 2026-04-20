@@ -27,6 +27,10 @@ ratatui = "0.30"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 
+[[example]]
+name = "tune"
+path = "examples/tune.rs"
+
 [lints.clippy]
 # Enforce the full pedantic lint group project-wide.
 # Intentional suppressions for API/domain naming and DSP casts are handled

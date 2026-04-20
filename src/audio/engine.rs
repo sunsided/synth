@@ -8,7 +8,9 @@ use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, Sender, bounded};
 
-use crate::audio::voice::{NoteStack, Voice};
+use crate::audio::drums::DrumMachine;
+use crate::audio::fx::Reverb;
+use crate::audio::voice::Voice;
 use crate::params::{AudioEvent, SynthParams};
 
 /// Capacity of the scope channel (number of `Vec<f32>` batches that can be
@@ -21,6 +23,19 @@ const SCOPE_DECIMATION: usize = 4;
 /// Number of decimated samples accumulated before flushing to the scope channel.
 const SCOPE_BATCH: usize = 128;
 
+/// Number of simultaneous voices.
+const POLYPHONY: usize = 4;
+
+/// Polyphony as `f32` for scaling the summed voice mix.
+const POLYPHONY_F32: f32 = 4.0;
+
+/// Voice slot metadata for note routing and age-based stealing.
+#[derive(Clone, Copy, Default)]
+struct VoiceSlot {
+    note: Option<u8>,
+    age: u64,
+}
+
 /// All mutable state owned exclusively by the audio callback.
 ///
 /// No fields are shared with the UI thread; synchronisation happens only
@@ -28,10 +43,16 @@ const SCOPE_BATCH: usize = 128;
 struct AudioState {
     /// Current synthesiser parameter snapshot.
     params: SynthParams,
-    /// The single monophonic voice.
-    voice: Voice,
-    /// Tracks which MIDI notes are currently held (last-note priority).
-    note_stack: NoteStack,
+    /// Polyphonic voice pool.
+    voices: [Voice; POLYPHONY],
+    /// Per-voice metadata for note routing and stealing.
+    slots: [VoiceSlot; POLYPHONY],
+    /// Monotonic allocation counter for oldest-voice stealing.
+    age_counter: u64,
+    /// Shared post-mix reverb send.
+    reverb: Reverb,
+    /// Parallel drum machine (kick + hi-hats).
+    drums: DrumMachine,
     /// Receives `AudioEvent` messages from the UI thread.
     event_rx: Receiver<AudioEvent>,
     /// Sends decimated waveform batches to the scope display.
@@ -48,11 +69,15 @@ impl AudioState {
     /// Construct initial audio state for the given sample rate.
     fn new(sample_rate: f32, event_rx: Receiver<AudioEvent>, scope_tx: Sender<Vec<f32>>) -> Self {
         let params = SynthParams::default();
-        let voice = Voice::new();
+        let mut reverb = Reverb::new();
+        reverb.set_params(params.fx.reverb_size, params.fx.reverb_damping);
         Self {
             params,
-            voice,
-            note_stack: NoteStack::new(),
+            voices: std::array::from_fn(|_| Voice::new()),
+            slots: std::array::from_fn(|_| VoiceSlot::default()),
+            age_counter: 0,
+            reverb,
+            drums: DrumMachine::new(sample_rate),
             event_rx,
             scope_tx,
             // Pre-allocate to avoid heap allocation inside the callback.
@@ -62,33 +87,71 @@ impl AudioState {
         }
     }
 
-    /// Drain all pending events from the UI thread.  Called once per buffer.
+    fn apply_reverb_params(&mut self) {
+        self.reverb
+            .set_params(self.params.fx.reverb_size, self.params.fx.reverb_damping);
+    }
+
+    fn is_voice_idle(&self, idx: usize) -> bool {
+        let voice = &self.voices[idx];
+        !voice.active && !voice.env.is_active() && self.slots[idx].note.is_none()
+    }
+
+    fn allocate_voice_index(&self, midi: u8) -> usize {
+        if let Some(idx) = self.slots.iter().position(|slot| slot.note == Some(midi)) {
+            return idx;
+        }
+
+        if let Some(idx) = (0..POLYPHONY).find(|&idx| self.is_voice_idle(idx)) {
+            return idx;
+        }
+
+        self.slots
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, slot)| slot.age)
+            .map_or(0, |(idx, _)| idx)
+    }
+
+    fn note_on(&mut self, midi: u8) {
+        self.apply_reverb_params();
+        let idx = self.allocate_voice_index(midi);
+        self.age_counter = self.age_counter.saturating_add(1);
+        self.slots[idx].note = Some(midi);
+        self.slots[idx].age = self.age_counter;
+        self.voices[idx].note_on(midi, &self.params, self.sample_rate);
+    }
+
+    fn note_off(&mut self, midi: u8) {
+        if let Some(idx) = self.slots.iter().position(|slot| slot.note == Some(midi)) {
+            self.voices[idx].note_off();
+            self.slots[idx].note = None;
+        }
+    }
+
+    fn panic(&mut self) {
+        for voice in &mut self.voices {
+            voice.panic();
+        }
+        for slot in &mut self.slots {
+            *slot = VoiceSlot::default();
+        }
+        self.drums.panic();
+        self.age_counter = 0;
+    }
+
+    /// Drain all pending events from the UI thread. Called once per buffer.
     fn drain_events(&mut self) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
-                AudioEvent::NoteOn(midi) => {
-                    self.note_stack.press(midi);
-                    self.voice.note_on(midi, &self.params, self.sample_rate);
-                }
-                AudioEvent::NoteOff(midi) => {
-                    if let Some(next) = self.note_stack.release(midi) {
-                        // There is still a held note → legato retrigger.
-                        self.voice.note_on(next, &self.params, self.sample_rate);
-                    } else {
-                        self.voice.note_off();
-                    }
-                }
-                AudioEvent::Panic => {
-                    self.note_stack.clear();
-                    self.voice.panic();
-                }
+                AudioEvent::NoteOn(midi) => self.note_on(midi),
+                AudioEvent::NoteOff(midi) => self.note_off(midi),
+                AudioEvent::Panic => self.panic(),
                 AudioEvent::LoadPatch(p) => {
                     self.params = *p;
-                    // Apply reverb params immediately without waiting for a note event.
-                    self.voice
-                        .reverb
-                        .set_params(self.params.fx.reverb_size, self.params.fx.reverb_damping);
+                    self.apply_reverb_params();
                 }
+                AudioEvent::Drum(hit) => self.drums.trigger(hit),
             }
         }
     }
@@ -98,7 +161,14 @@ impl AudioState {
         self.drain_events();
 
         for frame in data.chunks_mut(channels) {
-            let sample = self.voice.process(&self.params, self.sample_rate);
+            let mix = self
+                .voices
+                .iter_mut()
+                .map(|voice| voice.process(&self.params, self.sample_rate))
+                .sum::<f32>()
+                / POLYPHONY_F32;
+            let sample = self.reverb.process(mix, self.params.fx.reverb_mix)
+                + self.drums.process(self.sample_rate);
 
             // Guard against denormals / clipping before writing to hardware.
             let sample = if sample.is_finite() {

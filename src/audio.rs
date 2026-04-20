@@ -1,5 +1,6 @@
 //! Audio engine: DSP modules, CPAL stream setup, and the real-time callback.
 
+pub mod drums;
 pub mod engine;
 pub mod env;
 pub mod filter;
