@@ -52,9 +52,18 @@ tasks:
       - task: fmt
 
   check:
-    desc: Run checks on the code (format check)
+    desc: Run all checks — format, lint, compile, and fuzz target build (fuzz skipped if cargo-fuzz/nightly absent)
     cmds:
-      - cargo fmt --check
+      - cargo fmt --all -- --check
+      - cargo clippy --all-targets -- -D warnings
+      - cargo check
+      - cmd: |
+          if command -v cargo-fuzz >/dev/null 2>&1 && rustup toolchain list 2>/dev/null | grep -q nightly; then
+            task fuzz:build
+          else
+            echo "note: skipping fuzz:build — cargo-fuzz or nightly toolchain not found"
+            echo "      install with: cargo install cargo-fuzz && rustup toolchain install nightly"
+          fi
 
   gc:
     desc: Clean up outdated build artifacts
@@ -131,6 +140,16 @@ tasks:
     desc: Run the application
     cmds:
       - cargo run {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
+
+  fuzz:build:
+    desc: Build all fuzz targets (compile check only, no execution)
+    preconditions:
+      - sh: command -v cargo-fuzz
+        msg: "cargo-fuzz not found — please install via cargo install cargo-fuzz"
+      - sh: rustup toolchain list | grep -q nightly
+        msg: "nightly toolchain not found — please install via rustup toolchain install nightly"
+    cmds:
+      - cargo +nightly fuzz build
 
   fuzz:targets:
     desc: List all fuzzing targets

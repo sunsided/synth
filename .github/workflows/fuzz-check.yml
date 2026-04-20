@@ -1,0 +1,30 @@
+name: Fuzz Build Check
+
+on:
+  push:
+  pull_request:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  fuzz-build:
+    name: Build fuzz targets
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Install ALSA development libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@nightly
+
+      - uses: Swatinem/rust-cache@v2
+
+      - name: Install cargo-fuzz
+        run: cargo install cargo-fuzz
+
+      - name: Build fuzz targets
+        run: cargo +nightly fuzz build
