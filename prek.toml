@@ -1,0 +1,89 @@
+# Pre-commit hooks configuration (https://github.com/j178/prek)
+#
+# One-time setup:
+#   cargo install prek
+#   prek install
+#
+# Run all hooks manually:
+#   prek run --all-files
+
+# Built-in (Rust-native) hooks shipped with prek — no network, no Python env.
+# https://prek.j178.dev/builtin/
+[[repos]]
+repo = "builtin"
+
+[[repos.hooks]]
+id = "trailing-whitespace"
+args = ["--markdown-linebreak-ext=md"]
+
+[[repos.hooks]]
+id = "end-of-file-fixer"
+
+[[repos.hooks]]
+id = "mixed-line-ending"
+
+[[repos.hooks]]
+id = "fix-byte-order-marker"
+
+[[repos.hooks]]
+id = "check-merge-conflict"
+
+[[repos.hooks]]
+id = "check-added-large-files"
+args = ["--maxkb=1024"]
+
+[[repos.hooks]]
+id = "check-case-conflict"
+
+[[repos.hooks]]
+id = "check-symlinks"
+
+[[repos.hooks]]
+id = "destroyed-symlinks"
+
+[[repos.hooks]]
+id = "check-toml"
+
+[[repos.hooks]]
+id = "check-yaml"
+args = ["--allow-multiple-documents"]
+
+[[repos.hooks]]
+id = "check-json"
+
+[[repos.hooks]]
+id = "detect-private-key"
+
+[[repos.hooks]]
+id = "check-vcs-permalinks"
+
+[[repos]]
+repo = "local"
+
+# 1. Format check — cheapest check; fail early on unformatted code.
+[[repos.hooks]]
+id = "fmt-check"
+name = "Rust format check"
+language = "system"
+entry = "cargo fmt --all -- --check"
+pass_filenames = false
+files = "\\.rs$"
+
+# 2. Lint — Clippy with warnings denied; matches CI policy.
+[[repos.hooks]]
+id = "clippy"
+name = "Clippy (deny warnings)"
+language = "system"
+entry = "cargo clippy --all-targets -- -D warnings"
+pass_filenames = false
+files = "\\.rs$|Cargo\\.toml$"
+
+# 3. Fuzz target build — compile check only, no fuzzing is executed.
+#    Requires: cargo install cargo-fuzz  +  rustup toolchain install nightly
+[[repos.hooks]]
+id = "fuzz-build"
+name = "Compile fuzz targets"
+language = "system"
+entry = "task fuzz:build"
+pass_filenames = false
+files = "\\.rs$|Cargo\\.toml$|Cargo\\.lock$"

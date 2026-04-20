@@ -2,6 +2,7 @@
 
 [![Test](https://github.com/sunsided/synth/actions/workflows/test.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/test.yml)
 [![Format](https://github.com/sunsided/synth/actions/workflows/format.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/format.yml)
+[![Fuzz Build](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml)
 
 A terminal-based polyphonic synthesizer written in Rust. Play notes with your keyboard, shape the sound with a real-time parameter editor.
 
@@ -86,6 +87,33 @@ The keyboard is split into two chromatic octave rows. The lower row plays octave
 | `]` or `.` | Octave up |
 | `+` or `=` | Volume up |
 | `-` or `_` | Volume down |
+
+## Pre-commit hooks
+
+This repository uses [`prek`](https://github.com/j178/prek) (a Rust-native pre-commit manager) to enforce hygiene checks before each commit.
+
+### One-time setup
+
+```sh
+cargo install prek
+prek install
+```
+
+### Hooks
+
+| Hook | Command | Trigger |
+|---|---|---|
+| `fmt-check` | `cargo fmt --all -- --check` | Any `.rs` change |
+| `clippy` | `cargo clippy --all-targets -- -D warnings` | Any `.rs` or `Cargo.toml` change |
+| `fuzz-build` | `task fuzz:build` | Any `.rs`, `Cargo.toml`, or `Cargo.lock` change |
+
+The `fuzz-build` hook requires `cargo-fuzz` and the nightly toolchain (see the [Fuzzing](#fuzzing) section for setup instructions).
+
+Run all hooks manually without committing:
+
+```sh
+prek run --all-files
+```
 
 ## Fuzzing
 
