@@ -1,9 +1,9 @@
 //! Application state: UI section navigation, parameter adjustment, and
 //! the bridge between the UI thread and the audio engine.
 
-use crate::params::{AudioEvent, Patch, SynthParams};
-use crate::presets::sid;
 use crossbeam_channel::Sender;
+use synth::params::{AudioEvent, Patch, SynthParams};
+use synth::presets::sid;
 
 /// Top-level UI section, each corresponding to one panel of controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -188,8 +188,8 @@ impl AppState {
             self.patches.push(patch);
             self.selected_preset = self.patches.len() - 1;
         }
-        let save_path = crate::presets::store::user_presets_path();
-        if let Err(e) = crate::presets::store::save_patches(&self.patches, &save_path) {
+        let save_path = crate::preset_store::user_presets_path();
+        if let Err(e) = crate::preset_store::save_patches(&self.patches, &save_path) {
             self.status_msg = format!("Save failed: {e}");
         } else {
             self.status_msg = format!("Saved: {name}");
