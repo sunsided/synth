@@ -126,14 +126,9 @@ impl Reverb {
         }
     }
 
-    /// Process a mono sample.  Returns the wet+dry mix.
-    ///
-    /// `mix` – 0.0 (dry) .. 1.0 (full wet).
-    pub fn process(&mut self, input: f32, mix: f32) -> f32 {
-        if mix < 1e-4 {
-            return input;
-        }
-
+    /// Process a mono sample and return only the wet reverb tail.
+    #[must_use]
+    pub fn process_wet(&mut self, input: f32) -> f32 {
         // Sum 4 parallel combs (scale input to prevent overload)
         let scaled = input * 0.015;
         let mut wet = 0.0_f32;
@@ -146,6 +141,18 @@ impl Reverb {
             wet = ap.process(wet);
         }
 
+        wet
+    }
+
+    /// Process a mono sample.  Returns the wet+dry mix.
+    ///
+    /// `mix` – 0.0 (dry) .. 1.0 (full wet).
+    pub fn process(&mut self, input: f32, mix: f32) -> f32 {
+        if mix < 1e-4 {
+            return input;
+        }
+
+        let wet = self.process_wet(input);
         input * (1.0 - mix) + wet * mix * 5.0 // compensate comb scale-down
     }
 }

@@ -304,15 +304,45 @@ pub enum DrumHit {
 }
 
 /// Messages sent from the UI thread to the audio thread over the event channel.
+///
+/// `NoteOn` and `Drum` carry a per-trigger pan position in the `-1.0..=1.0`
+/// range, where `-1.0` is hard-left, `0.0` is centered, and `1.0` is hard-right.
+#[non_exhaustive]
 pub enum AudioEvent {
-    /// Begin sustaining a note at the given MIDI note number.
-    NoteOn(u8),
+    /// Begin sustaining a note at the given MIDI note number and pan position.
+    NoteOn { midi: u8, pan: f32 },
     /// Release the note at the given MIDI note number.
     NoteOff(u8),
     /// Immediately silence all voices and clear active note routing.
     Panic,
     /// Replace the current parameter set with a new snapshot.
     LoadPatch(Box<SynthParams>),
-    /// Trigger a one-shot synthesized drum hit.
-    Drum(DrumHit),
+    /// Trigger a one-shot synthesized drum hit at a pan position.
+    Drum { hit: DrumHit, pan: f32 },
+}
+
+impl AudioEvent {
+    /// Create a centered note-on event.
+    #[must_use]
+    pub fn note_on(midi: u8) -> Self {
+        Self::NoteOn { midi, pan: 0.0 }
+    }
+
+    /// Create a panned note-on event.
+    #[must_use]
+    pub fn note_on_panned(midi: u8, pan: f32) -> Self {
+        Self::NoteOn { midi, pan }
+    }
+
+    /// Create a centered drum trigger event.
+    #[must_use]
+    pub fn drum(hit: DrumHit) -> Self {
+        Self::Drum { hit, pan: 0.0 }
+    }
+
+    /// Create a panned drum trigger event.
+    #[must_use]
+    pub fn drum_panned(hit: DrumHit, pan: f32) -> Self {
+        Self::Drum { hit, pan }
+    }
 }

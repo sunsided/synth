@@ -7,6 +7,7 @@
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, Sender, bounded};
+use std::f32::consts::{FRAC_1_SQRT_2, FRAC_PI_4};
 
 use crate::audio::drums::DrumMachine;
 use crate::audio::fx::Reverb;
@@ -30,10 +31,25 @@ const POLYPHONY: usize = 4;
 const POLYPHONY_F32: f32 = 4.0;
 
 /// Voice slot metadata for note routing and age-based stealing.
-#[derive(Clone, Copy, Default)]
+#[derive(Clone, Copy)]
 struct VoiceSlot {
     note: Option<u8>,
     age: u64,
+    pan: f32,
+    l_gain: f32,
+    r_gain: f32,
+}
+
+impl Default for VoiceSlot {
+    fn default() -> Self {
+        Self {
+            note: None,
+            age: 0,
+            pan: 0.0,
+            l_gain: FRAC_1_SQRT_2,
+            r_gain: FRAC_1_SQRT_2,
+        }
+    }
 }
 
 /// All mutable state owned exclusively by the audio callback.
@@ -63,6 +79,21 @@ struct AudioState {
     scope_dec_counter: usize,
     /// Audio sample rate in Hz.
     sample_rate: f32,
+}
+
+fn sanitize_pan(pan: f32) -> f32 {
+    if pan.is_finite() {
+        pan.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+fn pan_gains(pan: f32) -> (f32, f32) {
+    debug_assert!(pan.is_finite());
+    debug_assert!((-1.0..=1.0).contains(&pan));
+    let angle = (pan + 1.0) * FRAC_PI_4;
+    (angle.cos(), angle.sin())
 }
 
 impl AudioState {
@@ -113,12 +144,17 @@ impl AudioState {
             .map_or(0, |(idx, _)| idx)
     }
 
-    fn note_on(&mut self, midi: u8) {
+    fn note_on(&mut self, midi: u8, pan: f32) {
         self.apply_reverb_params();
         let idx = self.allocate_voice_index(midi);
         self.age_counter = self.age_counter.saturating_add(1);
+        let pan = sanitize_pan(pan);
+        let (l_gain, r_gain) = pan_gains(pan);
         self.slots[idx].note = Some(midi);
         self.slots[idx].age = self.age_counter;
+        self.slots[idx].pan = pan;
+        self.slots[idx].l_gain = l_gain;
+        self.slots[idx].r_gain = r_gain;
         self.voices[idx].note_on(midi, &self.params, self.sample_rate);
     }
 
@@ -144,14 +180,14 @@ impl AudioState {
     fn drain_events(&mut self) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
-                AudioEvent::NoteOn(midi) => self.note_on(midi),
+                AudioEvent::NoteOn { midi, pan } => self.note_on(midi, pan),
                 AudioEvent::NoteOff(midi) => self.note_off(midi),
                 AudioEvent::Panic => self.panic(),
                 AudioEvent::LoadPatch(p) => {
                     self.params = *p;
                     self.apply_reverb_params();
                 }
-                AudioEvent::Drum(hit) => self.drums.trigger(hit),
+                AudioEvent::Drum { hit, pan } => self.drums.trigger(hit, pan),
             }
         }
     }
@@ -161,25 +197,59 @@ impl AudioState {
         self.drain_events();
 
         for frame in data.chunks_mut(channels) {
-            let mix = self
-                .voices
-                .iter_mut()
-                .map(|voice| voice.process(&self.params, self.sample_rate))
-                .sum::<f32>()
-                / POLYPHONY_F32;
-            let sample = self.reverb.process(mix, self.params.fx.reverb_mix)
-                + self.drums.process(self.sample_rate);
+            let mut left = 0.0;
+            let mut right = 0.0;
+            let mut voice_mono = 0.0;
 
-            // Guard against denormals / clipping before writing to hardware.
-            let sample = if sample.is_finite() {
-                sample.clamp(-1.0, 1.0)
+            for (voice, slot) in self.voices.iter_mut().zip(self.slots.iter()) {
+                let sample = voice.process(&self.params, self.sample_rate) / POLYPHONY_F32;
+                voice_mono += sample;
+                left += sample * slot.l_gain;
+                right += sample * slot.r_gain;
+            }
+
+            let reverb_mix = self.params.fx.reverb_mix;
+            let reverb_wet = if reverb_mix < 1e-4 {
+                0.0
+            } else {
+                self.reverb.process_wet(voice_mono) * reverb_mix * 5.0
+            };
+            left += reverb_wet;
+            right += reverb_wet;
+
+            let (kick, hats) = self.drums.process_components(self.sample_rate);
+            left += kick.0 * kick.1;
+            right += kick.0 * kick.2;
+
+            left += hats.0 * hats.1;
+            right += hats.0 * hats.2;
+
+            let left = if left.is_finite() {
+                left.clamp(-1.0, 1.0)
             } else {
                 std::hint::cold_path();
                 0.0
             };
+            let right = if right.is_finite() {
+                right.clamp(-1.0, 1.0)
+            } else {
+                std::hint::cold_path();
+                0.0
+            };
+            let mono = ((left + right) * FRAC_1_SQRT_2).clamp(-1.0, 1.0);
 
-            for ch in frame.iter_mut() {
-                *ch = sample;
+            match channels {
+                0 => {}
+                1 => {
+                    frame[0] = mono;
+                }
+                _ => {
+                    frame[0] = left;
+                    frame[1] = right;
+                    for ch in &mut frame[2..] {
+                        *ch = mono;
+                    }
+                }
             }
 
             // Push decimated sample to scope; drop batch if channel is full
@@ -187,7 +257,7 @@ impl AudioState {
             self.scope_dec_counter += 1;
             if self.scope_dec_counter >= SCOPE_DECIMATION {
                 self.scope_dec_counter = 0;
-                self.scope_accum.push(sample);
+                self.scope_accum.push(mono);
                 if self.scope_accum.len() >= SCOPE_BATCH {
                     let batch = std::mem::replace(
                         &mut self.scope_accum,
