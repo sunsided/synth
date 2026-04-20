@@ -10,6 +10,10 @@ readme = "README.md"
 keywords = ["synthesizer", "audio", "tui", "terminal", "midi"]
 categories = ["command-line-utilities", "multimedia::audio"]
 
+[lib]
+name = "synth"
+path = "src/lib.rs"
+
 [[bin]]
 name = "synth"
 path = "src/main.rs"

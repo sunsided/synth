@@ -134,11 +134,21 @@ tasks:
 
   fuzz:targets:
     desc: List all fuzzing targets
+    preconditions:
+      - sh: command -v cargo-fuzz
+        msg: "cargo-fuzz not found — please install via cargo install cargo-fuzz"
+      - sh: rustup toolchain list | grep -q nightly
+        msg: "nightly toolchain not found — please install via rustup toolchain install nightly"
     cmds:
       - cargo fuzz list
 
   fuzz:
     desc: Run fuzzing on the specified target
+    preconditions:
+      - sh: command -v cargo-fuzz
+        msg: "cargo-fuzz not found — please install via cargo install cargo-fuzz"
+      - sh: rustup toolchain list | grep -q nightly
+        msg: "nightly toolchain not found — please install via rustup toolchain install nightly"
     vars:
       TARGET: { sh: 'echo {{.CLI_ARGS}}' }
     env:

@@ -87,6 +87,55 @@ The keyboard is split into two chromatic octave rows. The lower row plays octave
 | `+` or `=` | Volume up |
 | `-` or `_` | Volume down |
 
+## Fuzzing
+
+The DSP core (`SvFilter`, `Oscillator`) and `SynthParams` serialisation paths are covered by
+[`cargo-fuzz`](https://github.com/rust-fuzz/cargo-fuzz) harnesses under `fuzz/fuzz_targets/`.
+
+### One-time setup
+
+```sh
+cargo install cargo-fuzz
+rustup toolchain install nightly
+```
+
+### List available targets
+
+```sh
+task fuzz:targets
+```
+
+Expected output:
+
+```
+fuzz_filter_stability
+fuzz_osc_safety
+fuzz_params_serde
+```
+
+### Run a target
+
+```sh
+task fuzz -- fuzz_filter_stability
+task fuzz -- fuzz_osc_safety
+task fuzz -- fuzz_params_serde
+```
+
+The `fuzz` task sets `RUSTFLAGS=-Z sanitizer=address` and uses the nightly toolchain automatically.
+Pass additional `cargo fuzz` flags after `--` if needed:
+
+```sh
+task fuzz -- fuzz_filter_stability -- -max_total_time=60
+```
+
+### Harness summary
+
+| Target | What it tests | Invariant |
+|---|---|---|
+| `fuzz_filter_stability` | `SvFilter::process` across all modes/params | Output always finite |
+| `fuzz_osc_safety` | `Oscillator::next_sample` for all waveforms | Output always finite |
+| `fuzz_params_serde` | `SynthParams` JSON deserialise + round-trip | No panic; round-trip consistent |
+
 ## License
 
 Licensed under the [European Union Public Licence v1.2 (EUPL-1.2)](https://joinup.ec.europa.eu/collection/eupl/eupl-text-eupl-12).

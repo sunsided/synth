@@ -1,2 +1,5 @@
 /target
 .task/
+fuzz/target/
+fuzz/corpus/
+fuzz/artifacts/

@@ -58,14 +58,30 @@ impl SvFilter {
             let gain = 1.0 + drive * 4.0;
             let x = input * gain;
             // Soft clip: x / sqrt(1 + x²)  (keeps odd harmonics, no hard edge)
-            x / (1.0 + x * x).sqrt()
+            let clipped = x / (1.0 + x * x).sqrt();
+            // When gain·input overflows f32 to ±Inf, x²→Inf and we get Inf/Inf=NaN.
+            // The analytic limit as |x|→∞ is ±1; recover with copysign.
+            if clipped.is_finite() {
+                clipped
+            } else {
+                1.0_f32.copysign(x)
+            }
         } else {
             input
         };
 
         // Filter coefficient calculation
-        let fc = cutoff.clamp(20.0, sample_rate * 0.499);
-        let g = (PI * fc / sample_rate).tan();
+        // Clamp the normalised cutoff ratio to just below 0.5 before computing the
+        // bilinear warp coefficient `g`.  Two edge cases are handled here:
+        //   1. sample_rate < ~40 Hz: Nyquist would fall below the 20 Hz minimum,
+        //      so we raise the Nyquist floor to 20 Hz to keep clamp(min, max) valid.
+        //   2. Very small sample_rate: even with fc clamped, PI*fc/sr can overflow
+        //      f32 to Inf, causing tan(Inf) = NaN.  Clamping fc_norm prevents this.
+        let nyquist = (sample_rate * 0.499).max(20.0);
+        let fc = cutoff.clamp(20.0, nyquist);
+        // fc_norm ∈ (0, 0.499] ensures PI*fc_norm < PI/2, keeping tan finite.
+        let fc_norm = (fc / sample_rate).min(0.499_f32);
+        let g = (PI * fc_norm).tan();
         // k = 2 - 2*resonance maps resonance 0→k=2 (Q=0.5) to 0.99→k=0.02 (Q≈50)
         let k = (2.0 - 1.98 * resonance.clamp(0.0, 0.999)).max(0.01);
 
@@ -85,24 +101,55 @@ impl SvFilter {
         self.ic1eq = clamp_denormal(self.ic1eq);
         self.ic2eq = clamp_denormal(self.ic2eq);
 
-        match mode {
+        let out = match mode {
             FilterMode::LowPass => v2,
             // SID character: subtle tanh saturation on band-pass path
             FilterMode::BandPass => fast_tanh(v1 * (1.0 + resonance * 0.5)),
             FilterMode::HighPass => x - k * v1 - v2,
-        }
+        };
+
+        // Safety: intermediate overflow (e.g. near-f32::MAX input without soft-clip)
+        // can produce a non-finite output on the overflow sample even though
+        // clamp_denormal above ensures state recovery on the next sample.
+        // Return 0.0 rather than propagating Inf/NaN to the caller.
+        if out.is_finite() { out } else { 0.0 }
     }
 }
 
-/// Flush denormals to zero (avoids CPU performance degradation).
+/// Flush denormals to zero and reset any non-finite values to zero.
+///
+/// Two situations are handled:
+/// * **Denormals** (`|x| < 1e-15`): flushed to zero to avoid CPU performance
+///   degradation from subnormal float arithmetic.
+/// * **Non-finite values**: reset to zero so that an Inf/NaN integrator state
+///   (e.g., from an extremely large input sample) does not propagate to all
+///   subsequent outputs.  The reset causes a brief transient artefact but
+///   restores filter operation immediately on the next sample.
 #[inline]
 fn clamp_denormal(x: f32) -> f32 {
-    if x.abs() < 1e-15 { 0.0 } else { x }
+    if !x.is_finite() || x.abs() < 1e-15 {
+        0.0
+    } else {
+        x
+    }
 }
 
 /// Fast tanh approximation (Padé 5/4) – accurate to ±0.5% for |x| < 4.
+///
+/// Returns exactly `±1.0` for `|x| >= 4` so the polynomial intermediate values
+/// stay within `f32` range regardless of input magnitude.  Without this guard,
+/// `x²` overflows to `f32::INFINITY` for large inputs, causing `Inf / Inf = NaN`
+/// to escape the final clamp.
 #[inline]
 fn fast_tanh(x: f32) -> f32 {
+    // tanh(±4) ≈ ±0.9993; clamping here is within the stated ±0.5% accuracy
+    // window and prevents intermediate overflow for any finite input.
+    if x >= 4.0 {
+        return 1.0;
+    }
+    if x <= -4.0 {
+        return -1.0;
+    }
     let x2 = x * x;
     let n = x * (135.0 + x2 * (17.0 + x2));
     let d = 135.0 + x2 * (45.0 + x2 * 9.0);
