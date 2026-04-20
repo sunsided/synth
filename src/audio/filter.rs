@@ -64,6 +64,7 @@ impl SvFilter {
             if clipped.is_finite() {
                 clipped
             } else {
+                std::hint::cold_path();
                 1.0_f32.copysign(x)
             }
         } else {
@@ -112,7 +113,12 @@ impl SvFilter {
         // can produce a non-finite output on the overflow sample even though
         // clamp_denormal above ensures state recovery on the next sample.
         // Return 0.0 rather than propagating Inf/NaN to the caller.
-        if out.is_finite() { out } else { 0.0 }
+        if out.is_finite() {
+            out
+        } else {
+            std::hint::cold_path();
+            0.0
+        }
     }
 }
 
@@ -128,6 +134,7 @@ impl SvFilter {
 #[inline]
 fn clamp_denormal(x: f32) -> f32 {
     if !x.is_finite() || x.abs() < 1e-15 {
+        std::hint::cold_path();
         0.0
     } else {
         x
@@ -145,9 +152,11 @@ fn fast_tanh(x: f32) -> f32 {
     // tanh(±4) ≈ ±0.9993; clamping here is within the stated ±0.5% accuracy
     // window and prevents intermediate overflow for any finite input.
     if x >= 4.0 {
+        std::hint::cold_path();
         return 1.0;
     }
     if x <= -4.0 {
+        std::hint::cold_path();
         return -1.0;
     }
     let x2 = x * x;

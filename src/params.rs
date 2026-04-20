@@ -32,6 +32,7 @@ impl Waveform {
     ];
 
     /// Short display name shown in the UI.
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             Waveform::Pulse => "Pulse",
@@ -43,12 +44,14 @@ impl Waveform {
     }
 
     /// Return the next variant, wrapping around.
+    #[must_use]
     pub fn next(self) -> Self {
         let idx = Self::ALL.iter().position(|&w| w == self).unwrap_or(0);
         Self::ALL[(idx + 1) % Self::ALL.len()]
     }
 
     /// Return the previous variant, wrapping around.
+    #[must_use]
     pub fn prev(self) -> Self {
         let idx = Self::ALL.iter().position(|&w| w == self).unwrap_or(0);
         let len = Self::ALL.len();
@@ -77,6 +80,7 @@ impl FilterMode {
     ];
 
     /// Short display name shown in the UI.
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             FilterMode::LowPass => "LP",
@@ -86,6 +90,7 @@ impl FilterMode {
     }
 
     /// Return the next variant, wrapping around.
+    #[must_use]
     pub fn next(self) -> Self {
         let idx = Self::ALL.iter().position(|&m| m == self).unwrap_or(0);
         Self::ALL[(idx + 1) % Self::ALL.len()]
@@ -115,6 +120,7 @@ impl LfoTarget {
     ];
 
     /// Short display name shown in the UI.
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             LfoTarget::Pitch => "Pitch",
@@ -125,6 +131,7 @@ impl LfoTarget {
     }
 
     /// Return the next variant, wrapping around.
+    #[must_use]
     pub fn next(self) -> Self {
         let idx = Self::ALL.iter().position(|&t| t == self).unwrap_or(0);
         Self::ALL[(idx + 1) % Self::ALL.len()]

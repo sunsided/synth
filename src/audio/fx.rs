@@ -101,6 +101,7 @@ impl Default for Reverb {
 
 impl Reverb {
     /// Construct a new reverb unit with pre-allocated delay buffers.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             combs: [

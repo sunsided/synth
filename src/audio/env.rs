@@ -22,6 +22,7 @@ pub enum EnvStage {
 impl EnvStage {
     /// Short display name for the current stage.
     #[allow(dead_code)]
+    #[must_use]
     pub fn name(self) -> &'static str {
         match self {
             EnvStage::Idle => "Idle",
@@ -81,6 +82,7 @@ impl Envelope {
     }
 
     /// Returns `true` if the envelope is producing non-zero output.
+    #[must_use]
     pub fn is_active(&self) -> bool {
         self.stage != EnvStage::Idle
     }

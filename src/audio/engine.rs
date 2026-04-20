@@ -104,6 +104,7 @@ impl AudioState {
             let sample = if sample.is_finite() {
                 sample.clamp(-1.0, 1.0)
             } else {
+                std::hint::cold_path();
                 0.0
             };
 
@@ -135,6 +136,11 @@ impl AudioState {
 /// * `cpal::Stream` – must be kept alive for the duration of the program.
 /// * `Sender<AudioEvent>` – send note on/off and param changes from the UI thread.
 /// * `Receiver<Vec<f32>>` – scope samples for waveform display.
+///
+/// # Errors
+///
+/// Returns an error if no default audio output device is available or if the
+/// device's stream configuration cannot be determined or opened.
 pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
     let (event_tx, event_rx) = bounded::<AudioEvent>(1024);
     let (scope_tx, scope_rx) = bounded::<Vec<f32>>(SCOPE_CHANNEL_CAPACITY);

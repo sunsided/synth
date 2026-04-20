@@ -108,12 +108,14 @@ impl Oscillator {
 
 /// Convert a MIDI note number to Hz (A4 = 69 = 440 Hz).
 #[inline]
+#[must_use]
 pub fn midi_to_hz(midi: u8) -> f32 {
     440.0 * 2.0_f32.powf((f32::from(midi) - 69.0) / 12.0)
 }
 
 /// Apply detune in cents to a base frequency.
 #[inline]
+#[must_use]
 pub fn detune_hz(base_hz: f32, cents: f32) -> f32 {
     base_hz * 2.0_f32.powf(cents / 1200.0)
 }

@@ -20,8 +20,15 @@ pub struct NoteStack {
     notes: Vec<u8>,
 }
 
+impl Default for NoteStack {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NoteStack {
     /// Create an empty note stack.
+    #[must_use]
     pub fn new() -> Self {
         Self {
             notes: Vec::with_capacity(16),
@@ -42,12 +49,14 @@ impl NoteStack {
 
     /// Peek at the currently sounding (top) note without modifying the stack.
     #[allow(dead_code)]
+    #[must_use]
     pub fn top(&self) -> Option<u8> {
         self.notes.last().copied()
     }
 
     /// Returns `true` if no notes are currently held.
     #[allow(dead_code)]
+    #[must_use]
     pub fn is_empty(&self) -> bool {
         self.notes.is_empty()
     }
@@ -82,8 +91,15 @@ pub struct Voice {
     pub glide_coeff: f32,
 }
 
+impl Default for Voice {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl Voice {
     /// Construct a voice with default state at A4 (440 Hz).
+    #[must_use]
     pub fn new() -> Self {
         Self {
             active: false,
