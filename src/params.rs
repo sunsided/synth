@@ -298,7 +298,7 @@ pub enum AudioEvent {
     NoteOn(u8),
     /// Release the note at the given MIDI note number.
     NoteOff(u8),
-    /// Immediately silence all voices and clear the note stack.
+    /// Immediately silence all voices and clear active note routing.
     Panic,
     /// Replace the current parameter set with a new snapshot.
     LoadPatch(Box<SynthParams>),

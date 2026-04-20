@@ -1,73 +1,16 @@
-//! Monophonic voice pipeline and MIDI note stack.
+//! Monophonic voice pipeline.
 //!
-//! `NoteStack` implements last-note priority with legato retrigger; `Voice`
-//! connects all DSP modules in a single sample-by-sample render path.
+//! `Voice` connects oscillator, envelope, filter, and LFO in a single
+//! sample-by-sample render path.
 
 use crate::audio::{
     env::{EnvStage, Envelope},
     filter::SvFilter,
-    fx::Reverb,
     osc::{Lfo, Oscillator, detune_hz, midi_to_hz},
 };
 use crate::params::{LfoTarget, SynthParams};
 
-/// Monophonic note stack with last-note (newest-wins) priority.
-///
-/// When a key is released, the voice retriggers to the previously held note
-/// if one is still depressed, rather than going silent.
-pub struct NoteStack {
-    /// Ordered list of currently held MIDI notes (oldest first, newest last).
-    notes: Vec<u8>,
-}
-
-impl Default for NoteStack {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-impl NoteStack {
-    /// Create an empty note stack.
-    #[must_use]
-    pub fn new() -> Self {
-        Self {
-            notes: Vec::with_capacity(16),
-        }
-    }
-
-    /// Press a key: remove any existing entry for this note, then push to top.
-    pub fn press(&mut self, note: u8) {
-        self.notes.retain(|&n| n != note);
-        self.notes.push(note);
-    }
-
-    /// Release a key.  Returns the new top note (if any notes still held).
-    pub fn release(&mut self, note: u8) -> Option<u8> {
-        self.notes.retain(|&n| n != note);
-        self.notes.last().copied()
-    }
-
-    /// Peek at the currently sounding (top) note without modifying the stack.
-    #[allow(dead_code)]
-    #[must_use]
-    pub fn top(&self) -> Option<u8> {
-        self.notes.last().copied()
-    }
-
-    /// Returns `true` if no notes are currently held.
-    #[allow(dead_code)]
-    #[must_use]
-    pub fn is_empty(&self) -> bool {
-        self.notes.is_empty()
-    }
-
-    /// Remove all held notes (used by the panic event).
-    pub fn clear(&mut self) {
-        self.notes.clear();
-    }
-}
-
-/// Monophonic synthesiser voice combining oscillator, envelope, filter, LFO, and reverb.
+/// Monophonic synthesiser voice combining oscillator, envelope, filter, and LFO.
 pub struct Voice {
     /// Whether the voice is currently producing sound.
     pub active: bool,
@@ -85,8 +28,6 @@ pub struct Voice {
     pub filter: SvFilter,
     /// Low-frequency oscillator.
     pub lfo: Lfo,
-    /// Plate reverb unit.
-    pub reverb: Reverb,
     /// Per-sample portamento smoothing coefficient (0 = instant, ~1 = very slow).
     pub glide_coeff: f32,
 }
@@ -110,7 +51,6 @@ impl Voice {
             env: Envelope::default(),
             filter: SvFilter::default(),
             lfo: Lfo::default(),
-            reverb: Reverb::new(),
             glide_coeff: 0.0,
         }
     }
@@ -136,8 +76,6 @@ impl Voice {
         }
         self.active = true;
         self.update_glide(params.global.glide_time, sample_rate);
-        self.reverb
-            .set_params(params.fx.reverb_size, params.fx.reverb_damping);
         self.env.note_on(legato);
     }
 
@@ -232,10 +170,7 @@ impl Voice {
             sample_rate,
         );
 
-        // Volume & tremolo
-        let dry = filtered * env_val * vol_mod * params.global.volume;
-
-        // Reverb
-        self.reverb.process(dry, params.fx.reverb_mix)
+        // Volume & tremolo (dry; post-mix reverb is handled in engine)
+        filtered * env_val * vol_mod * params.global.volume
     }
 }
