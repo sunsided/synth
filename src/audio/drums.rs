@@ -4,7 +4,7 @@
 //! melodic voice slots.
 
 use crate::params::DrumHit;
-use std::f32::consts::TAU;
+use std::f32::consts::{FRAC_1_SQRT_2, FRAC_PI_4, TAU};
 
 /// Global drum bus gain applied after summing kick and hats.
 const DRUM_GAIN: f32 = 0.85;
@@ -34,6 +34,21 @@ const HAT_CLOSED_HPF_ALPHA: f32 = 0.864;
 /// One-pole HPF coefficient for approximately 5 kHz at 44.1 kHz.
 const HAT_OPEN_HPF_ALPHA: f32 = 0.737;
 
+fn sanitize_pan(pan: f32) -> f32 {
+    if pan.is_finite() {
+        pan.clamp(-1.0, 1.0)
+    } else {
+        0.0
+    }
+}
+
+fn pan_gains(pan: f32) -> (f32, f32) {
+    debug_assert!(pan.is_finite());
+    debug_assert!((-1.0..=1.0).contains(&pan));
+    let angle = (pan + 1.0) * FRAC_PI_4;
+    (angle.cos(), angle.sin())
+}
+
 /// Monophonic kick drum voice with pitch and amplitude decays.
 struct KickVoice {
     /// Oscillator phase in normalized 0.0..1.0 units.
@@ -48,6 +63,10 @@ struct KickVoice {
     amp_coeff: f32,
     /// Pan position in -1.0..=1.0.
     pan: f32,
+    /// Cached left gain for equal-power pan.
+    l_gain: f32,
+    /// Cached right gain for equal-power pan.
+    r_gain: f32,
 }
 
 impl Default for KickVoice {
@@ -60,6 +79,8 @@ impl Default for KickVoice {
             pitch_coeff: 1.0,
             amp_coeff: 1.0,
             pan: 0.0,
+            l_gain: FRAC_1_SQRT_2,
+            r_gain: FRAC_1_SQRT_2,
         }
     }
 }
@@ -70,7 +91,8 @@ impl KickVoice {
         self.phase = 0.0;
         self.amp = 1.0;
         self.pitch = KICK_START_HZ;
-        self.pan = pan.clamp(-1.0, 1.0);
+        self.pan = sanitize_pan(pan);
+        (self.l_gain, self.r_gain) = pan_gains(self.pan);
     }
 
     /// Immediately silence the kick voice.
@@ -111,6 +133,10 @@ struct HatVoice {
     amp_open: f32,
     /// Hi-hat pan in -1.0..=1.0.
     pan: f32,
+    /// Cached left gain for equal-power pan.
+    l_gain: f32,
+    /// Cached right gain for equal-power pan.
+    r_gain: f32,
     /// 32-bit Galois LFSR state used as white-ish noise source.
     noise_lfsr: u32,
     /// Precomputed per-sample closed hat decay multiplier.
@@ -134,6 +160,8 @@ impl Default for HatVoice {
             amp_closed: 0.0,
             amp_open: 0.0,
             pan: 0.0,
+            l_gain: FRAC_1_SQRT_2,
+            r_gain: FRAC_1_SQRT_2,
             noise_lfsr: 0xACE1_FEED,
             closed_coeff: 1.0,
             open_coeff: 1.0,
@@ -150,14 +178,16 @@ impl HatVoice {
     fn trigger_closed(&mut self, pan: f32) {
         self.amp_open = 0.0;
         self.amp_closed = 1.0;
-        self.pan = pan.clamp(-1.0, 1.0);
+        self.pan = sanitize_pan(pan);
+        (self.l_gain, self.r_gain) = pan_gains(self.pan);
     }
 
     /// Trigger an open hat and choke any currently sounding closed hat.
     fn trigger_open(&mut self, pan: f32) {
         self.amp_closed = 0.0;
         self.amp_open = 1.0;
-        self.pan = pan.clamp(-1.0, 1.0);
+        self.pan = sanitize_pan(pan);
+        (self.l_gain, self.r_gain) = pan_gains(self.pan);
     }
 
     /// Immediately silence both hi-hat envelopes.
@@ -238,7 +268,7 @@ impl DrumMachine {
 
     /// Trigger a drum one-shot event.
     pub fn trigger(&mut self, hit: DrumHit, pan: f32) {
-        let pan = pan.clamp(-1.0, 1.0);
+        let pan = sanitize_pan(pan);
         match hit {
             DrumHit::Kick => self.kick.trigger(pan),
             DrumHit::HiHatClosed => self.hats.trigger_closed(pan),
@@ -253,14 +283,14 @@ impl DrumMachine {
         kick.0 + hats.0
     }
 
-    /// Render per-type drum components and pan values.
+    /// Render per-type drum components and cached pan gains.
     #[must_use]
-    pub fn process_components(&mut self, sample_rate: f32) -> ((f32, f32), (f32, f32)) {
+    pub fn process_components(&mut self, sample_rate: f32) -> ((f32, f32, f32), (f32, f32, f32)) {
         let kick = self.kick.process(sample_rate);
         let hats = self.hats.process();
         (
-            (kick * DRUM_GAIN, self.kick.pan),
-            (hats * DRUM_GAIN, self.hats.pan),
+            (kick * DRUM_GAIN, self.kick.l_gain, self.kick.r_gain),
+            (hats * DRUM_GAIN, self.hats.l_gain, self.hats.r_gain),
         )
     }
 

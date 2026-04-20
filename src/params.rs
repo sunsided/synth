@@ -307,6 +307,7 @@ pub enum DrumHit {
 ///
 /// `NoteOn` and `Drum` carry a per-trigger pan position in the `-1.0..=1.0`
 /// range, where `-1.0` is hard-left, `0.0` is centered, and `1.0` is hard-right.
+#[non_exhaustive]
 pub enum AudioEvent {
     /// Begin sustaining a note at the given MIDI note number and pan position.
     NoteOn { midi: u8, pan: f32 },
