@@ -141,6 +141,14 @@ tasks:
     cmds:
       - cargo run {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
 
+  example:
+    desc: Run the application
+    aliases:
+      - example:tune
+      - run:example
+    cmds:
+      - cargo run {{.PROFILE_FLAG}} --example tune -- {{.CLI_ARGS}}
+
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
     preconditions:

@@ -295,8 +295,11 @@ impl Patch {
 /// Drum one-shot events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DrumHit {
+    /// Trigger a synthesized kick drum hit.
     Kick,
+    /// Trigger a short, bright closed hi-hat hit.
     HiHatClosed,
+    /// Trigger a longer, ringing open hi-hat hit.
     HiHatOpen,
 }
 
