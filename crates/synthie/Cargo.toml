@@ -19,15 +19,18 @@ name = "synthie"
 path = "src/lib.rs"
 
 [features]
-## Enables `serde` support by default.
-default = ["serde"]
+## Enables `serde` support and the `cpal`-based I/O layer by default.
+default = ["serde", "io"]
 ## Enables `serde` support.
 serde   = ["dep:serde"]
+## Enables the `cpal`-based audio I/O layer (`engine` module).
+## Disable to get a DSP-only build suitable for embedding or `no_std` targets.
+io      = ["dep:anyhow", "dep:cpal", "dep:crossbeam-channel"]
 
 [dependencies]
-anyhow            = { workspace = true }
-cpal              = { workspace = true }
-crossbeam-channel = { workspace = true }
+anyhow            = { workspace = true, optional = true }
+cpal              = { workspace = true, optional = true }
+crossbeam-channel = { workspace = true, optional = true }
 serde             = { workspace = true, optional = true }
 
 [dev-dependencies]
@@ -36,26 +39,37 @@ serde_json = { workspace = true }
 [[example]]
 name = "tune"
 path = "examples/tune.rs"
+required-features = ["io"]
 
 [[example]]
 name = "lazy_jones"
 path = "examples/lazy_jones.rs"
+required-features = ["io"]
 
 [[example]]
 name = "kernkraft"
 path = "examples/kernkraft.rs"
+required-features = ["io"]
 
 [[example]]
 name = "bitcrusher"
 path = "examples/bitcrusher.rs"
+required-features = ["io"]
 
 [[example]]
 name = "fx_delay_chorus"
 path = "examples/fx_delay_chorus.rs"
+required-features = ["io"]
 
 [[example]]
 name = "osc_richness"
 path = "examples/osc_richness.rs"
+required-features = ["io"]
+
+[[example]]
+name = "mod_depth"
+path = "examples/mod_depth.rs"
+required-features = ["io"]
 
 [lints]
 workspace = true
