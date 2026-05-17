@@ -240,6 +240,7 @@ impl AudioState {
         let delay_params = self.channels[0].params.delay.clone();
 
         for frame in data.chunks_mut(hw_channels) {
+            // Drums are part of the pre-FX mix: they pass through chorus, delay, and reverb.
             let mix: f32 = self
                 .channels
                 .iter_mut()
