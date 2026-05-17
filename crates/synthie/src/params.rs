@@ -243,7 +243,7 @@ impl LfoShape {
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
-            LfoShape::Sine => "Sine",
+            LfoShape::Sine => "Sin",
             LfoShape::Square => "Sqr",
             LfoShape::Sawtooth => "Saw",
             LfoShape::SampleHold => "S&H",
@@ -256,10 +256,17 @@ impl LfoShape {
         let idx = Self::ALL.iter().position(|&s| s == self).unwrap_or(0);
         Self::ALL[(idx + 1) % Self::ALL.len()]
     }
+
+    /// Return the previous variant, wrapping around.
+    #[must_use]
+    pub fn prev(self) -> Self {
+        let idx = Self::ALL.iter().position(|&s| s == self).unwrap_or(0);
+        Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
 }
 
 /// LFO section parameters.
-#[allow(clippy::struct_field_names)]
+#[allow(clippy::struct_field_names)] // `lfo_` prefix is intentional for clarity in a flat params struct
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LfoParams {
@@ -308,7 +315,7 @@ impl Default for ModEnvParams {
         Self {
             attack: 0.001,
             decay: 0.1,
-            sustain: 1.0,
+            sustain: 0.0,
             release: 0.1,
             depth: 0.0,
         }
