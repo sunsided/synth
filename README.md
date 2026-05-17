@@ -4,28 +4,64 @@
 [![Format](https://github.com/sunsided/synth/actions/workflows/format.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/format.yml)
 [![Fuzz Build](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml)
 
-A terminal-based polyphonic synthesizer written in Rust. Play notes with your keyboard, shape the sound with a real-time parameter editor.
+A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as its primary demo.
 
-![Screenshot](docs/screenshot.png)
+## Workspace
 
-## Features
+| Crate | Type | Description |
+|---|---|---|
+| [`synth`](crates/synth/) | library | DSP engine: oscillators, envelopes, filter, LFO, reverb, preset system |
+| [`synth-tui`](crates/synth-tui/) | binary | Terminal synthesizer — interactive demo of the engine |
 
-- **Two-octave keyboard layout** mapped to the `Z`/`Q` rows for chromatic note input
+## Library
+
+### Features
+
 - **Five waveforms:** Pulse, Sawtooth, Triangle, Noise, Pulse+Saw
 - **ADSR amplitude envelope** with optional reverse (swell/duck) mode
 - **State-variable filter** — Low-pass, Band-pass, and High-pass modes with cutoff, resonance, and pre-filter drive
 - **LFO** with selectable targets: pitch (vibrato), pulse width, filter cutoff, or volume (tremolo)
 - **Reverb FX** with room size and high-frequency damping controls
 - **Global controls:** master volume and portamento (glide) time
-- **Preset system** with quick-load and save-to-patch support
-- **60 FPS TUI** built with [ratatui](https://github.com/ratatui-org/ratatui) + [crossterm](https://github.com/crossterm-rs/crossterm)
+- **Preset system** with built-in SID-style patches and save/load support
+- **Optional `serde` support** for patch serialisation (enabled by default)
 
-## Getting Started
+### Quick Start
 
-### Prerequisites
+Add as a path or git dependency, then:
 
-- Rust toolchain (`rustup` recommended — stable is sufficient)
-- A working audio output device recognized by your OS
+```rust
+use synth::prelude::*; // SynthParams, Patch, AudioEvent, MidiNote, setup_audio, …
+
+fn main() -> anyhow::Result<()> {
+    let patches = presets::sid::default_patches();
+    let (_stream, tx, _rx) = setup_audio()?;
+
+    // Load first preset
+    let params = Box::new(patches[0].params.clone());
+    tx.send(AudioEvent::LoadPatch(params))?;
+
+    // Play middle C on channel 0
+    tx.send(AudioEvent::NoteOn(ChannelNo(0), MidiNote(60)))?;
+    std::thread::sleep(std::time::Duration::from_secs(1));
+    tx.send(AudioEvent::NoteOff(ChannelNo(0), MidiNote(60)))?;
+    Ok(())
+}
+```
+
+### Examples
+
+Run any example with `cargo run -p synth --example <name> --release`.
+
+| Example | Description |
+|---|---|
+| `tune` | Multi-channel chords, melody, and drums — general engine showcase |
+| `lazy_jones` | Lazy Jones (David Whittaker, 1984) — the C64 hook that became Kernkraft 400 |
+| `kernkraft` | Kernkraft 400 (Zombie Nation, 1999) — full song structure, two channels |
+
+## TUI Demo
+
+![Screenshot](docs/screenshot.png)
 
 ### Build and Run
 
@@ -33,7 +69,7 @@ A terminal-based polyphonic synthesizer written in Rust. Play notes with your ke
 cargo run -p synth-tui --release
 ```
 
-Or build first, then run the binary directly:
+Or build first, then run directly:
 
 ```sh
 cargo build --release
@@ -42,9 +78,9 @@ cargo build --release
 
 > **Note:** The synthesizer runs in the terminal's alternate screen with raw mode enabled. Your normal terminal session is fully restored on exit.
 
-## Controls
+### Controls
 
-### Piano Keyboard
+#### Piano Keyboard
 
 The keyboard is split into two chromatic octave rows. The lower row plays octave **N**; the upper row plays octave **N+1**.
 
@@ -58,7 +94,7 @@ The keyboard is split into two chromatic octave rows. The lower row plays octave
 
 > **Terminal compatibility:** Note-off (key release) events require keyboard enhancement support (e.g. kitty protocol or WezTerm). In terminals that do not report key release, a note will sustain until another key is pressed.
 
-### Navigation
+#### Navigation
 
 | Key | Action |
 |---|---|
@@ -69,7 +105,7 @@ The keyboard is split into two chromatic octave rows. The lower row plays octave
 | `Enter` | Load the selected preset (in the Presets section) |
 | `1` – `8` | Quick-load preset slot 1–8 (in the Presets section) |
 
-### Utility
+#### Utility
 
 | Key | Action |
 |---|---|
@@ -79,7 +115,7 @@ The keyboard is split into two chromatic octave rows. The lower row plays octave
 | `Ctrl+C` / `Ctrl+Q` | Quit |
 | `F12` | Quit |
 
-### Octave and Volume
+#### Octave and Volume
 
 | Key | Action |
 |---|---|
@@ -88,18 +124,18 @@ The keyboard is split into two chromatic octave rows. The lower row plays octave
 | `+` or `=` | Volume up |
 | `-` or `_` | Volume down |
 
-## Pre-commit hooks
+## Development
+
+### Pre-commit hooks
 
 This repository uses [`prek`](https://github.com/j178/prek) (a Rust-native pre-commit manager) to enforce hygiene checks before each commit.
 
-### One-time setup
+**One-time setup:**
 
 ```sh
 cargo install prek
 prek install
 ```
-
-### Hooks
 
 | Hook | Command | Trigger |
 |---|---|---|
@@ -107,7 +143,7 @@ prek install
 | `clippy` | `cargo clippy --all-targets -- -D warnings` | Any `.rs` or `Cargo.toml` change |
 | `fuzz-build` | `task fuzz:build` | Any `.rs`, `Cargo.toml`, or `Cargo.lock` change |
 
-The `fuzz-build` hook requires `cargo-fuzz` and the nightly toolchain (see the [Fuzzing](#fuzzing) section for setup instructions).
+The `fuzz-build` hook requires `cargo-fuzz` and the nightly toolchain (see [Fuzzing](#fuzzing) below).
 
 Run all hooks manually without committing:
 
@@ -115,19 +151,19 @@ Run all hooks manually without committing:
 prek run --all-files
 ```
 
-## Fuzzing
+### Fuzzing
 
 The DSP core (`SvFilter`, `Oscillator`) and `SynthParams` serialisation paths are covered by
 [`cargo-fuzz`](https://github.com/rust-fuzz/cargo-fuzz) harnesses under `fuzz/fuzz_targets/`.
 
-### One-time setup
+**One-time setup:**
 
 ```sh
 cargo install cargo-fuzz
 rustup toolchain install nightly
 ```
 
-### List available targets
+**List available targets:**
 
 ```sh
 task fuzz:targets
@@ -141,7 +177,7 @@ fuzz_osc_safety
 fuzz_params_serde
 ```
 
-### Run a target
+**Run a target:**
 
 ```sh
 task fuzz -- fuzz_filter_stability
@@ -156,7 +192,7 @@ Pass additional `cargo fuzz` flags after `--` if needed:
 task fuzz -- fuzz_filter_stability -- -max_total_time=60
 ```
 
-### Harness summary
+**Harness summary:**
 
 | Target | What it tests | Invariant |
 |---|---|---|
