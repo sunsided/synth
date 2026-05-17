@@ -212,6 +212,25 @@ pub struct FxParams {
     pub reverb_damping: f32,
 }
 
+/// Bitcrusher section parameters.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct CrusherParams {
+    /// Bit depth: 1.0..=16.0. 16.0 = pass-through (no quantization).
+    pub bits: f32,
+    /// Sample rate divider: 1.0..=16.0. 1.0 = pass-through (no decimation).
+    pub rate: f32,
+}
+
+impl Default for CrusherParams {
+    fn default() -> Self {
+        Self {
+            bits: 16.0,
+            rate: 1.0,
+        }
+    }
+}
+
 /// Global section parameters.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -239,6 +258,9 @@ pub struct SynthParams {
     pub lfo: LfoParams,
     /// FX parameters.
     pub fx: FxParams,
+    /// Bitcrusher parameters.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub crusher: CrusherParams,
     /// Global parameters.
     pub global: GlobalParams,
 }
@@ -276,6 +298,7 @@ impl Default for SynthParams {
                 reverb_size: 0.5,
                 reverb_damping: 0.5,
             },
+            crusher: CrusherParams::default(),
             global: GlobalParams {
                 volume: 0.7,
                 glide_time: 0.05,
