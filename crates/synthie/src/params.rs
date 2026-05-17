@@ -160,6 +160,31 @@ pub struct OscParams {
     pub noise_mix: f32,
 }
 
+/// Second oscillator section parameters.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Osc2Params {
+    /// Waveform shape for the second oscillator.
+    pub waveform: Waveform,
+    /// Detune relative to OSC1 in cents, -100 .. 100.
+    pub detune: f32,
+    /// Blend of OSC2 into the output, 0..1.  At 0.0 OSC2 is bypassed.
+    pub osc2_mix: f32,
+    /// When true, OSC1 period boundary resets OSC2 phase (hard sync).
+    pub hard_sync: bool,
+}
+
+impl Default for Osc2Params {
+    fn default() -> Self {
+        Self {
+            waveform: Waveform::Sawtooth,
+            detune: 7.0,
+            osc2_mix: 0.0,
+            hard_sync: false,
+        }
+    }
+}
+
 /// Amplitude envelope section parameters.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -315,6 +340,9 @@ pub struct SynthParams {
     /// Delay/echo FX parameters.
     #[cfg_attr(feature = "serde", serde(default))]
     pub delay: DelayParams,
+    /// Second oscillator parameters.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub osc2: Osc2Params,
     /// Global parameters.
     pub global: GlobalParams,
 }
@@ -355,6 +383,7 @@ impl Default for SynthParams {
             crusher: CrusherParams::default(),
             chorus: ChorusParams::default(),
             delay: DelayParams::default(),
+            osc2: Osc2Params::default(),
             global: GlobalParams {
                 volume: 0.7,
                 glide_time: 0.05,
