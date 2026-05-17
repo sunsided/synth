@@ -4,11 +4,13 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 description = "Rust synthesizer engine library with ADSR, filters, LFO, and reverb"
+documentation = "https://sunsided.github.io/synth/synth/"
 repository.workspace = true
 license.workspace = true
 readme      = "README.md"
 keywords    = ["synthesizer", "audio", "midi", "gamedev", "game-audio"]
 categories  = ["game-engines", "multimedia::audio"]
+publish     = false
 
 [lib]
 name = "synth"
