@@ -130,8 +130,8 @@ fn main() -> Result<()> {
         }
 
         let audio_event = match event.kind {
-            ScheduledKind::NoteOn(midi) => AudioEvent::NoteOn(midi),
-            ScheduledKind::NoteOff(midi) => AudioEvent::NoteOff(midi),
+            ScheduledKind::NoteOn(midi) => AudioEvent::NoteOn(midi.into()),
+            ScheduledKind::NoteOff(midi) => AudioEvent::NoteOff(midi.into()),
             ScheduledKind::Drum(hit) => AudioEvent::Drum(hit),
         };
         event_tx.send(audio_event)?;

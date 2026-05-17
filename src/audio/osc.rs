@@ -109,8 +109,9 @@ impl Oscillator {
 /// Convert a MIDI note number to Hz (A4 = 69 = 440 Hz).
 #[inline]
 #[must_use]
-pub fn midi_to_hz(midi: u8) -> f32 {
-    440.0 * 2.0_f32.powf((f32::from(midi) - 69.0) / 12.0)
+pub fn midi_to_hz(note: impl Into<crate::params::MidiNote>) -> f32 {
+    let note = note.into();
+    440.0 * 2.0_f32.powf((f32::from(note.as_u8()) - 69.0) / 12.0)
 }
 
 /// Apply detune in cents to a base frequency.
@@ -169,13 +170,13 @@ mod tests {
 
     #[test]
     fn midi_to_hz_a4() {
-        let hz = midi_to_hz(69);
+        let hz = midi_to_hz(crate::params::MidiNote::A4);
         assert!((hz - 440.0).abs() < 0.01);
     }
 
     #[test]
     fn midi_to_hz_c4() {
-        let hz = midi_to_hz(60);
+        let hz = midi_to_hz(crate::params::MidiNote::MIDDLE_C);
         assert!((hz - 261.626).abs() < 0.1);
     }
 }

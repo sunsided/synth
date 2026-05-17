@@ -11,7 +11,7 @@ use crossbeam_channel::{Receiver, Sender, bounded};
 use crate::audio::drums::DrumMachine;
 use crate::audio::fx::Reverb;
 use crate::audio::voice::Voice;
-use crate::params::{AudioEvent, SynthParams};
+use crate::params::{AudioEvent, ChannelNo, MidiNote, SynthParams};
 
 /// Capacity of the scope channel (number of `Vec<f32>` batches that can be
 /// queued before the audio thread starts dropping them).
@@ -23,25 +23,36 @@ const SCOPE_DECIMATION: usize = 4;
 /// Number of decimated samples accumulated before flushing to the scope channel.
 const SCOPE_BATCH: usize = 128;
 
-/// Number of simultaneous voices.
+/// Number of simultaneous voices per synthesis channel.
 const POLYPHONY: usize = 4;
 
 /// Polyphony as `f32` for scaling the summed voice mix.
 const POLYPHONY_F32: f32 = 4.0;
 
+/// Number of independent synthesis channels (each has its own voice pool and params).
+pub const NUM_CHANNELS: usize = 2;
+
+/// Master output gain applied after summing all synthesis channels.
+///
+/// At −6 dB this gives two full-volume channels headroom to sum cleanly
+/// before the final hard clamp.  Per-channel loudness is controlled via
+/// `SynthParams::global::volume`; this constant is a fixed headroom budget,
+/// not a per-channel normaliser.
+const MASTER_GAIN: f32 = 0.5;
+
 /// Voice slot metadata for note routing and age-based stealing.
 #[derive(Clone, Copy, Default)]
 struct VoiceSlot {
-    note: Option<u8>,
+    note: Option<MidiNote>,
     age: u64,
 }
 
-/// All mutable state owned exclusively by the audio callback.
+/// One independent synthesis channel: a voice pool with its own parameter snapshot.
 ///
-/// No fields are shared with the UI thread; synchronisation happens only
-/// through the bounded `event_rx` / `scope_tx` channels.
-struct AudioState {
-    /// Current synthesiser parameter snapshot.
+/// Channel 0 is the default target of the channel-less `NoteOn` / `LoadPatch`
+/// events and also drives the shared reverb tail.
+struct AudioChannel {
+    /// Current synthesiser parameter snapshot for this channel.
     params: SynthParams,
     /// Polyphonic voice pool.
     voices: [Voice; POLYPHONY],
@@ -49,7 +60,80 @@ struct AudioState {
     slots: [VoiceSlot; POLYPHONY],
     /// Monotonic allocation counter for oldest-voice stealing.
     age_counter: u64,
-    /// Shared post-mix reverb send.
+}
+
+impl AudioChannel {
+    fn new() -> Self {
+        Self {
+            params: SynthParams::default(),
+            voices: std::array::from_fn(|_| Voice::new()),
+            slots: std::array::from_fn(|_| VoiceSlot::default()),
+            age_counter: 0,
+        }
+    }
+
+    fn is_voice_idle(&self, idx: usize) -> bool {
+        let voice = &self.voices[idx];
+        !voice.active && !voice.env.is_active() && self.slots[idx].note.is_none()
+    }
+
+    fn allocate_voice_index(&self, midi: MidiNote) -> usize {
+        if let Some(idx) = self.slots.iter().position(|s| s.note == Some(midi)) {
+            return idx;
+        }
+        if let Some(idx) = (0..POLYPHONY).find(|&idx| self.is_voice_idle(idx)) {
+            return idx;
+        }
+        self.slots
+            .iter()
+            .enumerate()
+            .min_by_key(|(_, s)| s.age)
+            .map_or(0, |(idx, _)| idx)
+    }
+
+    fn note_on(&mut self, midi: MidiNote, sample_rate: f32) {
+        let idx = self.allocate_voice_index(midi);
+        self.age_counter = self.age_counter.saturating_add(1);
+        self.slots[idx].note = Some(midi);
+        self.slots[idx].age = self.age_counter;
+        self.voices[idx].note_on(midi, &self.params, sample_rate);
+    }
+
+    fn note_off(&mut self, midi: MidiNote) {
+        if let Some(idx) = self.slots.iter().position(|s| s.note == Some(midi)) {
+            self.voices[idx].note_off();
+            self.slots[idx].note = None;
+        }
+    }
+
+    fn panic(&mut self) {
+        for voice in &mut self.voices {
+            voice.panic();
+        }
+        for slot in &mut self.slots {
+            *slot = VoiceSlot::default();
+        }
+        self.age_counter = 0;
+    }
+
+    /// Render one sample: sum all voices and normalise by polyphony count.
+    fn process(&mut self, sample_rate: f32) -> f32 {
+        self.voices
+            .iter_mut()
+            .map(|v| v.process(&self.params, sample_rate))
+            .sum::<f32>()
+            / POLYPHONY_F32
+    }
+}
+
+/// All mutable state owned exclusively by the audio callback.
+///
+/// No fields are shared with the UI thread; synchronisation happens only
+/// through the bounded `event_rx` / `scope_tx` channels.
+struct AudioState {
+    /// Independent synthesis channels, each with its own voice pool and params.
+    channels: [AudioChannel; NUM_CHANNELS],
+    /// Shared post-mix reverb send (driven by channel 0's FX params).
     reverb: Reverb,
     /// Parallel drum machine (kick + hi-hats).
     drums: DrumMachine,
@@ -68,14 +152,14 @@ struct AudioState {
 impl AudioState {
     /// Construct initial audio state for the given sample rate.
     fn new(sample_rate: f32, event_rx: Receiver<AudioEvent>, scope_tx: Sender<Vec<f32>>) -> Self {
-        let params = SynthParams::default();
+        let channels: [AudioChannel; NUM_CHANNELS] = std::array::from_fn(|_| AudioChannel::new());
         let mut reverb = Reverb::new();
-        reverb.set_params(params.fx.reverb_size, params.fx.reverb_damping);
+        reverb.set_params(
+            channels[0].params.fx.reverb_size,
+            channels[0].params.fx.reverb_damping,
+        );
         Self {
-            params,
-            voices: std::array::from_fn(|_| Voice::new()),
-            slots: std::array::from_fn(|_| VoiceSlot::default()),
-            age_counter: 0,
+            channels,
             reverb,
             drums: DrumMachine::new(sample_rate),
             event_rx,
@@ -87,88 +171,73 @@ impl AudioState {
         }
     }
 
+    /// Sync reverb state from channel 0's FX params.
     fn apply_reverb_params(&mut self) {
-        self.reverb
-            .set_params(self.params.fx.reverb_size, self.params.fx.reverb_damping);
+        let fx = &self.channels[0].params.fx;
+        self.reverb.set_params(fx.reverb_size, fx.reverb_damping);
     }
 
-    fn is_voice_idle(&self, idx: usize) -> bool {
-        let voice = &self.voices[idx];
-        !voice.active && !voice.env.is_active() && self.slots[idx].note.is_none()
-    }
-
-    fn allocate_voice_index(&self, midi: u8) -> usize {
-        if let Some(idx) = self.slots.iter().position(|slot| slot.note == Some(midi)) {
-            return idx;
+    fn note_on(&mut self, ch: ChannelNo, midi: MidiNote) {
+        if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
+            channel.note_on(midi, self.sample_rate);
         }
-
-        if let Some(idx) = (0..POLYPHONY).find(|&idx| self.is_voice_idle(idx)) {
-            return idx;
-        }
-
-        self.slots
-            .iter()
-            .enumerate()
-            .min_by_key(|(_, slot)| slot.age)
-            .map_or(0, |(idx, _)| idx)
     }
 
-    fn note_on(&mut self, midi: u8) {
-        self.apply_reverb_params();
-        let idx = self.allocate_voice_index(midi);
-        self.age_counter = self.age_counter.saturating_add(1);
-        self.slots[idx].note = Some(midi);
-        self.slots[idx].age = self.age_counter;
-        self.voices[idx].note_on(midi, &self.params, self.sample_rate);
-    }
-
-    fn note_off(&mut self, midi: u8) {
-        if let Some(idx) = self.slots.iter().position(|slot| slot.note == Some(midi)) {
-            self.voices[idx].note_off();
-            self.slots[idx].note = None;
+    fn note_off(&mut self, ch: ChannelNo, midi: MidiNote) {
+        if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
+            channel.note_off(midi);
         }
     }
 
     fn panic(&mut self) {
-        for voice in &mut self.voices {
-            voice.panic();
-        }
-        for slot in &mut self.slots {
-            *slot = VoiceSlot::default();
+        for channel in &mut self.channels {
+            channel.panic();
         }
         self.drums.panic();
-        self.age_counter = 0;
     }
 
     /// Drain all pending events from the UI thread. Called once per buffer.
     fn drain_events(&mut self) {
         while let Ok(event) = self.event_rx.try_recv() {
             match event {
-                AudioEvent::NoteOn(midi) => self.note_on(midi),
-                AudioEvent::NoteOff(midi) => self.note_off(midi),
+                AudioEvent::NoteOn(midi) => self.note_on(ChannelNo::DEFAULT, midi),
+                AudioEvent::NoteOff(midi) => self.note_off(ChannelNo::DEFAULT, midi),
                 AudioEvent::Panic => self.panic(),
                 AudioEvent::LoadPatch(p) => {
-                    self.params = *p;
+                    self.channels[0].params = *p;
                     self.apply_reverb_params();
                 }
                 AudioEvent::Drum(hit) => self.drums.trigger(hit),
+                AudioEvent::NoteOnChannel(ch, midi) => self.note_on(ch, midi),
+                AudioEvent::NoteOffChannel(ch, midi) => self.note_off(ch, midi),
+                AudioEvent::LoadPatchChannel(ch, p) => {
+                    if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
+                        channel.params = *p;
+                    }
+                    if ch == ChannelNo::DEFAULT {
+                        self.apply_reverb_params();
+                    }
+                }
             }
         }
     }
 
-    /// Render `channels` interleaved output frames into `data`.
-    fn process(&mut self, data: &mut [f32], channels: usize) {
+    /// Render `hw_channels` interleaved output frames into `data`.
+    fn process(&mut self, data: &mut [f32], hw_channels: usize) {
         self.drain_events();
 
-        for frame in data.chunks_mut(channels) {
-            let mix = self
-                .voices
+        let sample_rate = self.sample_rate;
+        let reverb_mix = self.channels[0].params.fx.reverb_mix;
+
+        for frame in data.chunks_mut(hw_channels) {
+            let mix: f32 = self
+                .channels
                 .iter_mut()
-                .map(|voice| voice.process(&self.params, self.sample_rate))
-                .sum::<f32>()
-                / POLYPHONY_F32;
-            let sample = self.reverb.process(mix, self.params.fx.reverb_mix)
-                + self.drums.process(self.sample_rate);
+                .map(|ch| ch.process(sample_rate))
+                .sum();
+            let sample = (self.reverb.process(mix, reverb_mix)
+                + self.drums.process(self.sample_rate))
+                * MASTER_GAIN;
 
             // Guard against denormals / clipping before writing to hardware.
             let sample = if sample.is_finite() {
@@ -227,7 +296,7 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
     #[allow(clippy::cast_precision_loss)]
     // sample rate fits within f32 for all practical audio rates
     let sample_rate = config.sample_rate() as f32;
-    let channels = config.channels() as usize;
+    let hw_channels = config.channels() as usize;
 
     // Convert from the device's native format config to a plain StreamConfig.
     let stream_config: cpal::StreamConfig = config.into();
@@ -238,7 +307,7 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
         .build_output_stream(
             &stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                audio_state.process(data, channels);
+                audio_state.process(data, hw_channels);
             },
             |err| eprintln!("audio stream error: {err}"),
             None,

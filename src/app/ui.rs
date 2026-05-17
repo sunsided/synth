@@ -310,9 +310,10 @@ fn draw_status(frame: &mut Frame, area: Rect, state: &AppState) {
             let names = [
                 "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B",
             ];
-            let name = names[(midi % 12) as usize];
-            let oct = i32::from(midi / 12) - 1;
-            format!("{name}{oct}({midi})")
+            let raw = midi.as_u8();
+            let name = names[(raw % 12) as usize];
+            let oct = i32::from(raw / 12) - 1;
+            format!("{name}{oct}({raw})")
         }
         None => "---".to_string(),
     };

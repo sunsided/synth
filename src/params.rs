@@ -292,6 +292,77 @@ impl Patch {
     }
 }
 
+/// A typed wrapper around a MIDI note byte.
+///
+/// The inner `u8` field is public for ergonomic construction with numeric
+/// literals (`MidiNote(60)`).  No range check is performed; the MIDI spec
+/// defines valid values as 0..=127, but values up to 255 are accepted.
+/// Use [`MidiNote::new_clamped`] when constructing from untrusted input.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct MidiNote(pub u8);
+
+impl MidiNote {
+    /// Middle C (C4).
+    pub const MIDDLE_C: Self = Self(60);
+    /// A4 (440 Hz reference pitch).
+    pub const A4: Self = Self(69);
+
+    /// Clamp `v` to 0..=127 and wrap in `MidiNote`.
+    #[must_use]
+    pub const fn new_clamped(v: u8) -> Self {
+        Self(if v > 127 { 127 } else { v })
+    }
+
+    /// Raw MIDI byte value.
+    #[must_use]
+    pub const fn as_u8(self) -> u8 {
+        self.0
+    }
+}
+
+impl From<u8> for MidiNote {
+    fn from(v: u8) -> Self {
+        Self(v)
+    }
+}
+
+impl Default for MidiNote {
+    fn default() -> Self {
+        Self::MIDDLE_C
+    }
+}
+
+/// Index of an independent synthesis channel (voice pool + parameter set).
+///
+/// Channel 0 is the default; `NoteOn` / `LoadPatch` without a channel argument
+/// implicitly target it.  Values beyond the engine's `NUM_CHANNELS` limit are
+/// silently ignored.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+pub struct ChannelNo(pub u8);
+
+impl ChannelNo {
+    /// The implicit default channel used by the channel-less event variants.
+    pub const DEFAULT: Self = Self(0);
+
+    /// Convert to `usize` for array indexing.
+    #[must_use]
+    pub const fn as_usize(self) -> usize {
+        self.0 as usize
+    }
+}
+
+impl From<u8> for ChannelNo {
+    fn from(v: u8) -> Self {
+        Self(v)
+    }
+}
+
+impl Default for ChannelNo {
+    fn default() -> Self {
+        Self::DEFAULT
+    }
+}
+
 /// Drum one-shot events.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum DrumHit {
@@ -304,15 +375,23 @@ pub enum DrumHit {
 }
 
 /// Messages sent from the UI thread to the audio thread over the event channel.
+#[derive(Default, Debug, Clone)]
 pub enum AudioEvent {
-    /// Begin sustaining a note at the given MIDI note number.
-    NoteOn(u8),
-    /// Release the note at the given MIDI note number.
-    NoteOff(u8),
-    /// Immediately silence all voices and clear active note routing.
+    /// Immediately silence all voices and clear active note routing on all channels.
+    #[default]
     Panic,
-    /// Replace the current parameter set with a new snapshot.
+    /// Begin sustaining a note at the given MIDI note number on channel 0.
+    NoteOn(MidiNote),
+    /// Release the note at the given MIDI note number on channel 0.
+    NoteOff(MidiNote),
+    /// Replace the parameter set for channel 0 with a new snapshot.
     LoadPatch(Box<SynthParams>),
     /// Trigger a one-shot synthesized drum hit.
     Drum(DrumHit),
+    /// Begin sustaining a note on the given channel at the given MIDI note number.
+    NoteOnChannel(ChannelNo, MidiNote),
+    /// Release the note on the given channel at the given MIDI note number.
+    NoteOffChannel(ChannelNo, MidiNote),
+    /// Replace the parameter set for the given channel with a new snapshot.
+    LoadPatchChannel(ChannelNo, Box<SynthParams>),
 }

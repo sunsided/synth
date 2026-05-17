@@ -8,14 +8,14 @@ use crate::audio::{
     filter::SvFilter,
     osc::{Lfo, Oscillator, detune_hz, midi_to_hz},
 };
-use crate::params::{LfoTarget, SynthParams};
+use crate::params::{LfoTarget, MidiNote, SynthParams};
 
 /// Monophonic synthesiser voice combining oscillator, envelope, filter, and LFO.
 pub struct Voice {
     /// Whether the voice is currently producing sound.
     pub active: bool,
     /// MIDI note number of the current target pitch.
-    pub target_note: u8,
+    pub target_note: MidiNote,
     /// Target frequency in Hz (includes detune).
     pub target_freq: f32,
     /// Current glide-smoothed frequency in Hz.
@@ -44,7 +44,7 @@ impl Voice {
     pub fn new() -> Self {
         Self {
             active: false,
-            target_note: 69,
+            target_note: MidiNote::A4,
             target_freq: 440.0,
             current_freq: 440.0,
             osc: Oscillator::default(),
@@ -65,7 +65,8 @@ impl Voice {
     }
 
     /// Start a new note (or retrigger legato if the voice is already active).
-    pub fn note_on(&mut self, note: u8, params: &SynthParams, sample_rate: f32) {
+    pub fn note_on(&mut self, note: impl Into<MidiNote>, params: &SynthParams, sample_rate: f32) {
+        let note = note.into();
         let legato = self.active;
         self.target_note = note;
         let base = midi_to_hz(note);
