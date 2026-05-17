@@ -4,7 +4,6 @@ version.workspace = true
 edition.workspace = true
 authors.workspace = true
 description = "Rust synthesizer engine library with ADSR, filters, LFO, and reverb"
-documentation = "https://sunsided.github.io/synth/synth/"
 repository.workspace = true
 license.workspace = true
 readme      = "README.md"
