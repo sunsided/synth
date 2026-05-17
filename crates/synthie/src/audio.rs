@@ -10,4 +10,5 @@ pub mod env;
 pub mod filter;
 pub mod fx;
 pub mod osc;
+pub mod processor;
 pub mod voice;
