@@ -215,8 +215,51 @@ pub struct FilterParams {
     pub drive: f32,
 }
 
+/// Waveform shape for LFOs.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum LfoShape {
+    /// Sine wave (smooth, classic vibrato/tremolo).
+    #[default]
+    Sine,
+    /// Hard square wave; instant +1/-1 transitions.
+    Square,
+    /// Rising sawtooth; linear ramp from -1 to +1.
+    Sawtooth,
+    /// Sample-and-hold: random step value held until next period boundary.
+    SampleHold,
+}
+
+impl LfoShape {
+    /// Ordered slice of all variants, used for cycling.
+    pub const ALL: &'static [LfoShape] = &[
+        LfoShape::Sine,
+        LfoShape::Square,
+        LfoShape::Sawtooth,
+        LfoShape::SampleHold,
+    ];
+
+    /// Short display name shown in the TUI.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            LfoShape::Sine => "Sine",
+            LfoShape::Square => "Sqr",
+            LfoShape::Sawtooth => "Saw",
+            LfoShape::SampleHold => "S&H",
+        }
+    }
+
+    /// Return the next variant, wrapping around.
+    #[must_use]
+    pub fn next(self) -> Self {
+        let idx = Self::ALL.iter().position(|&s| s == self).unwrap_or(0);
+        Self::ALL[(idx + 1) % Self::ALL.len()]
+    }
+}
+
 /// LFO section parameters.
-#[allow(clippy::struct_field_names)] // lfo_ prefix is intentional for clarity in a flat params struct
+#[allow(clippy::struct_field_names)]
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LfoParams {
@@ -226,6 +269,50 @@ pub struct LfoParams {
     pub lfo_depth: f32,
     /// Which parameter the LFO modulates.
     pub lfo_target: LfoTarget,
+    /// LFO waveform shape.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub lfo_shape: LfoShape,
+}
+
+impl Default for LfoParams {
+    fn default() -> Self {
+        Self {
+            lfo_rate: 3.0,
+            lfo_depth: 0.0,
+            lfo_target: LfoTarget::Pitch,
+            lfo_shape: LfoShape::Sine,
+        }
+    }
+}
+
+/// Modulation envelope parameters (filter cutoff or pitch target).
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ModEnvParams {
+    /// Attack time in seconds.
+    pub attack: f32,
+    /// Decay time in seconds.
+    pub decay: f32,
+    /// Sustain level, 0 .. 1.
+    pub sustain: f32,
+    /// Release time in seconds.
+    pub release: f32,
+    /// Modulation depth, -1 .. 1.  At 0.0 the envelope has no effect.
+    /// For pitch: +-1 maps to approximately +-1 octave sweep.
+    /// For filter cutoff: +-1 maps to approximately +-2 octaves of cutoff.
+    pub depth: f32,
+}
+
+impl Default for ModEnvParams {
+    fn default() -> Self {
+        Self {
+            attack: 0.001,
+            decay: 0.1,
+            sustain: 1.0,
+            release: 0.1,
+            depth: 0.0,
+        }
+    }
 }
 
 /// FX section parameters.
@@ -343,6 +430,15 @@ pub struct SynthParams {
     /// Second oscillator parameters.
     #[cfg_attr(feature = "serde", serde(default))]
     pub osc2: Osc2Params,
+    /// Second LFO parameters.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub lfo2: LfoParams,
+    /// Modulation envelope routed to filter cutoff.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub filter_env: ModEnvParams,
+    /// Modulation envelope routed to oscillator pitch.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub pitch_env: ModEnvParams,
     /// Global parameters.
     pub global: GlobalParams,
 }
@@ -374,6 +470,7 @@ impl Default for SynthParams {
                 lfo_rate: 3.0,
                 lfo_depth: 0.0,
                 lfo_target: LfoTarget::Pitch,
+                lfo_shape: LfoShape::Sine,
             },
             fx: FxParams {
                 reverb_mix: 0.15,
@@ -384,6 +481,9 @@ impl Default for SynthParams {
             chorus: ChorusParams::default(),
             delay: DelayParams::default(),
             osc2: Osc2Params::default(),
+            lfo2: LfoParams::default(),
+            filter_env: ModEnvParams::default(),
+            pitch_env: ModEnvParams::default(),
             global: GlobalParams {
                 volume: 0.7,
                 glide_time: 0.05,
@@ -521,6 +621,27 @@ mod tests {
         assert!((params.osc2.detune - def.detune).abs() < f32::EPSILON);
         assert!((params.osc2.osc2_mix - def.osc2_mix).abs() < f32::EPSILON);
         assert_eq!(params.osc2.hard_sync, def.hard_sync);
+    }
+
+    #[test]
+    fn synth_params_mod_fields_default_when_missing_from_json() {
+        let json = r#"{
+            "osc":    {"waveform":"Sawtooth","pulse_width":0.5,"detune":0.0,"noise_mix":0.0},
+            "env":    {"attack":0.01,"decay":0.1,"sustain":0.8,"release":0.3,"env_reverse":false},
+            "filter": {"filter_mode":"LowPass","cutoff":4000.0,"resonance":0.3,"drive":0.0},
+            "lfo":    {"lfo_rate":3.0,"lfo_depth":0.0,"lfo_target":"Pitch"},
+            "fx":     {"reverb_mix":0.15,"reverb_size":0.5,"reverb_damping":0.5},
+            "global": {"volume":0.7,"glide_time":0.05}
+        }"#;
+
+        let params: SynthParams =
+            serde_json::from_str(json).expect("old JSON must deserialise without mod fields");
+
+        assert_eq!(params.lfo.lfo_shape, LfoShape::Sine);
+        assert_eq!(params.lfo2.lfo_shape, LfoShape::Sine);
+        assert!((params.lfo2.lfo_depth).abs() < f32::EPSILON);
+        assert!((params.filter_env.depth).abs() < f32::EPSILON);
+        assert!((params.pitch_env.depth).abs() < f32::EPSILON);
     }
 }
 
