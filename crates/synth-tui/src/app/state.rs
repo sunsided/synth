@@ -386,10 +386,18 @@ impl AppState {
                 self.params.lfo.lfo_depth = (self.params.lfo.lfo_depth + d * 0.05).clamp(0.0, 1.0);
             }
             2 if d != 0.0 => {
-                self.params.lfo.lfo_shape = self.params.lfo.lfo_shape.next();
+                self.params.lfo.lfo_shape = if d > 0.0 {
+                    self.params.lfo.lfo_shape.next()
+                } else {
+                    self.params.lfo.lfo_shape.prev()
+                };
             }
             3 if d != 0.0 => {
-                self.params.lfo.lfo_target = self.params.lfo.lfo_target.next();
+                self.params.lfo.lfo_target = if d > 0.0 {
+                    self.params.lfo.lfo_target.next()
+                } else {
+                    self.params.lfo.lfo_target.prev()
+                };
             }
             // 4 = separator — no-op
             // LFO2
@@ -403,10 +411,18 @@ impl AppState {
                     (self.params.lfo2.lfo_depth + d * 0.05).clamp(0.0, 1.0);
             }
             7 if d != 0.0 => {
-                self.params.lfo2.lfo_shape = self.params.lfo2.lfo_shape.next();
+                self.params.lfo2.lfo_shape = if d > 0.0 {
+                    self.params.lfo2.lfo_shape.next()
+                } else {
+                    self.params.lfo2.lfo_shape.prev()
+                };
             }
             8 if d != 0.0 => {
-                self.params.lfo2.lfo_target = self.params.lfo2.lfo_target.next();
+                self.params.lfo2.lfo_target = if d > 0.0 {
+                    self.params.lfo2.lfo_target.next()
+                } else {
+                    self.params.lfo2.lfo_target.prev()
+                };
             }
             // 9 = separator — no-op
             // Filter envelope

@@ -144,6 +144,14 @@ impl LfoTarget {
         let idx = Self::ALL.iter().position(|&t| t == self).unwrap_or(0);
         Self::ALL[(idx + 1) % Self::ALL.len()]
     }
+
+    /// Return the previous variant, wrapping around.
+    #[must_use]
+    pub fn prev(self) -> Self {
+        let idx = Self::ALL.iter().position(|&t| t == self).unwrap_or(0);
+        let len = Self::ALL.len();
+        Self::ALL[(idx + len - 1) % len]
+    }
 }
 
 /// Oscillator section parameters.
