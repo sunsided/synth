@@ -239,7 +239,7 @@ impl LfoShape {
         LfoShape::SampleHold,
     ];
 
-    /// Short display name shown in the TUI.
+    /// Short display name shown in the UI.
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
