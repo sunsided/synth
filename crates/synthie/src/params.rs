@@ -216,9 +216,9 @@ pub struct FxParams {
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CrusherParams {
-    /// Bit depth: 1.0..=16.0. 16.0 = pass-through (no quantization).
+    /// Bit depth: 1.0..=16.0. At 16.0 with `rate` 1.0, the DSP path is bypassed entirely (exact pass-through).
     pub bits: f32,
-    /// Sample rate divider: 1.0..=16.0. 1.0 = pass-through (no decimation).
+    /// Sample rate divider: 1.0..=16.0. At 1.0 with `bits` 16.0, the DSP path is bypassed entirely (exact pass-through).
     pub rate: f32,
 }
 

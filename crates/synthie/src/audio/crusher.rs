@@ -27,10 +27,14 @@ impl Bitcrusher {
 
     /// Process one sample.
     ///
+    /// Returns `input` unchanged when both axes are at their identity settings
+    /// (`bits >= 16.0` and `rate` in `[1.0, 2.0)`), so the default patch incurs
+    /// no extra computation in the hot audio callback.
+    ///
     /// # Parameters
     /// * `input` - sample in -1.0..1.0
-    /// * `bits`  - bit depth 1.0..=16.0; 16.0 = pass-through; must be finite and >= 1.0
-    /// * `rate`  - sample rate divider 1.0..=16.0; 1.0 = pass-through; must be finite and >= 1.0
+    /// * `bits`  - bit depth 1.0..=16.0; at 16.0 with identity `rate`, exact bypass (input returned as-is)
+    /// * `rate`  - sample rate divider 1.0..=16.0; values in `[1.0, 2.0)` update every sample (exact bypass)
     ///
     /// # Panics (debug only)
     /// Panics in debug builds if `bits` or `rate` are non-finite or less than 1.0.
@@ -39,6 +43,10 @@ impl Bitcrusher {
         debug_assert!(rate.is_finite() && rate >= 1.0, "rate out of range: {rate}");
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let divider = (rate.floor() as u32).max(1);
+        // Fast path: exact pass-through at identity settings (default patch, no effect active).
+        if bits >= 16.0 && divider == 1 {
+            return input;
+        }
         if self.counter == 0 {
             self.held_sample = crush(input, bits);
         }
@@ -49,6 +57,9 @@ impl Bitcrusher {
 
 #[inline]
 fn crush(input: f32, bits: f32) -> f32 {
+    // Mid-tread quantization: half = 2^(bits-1), step = 1/half.
+    // Output has 2^bits + 1 representable levels (includes exact zero).
+    // This is intentional — mid-tread avoids DC bias on DC-free audio signals.
     #[allow(clippy::cast_possible_truncation)]
     let n = bits.floor().clamp(1.0, 16.0) as i32;
     let levels = 2.0f32.powi(n);
@@ -59,6 +70,21 @@ fn crush(input: f32, bits: f32) -> f32 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn exact_bypass_at_identity() {
+        let mut c = Bitcrusher::default();
+        // bits=16 + rate=1 must return input exactly (bitwise), not approximately.
+        // Fast path skips crush() entirely, so there is zero floating-point error.
+        for &x in &[-1.0_f32, -0.5, -0.123_456_7, 0.0, 0.123_456_7, 0.5, 1.0] {
+            assert_eq!(
+                c.process(x, 16.0, 1.0),
+                x,
+                "identity bypass not exact for {x}"
+            );
+        }
+    }
 
     #[test]
     fn passthrough_16bit() {
