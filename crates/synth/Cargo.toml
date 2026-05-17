@@ -27,7 +27,9 @@ name = "kernkraft"
 path = "examples/kernkraft.rs"
 
 [features]
+## Enables `serde` support by default.
 default = ["serde"]
+## Enables `serde` support.
 serde   = ["dep:serde"]
 
 [dependencies]
@@ -35,6 +37,10 @@ anyhow            = { workspace = true }
 cpal              = { workspace = true }
 crossbeam-channel = { workspace = true }
 serde             = { workspace = true, optional = true }
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lints]
 workspace = true

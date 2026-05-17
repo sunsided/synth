@@ -7,6 +7,9 @@
 //! Fuzz harnesses and other non-TUI consumers can import [`audio`] and
 //! [`params`] directly without pulling in any terminal dependencies.
 
+// Enable doc_cfg feature on docs.rs for feature-gated API documentation.
+#![cfg_attr(docsrs, feature(doc_cfg))]
+
 pub mod audio;
 pub mod params;
 pub mod presets;
