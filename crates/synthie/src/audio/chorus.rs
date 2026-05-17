@@ -61,13 +61,13 @@ impl Chorus {
         self.buf[self.write_idx] = input;
 
         let center_samples = CENTER_DELAY_MS / 1000.0 * self.sample_rate;
-        let depth_samples = params.depth_ms / 1000.0 * self.sample_rate;
+        let depth_samples = params.depth_ms.clamp(0.0, CENTER_DELAY_MS) / 1000.0 * self.sample_rate;
         let phase_inc = TAU * params.rate / self.sample_rate;
 
         let mut tap_sum = 0.0_f32;
         for i in 0..NUM_TAPS {
             let offset = (center_samples + depth_samples * self.phases[i].sin())
-                .clamp(0.0, buf_len as f32 - 1.001);
+                .clamp(0.0, buf_len as f32 - 1.001); // -1.001: keep ceil_idx in-bounds after floor+1
             self.phases[i] = (self.phases[i] + phase_inc) % TAU;
 
             // Fractional read position (backwards from write head).

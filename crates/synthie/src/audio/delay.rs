@@ -41,11 +41,12 @@ impl Delay {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let delay_samples =
             ((params.time_ms / 1000.0 * self.sample_rate).round() as usize).clamp(1, buf_len);
+        let feedback = params.feedback.clamp(0.0, 0.999);
 
         let read_idx = (self.write_idx + buf_len - delay_samples) % buf_len;
         let wet = self.buf[read_idx];
 
-        self.buf[self.write_idx] = input + wet * params.feedback;
+        self.buf[self.write_idx] = input + wet * feedback;
         self.write_idx = (self.write_idx + 1) % buf_len;
 
         input * (1.0 - params.mix) + wet * params.mix
