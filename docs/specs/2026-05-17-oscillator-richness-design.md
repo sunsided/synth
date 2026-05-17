@@ -110,13 +110,13 @@ let osc_out = if params.osc2.osc2_mix > 0.001 {
 
 `osc2.reset()` uses the existing (currently `#[allow(dead_code)]`) `Oscillator::reset()` method - that attribute can now be removed.
 
-Fresh note-on: both oscillators reset via `Voice::new()` on voice allocation; legato keeps both running (natural for portamento).
+Fresh note-on: the voice pool reuses idle `Voice` instances; `Voice::new()` is only called once at startup. A fresh attack calls `Voice::note_on()`, which does NOT reset oscillator phases (only the crusher is reset on non-legato attacks). Legato keeps both oscillators running throughout.
 
 ## TUI (`synth-tui`)
 
 ### Layout
 
-OSC section height: `Length(6)` -> `Length(10)`.
+OSC section height: `Length(6)` -> `Length(11)` (9 rows + 2 border lines).
 
 New rows appended to the OSC panel draw function:
 
@@ -130,12 +130,14 @@ Hard Sync  [ off ]
 
 ### Section enum / input
 
-Extend existing `Section::Osc` navigation (no new enum variant). The OSC panel's param list gains four entries; Tab/arrow keys reach them via the same row-index mechanism used for the existing four OSC params. Input handler maps up/down to waveform cycle, left/right to detune/mix nudge, enter to toggle hard_sync.
+Extend existing `Section::Osc` navigation (no new enum variant). The OSC panel's param list gains four entries; Tab changes section, Left/Right move the param cursor within the section, Up/Down adjust the selected value. Hard sync is toggled by pressing Up/Down on the Sync row (same as `env_reverse`). A display-only separator row is skipped automatically during navigation.
 
 ## Tests
 
 - `osc_sine_bounds`: sine stays in -1..1 for 4410 samples at 440 Hz
-- `osc_hard_sync_resets`: after osc1 wraps, osc2 phase is 0 on next sample
+- `osc_just_wrapped_fires`: phase-wrap flag triggers at the expected rate
+- `voice_osc2_hard_sync_is_finite`: all samples finite with hard sync enabled
+- `voice_hard_sync_resets_osc2_phase`: wrap-point outputs are identical across OSC1 periods (deterministic OSC2 restart)
 - Existing sawtooth/pulse tests unchanged
 
 ## Non-goals

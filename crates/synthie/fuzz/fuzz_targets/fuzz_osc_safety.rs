@@ -25,12 +25,13 @@ use synthie::audio::osc::Oscillator;
 use synthie::params::Waveform;
 
 /// All valid `Waveform` variants in index order.
-const WAVEFORMS: [Waveform; 5] = [
+const WAVEFORMS: [Waveform; 6] = [
     Waveform::Pulse,
     Waveform::Sawtooth,
     Waveform::Triangle,
     Waveform::Noise,
     Waveform::PulseSaw,
+    Waveform::Sine,
 ];
 
 /// Packed fuzz input for one oscillator burst.

@@ -1,6 +1,6 @@
 //! Oscillator, LFO, and supporting functions for pitch conversion.
 //!
-//! The `Oscillator` implements five waveform shapes with an integrated LFSR
+//! The `Oscillator` implements six waveform shapes with an integrated LFSR
 //! noise source clocked at the oscillator period boundary (SID-style behaviour).
 
 use crate::params::Waveform;

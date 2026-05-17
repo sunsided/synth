@@ -1619,6 +1619,7 @@ dependencies = [
  "cpal",
  "crossbeam-channel",
  "serde",
+ "serde_json",
 ]
 
 [[package]]

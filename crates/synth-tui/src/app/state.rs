@@ -68,6 +68,12 @@ impl Section {
             Section::Presets => 0,           // list mode
         }
     }
+
+    /// Returns `true` if `idx` is a display-only row that cannot be adjusted.
+    /// Used by navigation to skip non-interactive rows (e.g. the OSC2 separator).
+    fn is_display_row(self, idx: usize) -> bool {
+        matches!(self, Section::Osc) && idx == 4
+    }
 }
 
 /// Central application state owned by the UI thread.
@@ -212,21 +218,33 @@ impl AppState {
     }
 
     /// Move the param cursor forward within the current section (wraps).
+    /// Automatically skips display-only rows (e.g. the OSC2 separator).
     pub fn next_param(&mut self) {
         let count = self.selected_section.param_count();
         if count > 0 {
-            self.selected_param = (self.selected_param + 1) % count;
+            let next = (self.selected_param + 1) % count;
+            self.selected_param = if self.selected_section.is_display_row(next) {
+                (next + 1) % count
+            } else {
+                next
+            };
         }
     }
 
     /// Move the param cursor backward within the current section (wraps).
+    /// Automatically skips display-only rows (e.g. the OSC2 separator).
     pub fn prev_param(&mut self) {
         let count = self.selected_section.param_count();
         if count > 0 {
-            self.selected_param = if self.selected_param == 0 {
+            let prev = if self.selected_param == 0 {
                 count - 1
             } else {
                 self.selected_param - 1
+            };
+            self.selected_param = if self.selected_section.is_display_row(prev) {
+                if prev == 0 { count - 1 } else { prev - 1 }
+            } else {
+                prev
             };
         }
     }

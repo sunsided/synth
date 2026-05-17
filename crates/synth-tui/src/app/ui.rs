@@ -62,7 +62,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
         .direction(Direction::Vertical)
         .constraints([
             Constraint::Length(3),  // title
-            Constraint::Length(10), // OSC (includes OSC2 sub-panel)
+            Constraint::Length(11), // OSC (9 rows + 2 border lines)
             Constraint::Length(8),  // ENV
             Constraint::Length(6),  // FILTER
             Constraint::Length(5),  // LFO

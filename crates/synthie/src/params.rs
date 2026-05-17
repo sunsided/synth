@@ -496,6 +496,34 @@ pub enum DrumHit {
     HiHatOpen,
 }
 
+#[cfg(all(test, feature = "serde"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn synth_params_osc2_defaults_when_missing_from_json() {
+        // JSON from before `osc2` was added: the field should deserialise to
+        // `Osc2Params::default()` rather than failing or panicking.
+        let json = r#"{
+            "osc":    {"waveform":"Sawtooth","pulse_width":0.5,"detune":0.0,"noise_mix":0.0},
+            "env":    {"attack":0.01,"decay":0.1,"sustain":0.8,"release":0.3,"env_reverse":false},
+            "filter": {"filter_mode":"LowPass","cutoff":4000.0,"resonance":0.3,"drive":0.0},
+            "lfo":    {"lfo_rate":3.0,"lfo_depth":0.0,"lfo_target":"Pitch"},
+            "fx":     {"reverb_mix":0.15,"reverb_size":0.5,"reverb_damping":0.5},
+            "global": {"volume":0.7,"glide_time":0.05}
+        }"#;
+
+        let params: SynthParams =
+            serde_json::from_str(json).expect("old-style JSON must deserialise without osc2 key");
+
+        let def = Osc2Params::default();
+        assert_eq!(params.osc2.waveform, def.waveform);
+        assert!((params.osc2.detune - def.detune).abs() < f32::EPSILON);
+        assert!((params.osc2.osc2_mix - def.osc2_mix).abs() < f32::EPSILON);
+        assert_eq!(params.osc2.hard_sync, def.hard_sync);
+    }
+}
+
 /// Messages sent from the UI thread to the audio thread over the event channel.
 #[derive(Default, Debug, Clone)]
 pub enum AudioEvent {
