@@ -42,5 +42,9 @@ path = "examples/lazy_jones.rs"
 name = "kernkraft"
 path = "examples/kernkraft.rs"
 
+[[example]]
+name = "bitcrusher"
+path = "examples/bitcrusher.rs"
+
 [lints]
 workspace = true

@@ -166,6 +166,13 @@ tasks:
     cmds:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example kernkraft -- {{.CLI_ARGS}}
 
+  example:bitcrusher:
+    desc: Run the bitcrusher FX demo (A4 sawtooth cycling through bit depth and decimation settings)
+    aliases:
+      - bitcrusher
+    cmds:
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example bitcrusher -- {{.CLI_ARGS}}
+
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
     preconditions:
