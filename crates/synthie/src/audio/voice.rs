@@ -15,28 +15,20 @@ use crate::params::{MidiNote, SynthParams};
 ///
 /// All modulation sources (LFOs, envelopes) write additively into these slots.
 /// `Voice::process()` applies them in one pass, keeping the signal chain readable.
+#[derive(Default)]
 struct ModBus {
     /// Pitch modulation, applied as `freq *= 2^(pitch * 0.1)`.
     /// LFO contribution: `lfo_val * depth`. Env contribution: `env_out * depth * 10`.
     pitch: f32,
     /// Pulse-width modulation, applied as `pw += pw_mod * 0.4` (clamped 0.05..0.95).
     pw: f32,
-    /// Filter cutoff modulation, applied as `cutoff *= 2^(cutoff * 2.0)`.
+    /// Filter cutoff modulation, applied as `cutoff *= 2^(bus.cutoff * 2.0)`.
     cutoff: f32,
     /// Volume/tremolo modulation, applied as `amp *= (1 - volume * 0.5)`.
     volume: f32,
 }
 
 impl ModBus {
-    fn new() -> Self {
-        Self {
-            pitch: 0.0,
-            pw: 0.0,
-            cutoff: 0.0,
-            volume: 0.0,
-        }
-    }
-
     /// Add an LFO contribution to the appropriate slot.
     fn add_lfo(&mut self, lfo_val: f32, depth: f32, target: crate::params::LfoTarget) {
         use crate::params::LfoTarget;
@@ -167,7 +159,7 @@ impl Voice {
 
         // --- Modulation bus: fill from all sources, then read once ---
 
-        let mut bus = ModBus::new();
+        let mut bus = ModBus::default();
 
         // LFO 1
         let lfo1 = self
@@ -212,7 +204,7 @@ impl Voice {
 
         // Pitch modulation (vibrato + pitch env)
         let modded_freq = freq * 2.0_f32.powf(bus.pitch * 0.1);
-        let final_freq = detune_hz(modded_freq, 0.0);
+        let final_freq = modded_freq;
 
         // Pulse width modulation
         let pw = (params.osc.pulse_width + bus.pw * 0.4).clamp(0.05, 0.95);
@@ -256,7 +248,7 @@ impl Voice {
         );
 
         // Volume modulation (tremolo)
-        let vol_mod = 1.0 - bus.volume * 0.5;
+        let vol_mod = (1.0 - bus.volume * 0.5).clamp(0.0, 1.0);
 
         // Filter cutoff modulation
         let cutoff_mod =
