@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
 use synth::audio::engine::setup_audio;
-use synth::params::{AudioEvent, DrumHit};
+use synth::params::{AudioEvent, DrumHit, MidiNote};
 use synth::presets::sid::default_patches;
 
 const BPM: f32 = 110.0;
@@ -14,8 +14,8 @@ const BEAT_OFFSETS: [f32; 4] = [0.0, 1.0, 2.0, 3.0];
 
 #[derive(Clone, Copy)]
 enum ScheduledKind {
-    NoteOn(u8),
-    NoteOff(u8),
+    NoteOn(MidiNote),
+    NoteOff(MidiNote),
     Drum(DrumHit),
 }
 
@@ -62,15 +62,30 @@ fn build_drum_pattern() -> Vec<TimedEvent> {
 }
 
 fn build_tune() -> Vec<TimedEvent> {
-    let progression: [[u8; 3]; 4] = [
-        [60, 64, 67], // C major
-        [55, 59, 62], // G major
-        [57, 60, 64], // A minor
-        [53, 57, 60], // F major
+    let progression: [[MidiNote; 3]; 4] = [
+        [MidiNote(60), MidiNote(64), MidiNote(67)], // C major
+        [MidiNote(55), MidiNote(59), MidiNote(62)], // G major
+        [MidiNote(57), MidiNote(60), MidiNote(64)], // A minor
+        [MidiNote(53), MidiNote(57), MidiNote(60)], // F major
     ];
 
-    let melody: [u8; 16] = [
-        72, 74, 76, 79, 76, 74, 72, 71, 72, 74, 76, 79, 81, 79, 76, 74,
+    let melody: [MidiNote; 16] = [
+        MidiNote(72),
+        MidiNote(74),
+        MidiNote(76),
+        MidiNote(79),
+        MidiNote(76),
+        MidiNote(74),
+        MidiNote(72),
+        MidiNote(71),
+        MidiNote(72),
+        MidiNote(74),
+        MidiNote(76),
+        MidiNote(79),
+        MidiNote(81),
+        MidiNote(79),
+        MidiNote(76),
+        MidiNote(74),
     ];
 
     let mut events = Vec::with_capacity(BARS * 3 * 2 + BARS * 4 * 2);

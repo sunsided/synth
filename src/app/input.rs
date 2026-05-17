@@ -18,6 +18,7 @@
 
 use crate::app::state::AppState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
+use synth::params::MidiNote;
 
 /// Map a key code to a semitone offset (0 = C of the bottom row, 12 = C of
 /// the upper row).  Returns `None` for non-note keys.
@@ -54,9 +55,9 @@ fn key_to_semitone(code: KeyCode) -> Option<u8> {
 }
 
 /// Convert octave + semitone offset to a MIDI note number, clamped to 0..=127.
-fn make_midi(octave: i8, semitone: u8) -> u8 {
+fn make_midi(octave: i8, semitone: u8) -> MidiNote {
     let raw = 12_i32 * (i32::from(octave) + 1) + i32::from(semitone);
-    u8::try_from(raw.clamp(0, 127)).expect("clamped to 0..=127")
+    MidiNote(u8::try_from(raw.clamp(0, 127)).expect("clamped to 0..=127"))
 }
 
 /// Process a single key event.  Returns `true` if the application should quit.

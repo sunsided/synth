@@ -2,7 +2,7 @@
 //! the bridge between the UI thread and the audio engine.
 
 use crossbeam_channel::Sender;
-use synth::params::{AudioEvent, Patch, SynthParams};
+use synth::params::{AudioEvent, MidiNote, Patch, SynthParams};
 use synth::presets::sid;
 
 /// Top-level UI section, each corresponding to one panel of controls.
@@ -78,7 +78,7 @@ pub struct AppState {
     /// Index of the focused parameter within `selected_section`.
     pub selected_param: usize,
     /// MIDI note currently held (if any), for display in the status bar.
-    pub active_note: Option<u8>,
+    pub active_note: Option<MidiNote>,
     /// Current keyboard octave (piano keys map to this octave and octave+1).
     pub octave: i8,
     /// Envelope stage name for potential future status feedback (unused in display).
@@ -140,13 +140,13 @@ impl AppState {
     }
 
     /// Record a note-on and forward it to the audio thread.
-    pub fn note_on(&mut self, midi: u8) {
+    pub fn note_on(&mut self, midi: MidiNote) {
         self.active_note = Some(midi);
         self.send(AudioEvent::NoteOn(midi));
     }
 
     /// Record a note-off and forward it to the audio thread.
-    pub fn note_off(&mut self, midi: u8) {
+    pub fn note_off(&mut self, midi: MidiNote) {
         if self.active_note == Some(midi) {
             self.active_note = None;
         }
