@@ -21,6 +21,8 @@ pub enum Waveform {
     Noise,
     /// 50/50 mix of pulse and sawtooth for a thicker timbre.
     PulseSaw,
+    /// Pure sine wave.
+    Sine,
 }
 
 impl Waveform {
@@ -31,6 +33,7 @@ impl Waveform {
         Waveform::Triangle,
         Waveform::Noise,
         Waveform::PulseSaw,
+        Waveform::Sine,
     ];
 
     /// Short display name shown in the UI.
@@ -42,6 +45,7 @@ impl Waveform {
             Waveform::Triangle => "Tri",
             Waveform::Noise => "Noise",
             Waveform::PulseSaw => "Pls+Saw",
+            Waveform::Sine => "Sine",
         }
     }
 

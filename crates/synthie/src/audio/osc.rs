@@ -80,6 +80,7 @@ impl Oscillator {
                 let saw = 2.0 * p - 1.0;
                 (pulse + saw) * 0.5
             }
+            Waveform::Sine => (TAU * p).sin(),
         };
 
         // Blend oscillator output with raw noise
