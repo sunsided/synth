@@ -2,6 +2,9 @@
 //!
 //! Three sine LFOs at 0/120/240-degree phase spread modulate the read position
 //! around a 15 ms center delay. Linear interpolation between samples.
+//!
+//! Hot path uses sin/cos rotation (no `sin()` calls per sample) to stay within
+//! real-time audio budget at high LFO rates.
 
 use std::f32::consts::TAU;
 
@@ -20,8 +23,12 @@ const NUM_TAPS: usize = 3;
 pub struct Chorus {
     buf: Vec<f32>,
     write_idx: usize,
-    /// LFO phase accumulators for each tap (radians, 0..TAU).
-    phases: [f32; NUM_TAPS],
+    /// Per-tap LFO state as (sin, cos) pairs — advanced via rotation each sample.
+    lfo: [(f32, f32); NUM_TAPS],
+    /// Cached rotation step recomputed only when `params.rate` changes.
+    sin_inc: f32,
+    cos_inc: f32,
+    cached_rate: f32,
     sample_rate: f32,
 }
 
@@ -33,10 +40,15 @@ impl Chorus {
     pub fn new(sample_rate: f32) -> Self {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let len = ((MAX_CHORUS_DELAY_MS / 1000.0) * sample_rate).ceil() as usize;
+        let phases = [0.0_f32, TAU / 3.0, 2.0 * TAU / 3.0];
+        let lfo = phases.map(f32::sin_cos);
         Self {
             buf: vec![0.0; len.max(1)],
             write_idx: 0,
-            phases: [0.0, TAU / 3.0, 2.0 * TAU / 3.0],
+            lfo,
+            sin_inc: 0.0,
+            cos_inc: 1.0,
+            cached_rate: -1.0,
             sample_rate,
         }
     }
@@ -57,22 +69,43 @@ impl Chorus {
             CENTER_DELAY_MS
         );
 
+        // Recompute rotation coefficients only when rate changes.
+        // Intentional exact-bits comparison: cached_rate stores the f32 we last used.
+        #[allow(clippy::float_cmp)]
+        if params.rate != self.cached_rate {
+            let phase_inc = TAU * params.rate / self.sample_rate;
+            (self.sin_inc, self.cos_inc) = phase_inc.sin_cos();
+            self.cached_rate = params.rate;
+        }
+
         let buf_len = self.buf.len();
+        let buf_len_f = buf_len as f32;
         self.buf[self.write_idx] = input;
 
         let center_samples = CENTER_DELAY_MS / 1000.0 * self.sample_rate;
         let depth_samples = params.depth_ms.clamp(0.0, CENTER_DELAY_MS) / 1000.0 * self.sample_rate;
-        let phase_inc = TAU * params.rate / self.sample_rate;
+        let write_idx_f = self.write_idx as f32;
 
         let mut tap_sum = 0.0_f32;
-        for i in 0..NUM_TAPS {
-            let offset = (center_samples + depth_samples * self.phases[i].sin())
-                .clamp(0.0, buf_len as f32 - 1.001); // -1.001: keep ceil_idx in-bounds after floor+1
-            self.phases[i] = (self.phases[i] + phase_inc) % TAU;
+        for (s, c) in &mut self.lfo {
+            let offset = (center_samples + depth_samples * *s).clamp(0.0, buf_len_f - 1.001); // -1.001: keep ceil_idx in-bounds after floor+1
+
+            // Rotate LFO state — no sin() call.
+            let new_s = *s * self.cos_inc + *c * self.sin_inc;
+            let new_c = *c * self.cos_inc - *s * self.sin_inc;
+            *s = new_s;
+            *c = new_c;
 
             // Fractional read position (backwards from write head).
-            let read_pos =
-                (self.write_idx as f32 + buf_len as f32 - offset).rem_euclid(buf_len as f32);
+            // raw is in [buf_len_f - (buf_len_f - 1.0), buf_len_f + write_idx_f]
+            // i.e. always in (0, 2*buf_len_f), so one conditional subtract suffices.
+            let raw = write_idx_f + buf_len_f - offset;
+            let read_pos = if raw >= buf_len_f {
+                raw - buf_len_f
+            } else {
+                raw
+            };
+
             #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
             let floor_idx = read_pos.floor() as usize % buf_len;
             let ceil_idx = (floor_idx + 1) % buf_len;
