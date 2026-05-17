@@ -1,14 +1,14 @@
 [package]
 name = "synth"
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 authors = ["Markus Mayer <widemeadows@gmail.com>"]
-description = "A terminal-based polyphonic synthesizer"
+description = "Rust synthesizer engine library with ADSR, filters, LFO, and reverb"
 repository = "https://github.com/sunsided/synth"
 license = "EUPL-1.2"
 readme = "README.md"
-keywords = ["synthesizer", "audio", "tui", "terminal", "midi"]
-categories = ["command-line-utilities", "multimedia::audio"]
+keywords = ["synthesizer", "audio", "midi", "gamedev", "game-audio"]
+categories = ["game-engines", "multimedia::audio"]
 
 [lib]
 name = "synth"
