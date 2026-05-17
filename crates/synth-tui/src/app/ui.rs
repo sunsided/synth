@@ -67,7 +67,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
             Constraint::Length(6),  // FILTER
             Constraint::Length(5),  // LFO
             Constraint::Length(5),  // FX
-            Constraint::Min(2),     // MOD (scrollable, takes remaining vertical space)
+            Constraint::Min(8),     // MOD (scrollable; 8 rows visible minimum)
         ])
         .split(left);
 

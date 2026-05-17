@@ -153,6 +153,16 @@ impl Default for Lfo {
 }
 
 impl Lfo {
+    /// Create an LFO with a specific LFSR seed, for independent S&H sequences when multiple LFOs run simultaneously.
+    #[allow(dead_code)]
+    pub(crate) fn seeded(lfsr_seed: u32) -> Self {
+        Self {
+            phase: 0.0,
+            hold: 0.0,
+            lfsr: lfsr_seed,
+        }
+    }
+
     /// Advance the LFO by one sample and return a value in -1.0 .. 1.0.
     pub fn next(&mut self, rate_hz: f32, shape: LfoShape, sample_rate: f32) -> f32 {
         self.phase += rate_hz / sample_rate;
