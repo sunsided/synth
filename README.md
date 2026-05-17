@@ -10,7 +10,7 @@ A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as i
 
 | Crate | Type | Description |
 |---|---|---|
-| [`synth`](crates/synth/) | library | DSP engine: oscillators, envelopes, filter, LFO, reverb, preset system |
+| [`synthie`](crates/synthie/) | library | DSP engine: oscillators, envelopes, filter, LFO, reverb, preset system |
 | [`synth-tui`](crates/synth-tui/) | binary | Terminal synthesizer — interactive demo of the engine |
 
 ## Library
@@ -31,7 +31,7 @@ A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as i
 Add as a path or git dependency, then:
 
 ```rust
-use synth::prelude::*; // SynthParams, Patch, AudioEvent, MidiNote, setup_audio, …
+use synthie::prelude::*; // SynthParams, Patch, AudioEvent, MidiNote, setup_audio, …
 
 fn main() -> anyhow::Result<()> {
     let patches = presets::sid::default_patches();

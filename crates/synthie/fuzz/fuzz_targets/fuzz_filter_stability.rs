@@ -15,8 +15,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use synth::audio::filter::SvFilter;
-use synth::params::FilterMode;
+use synthie::audio::filter::SvFilter;
+use synthie::params::FilterMode;
 
 /// Packed fuzz input for one `SvFilter::process` call.
 ///

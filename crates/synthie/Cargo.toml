@@ -1,5 +1,5 @@
 [package]
-name        = "synth"
+name        = "synthie"
 version.workspace = true
 edition.workspace = true
 authors.workspace = true
@@ -10,23 +10,14 @@ license.workspace = true
 readme      = "README.md"
 keywords    = ["synthesizer", "audio", "midi", "gamedev", "game-audio"]
 categories  = ["game-engines", "multimedia::audio"]
-publish     = false
+
+[package.metadata.docs.rs]
+all-features = true
+rustdoc-args = ["--cfg", "docsrs"]
 
 [lib]
-name = "synth"
+name = "synthie"
 path = "src/lib.rs"
-
-[[example]]
-name = "tune"
-path = "examples/tune.rs"
-
-[[example]]
-name = "lazy_jones"
-path = "examples/lazy_jones.rs"
-
-[[example]]
-name = "kernkraft"
-path = "examples/kernkraft.rs"
 
 [features]
 ## Enables `serde` support by default.
@@ -40,9 +31,17 @@ cpal              = { workspace = true }
 crossbeam-channel = { workspace = true }
 serde             = { workspace = true, optional = true }
 
-[package.metadata.docs.rs]
-all-features = true
-rustdoc-args = ["--cfg", "docsrs"]
+[[example]]
+name = "tune"
+path = "examples/tune.rs"
+
+[[example]]
+name = "lazy_jones"
+path = "examples/lazy_jones.rs"
+
+[[example]]
+name = "kernkraft"
+path = "examples/kernkraft.rs"
 
 [lints]
 workspace = true

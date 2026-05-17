@@ -23,7 +23,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use synth::params::{FxParams, GlobalParams, LfoParams, OscParams, SynthParams};
+use synthie::params::{FxParams, GlobalParams, LfoParams, OscParams, SynthParams};
 
 fuzz_target!(|data: &[u8]| {
     // --- Part 1: deserialisation must not panic ---
@@ -73,7 +73,7 @@ fn assert_float_fields_finite(p: &SynthParams) {
         "osc.noise_mix is not finite: {noise_mix}"
     );
 
-    let synth::params::EnvParams {
+    let synthie::params::EnvParams {
         attack,
         decay,
         sustain,
@@ -85,7 +85,7 @@ fn assert_float_fields_finite(p: &SynthParams) {
     assert!(sustain.is_finite(), "env.sustain is not finite: {sustain}");
     assert!(release.is_finite(), "env.release is not finite: {release}");
 
-    let synth::params::FilterParams {
+    let synthie::params::FilterParams {
         cutoff,
         resonance,
         drive,

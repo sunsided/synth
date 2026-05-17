@@ -2,8 +2,8 @@
 //! the bridge between the UI thread and the audio engine.
 
 use crossbeam_channel::Sender;
-use synth::params::{AudioEvent, MidiNote, Patch, SynthParams};
-use synth::presets::sid;
+use synthie::params::{AudioEvent, MidiNote, Patch, SynthParams};
+use synthie::presets::sid;
 
 /// Top-level UI section, each corresponding to one panel of controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

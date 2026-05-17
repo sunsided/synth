@@ -149,7 +149,7 @@ tasks:
     aliases:
       - tune
     cmds:
-      - cargo run -p synth {{.PROFILE_FLAG}} --example tune -- {{.CLI_ARGS}}
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example tune -- {{.CLI_ARGS}}
 
   example:lazy-jones:
     desc: Run the Lazy Jones example (B minor hook, 140 BPM, two-channel)
@@ -157,14 +157,14 @@ tasks:
       - lazy
       - example
     cmds:
-      - cargo run -p synth {{.PROFILE_FLAG}} --example lazy_jones -- {{.CLI_ARGS}}
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example lazy_jones -- {{.CLI_ARGS}}
 
   example:kernkraft:
     desc: Run the Kernkraft 400 / Zombie Nation example (Bb minor, full song structure)
     aliases:
       - kernkraft
     cmds:
-      - cargo run -p synth {{.PROFILE_FLAG}} --example kernkraft -- {{.CLI_ARGS}}
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example kernkraft -- {{.CLI_ARGS}}
 
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
@@ -174,7 +174,7 @@ tasks:
       - sh: rustup toolchain list | grep -q nightly
         msg: "nightly toolchain not found — please install via rustup toolchain install nightly"
     cmds:
-      - cargo +nightly fuzz build --fuzz-dir crates/synth/fuzz
+      - cargo +nightly fuzz build --fuzz-dir crates/synthie/fuzz
 
   fuzz:targets:
     desc: List all fuzzing targets
@@ -184,7 +184,7 @@ tasks:
       - sh: rustup toolchain list | grep -q nightly
         msg: "nightly toolchain not found — please install via rustup toolchain install nightly"
     cmds:
-      - cargo fuzz list --fuzz-dir crates/synth/fuzz
+      - cargo fuzz list --fuzz-dir crates/synthie/fuzz
 
   fuzz:
     desc: Run fuzzing on the specified target
@@ -198,7 +198,7 @@ tasks:
     env:
       RUSTFLAGS: -Z sanitizer=address
     cmds:
-      - cargo +nightly fuzz run --fuzz-dir crates/synth/fuzz {{.TARGET}}
+      - cargo +nightly fuzz run --fuzz-dir crates/synthie/fuzz {{.TARGET}}
 
   docs:
     desc: Build the documentation; use docs:open to also open it

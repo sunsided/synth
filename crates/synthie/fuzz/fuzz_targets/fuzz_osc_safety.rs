@@ -21,8 +21,8 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use synth::audio::osc::Oscillator;
-use synth::params::Waveform;
+use synthie::audio::osc::Oscillator;
+use synthie::params::Waveform;
 
 /// All valid `Waveform` variants in index order.
 const WAVEFORMS: [Waveform; 5] = [

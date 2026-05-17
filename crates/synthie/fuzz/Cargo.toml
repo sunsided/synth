@@ -11,7 +11,7 @@ cargo-fuzz = true
 libfuzzer-sys = "0.4"
 serde_json = "1"
 
-[dependencies.synth]
+[dependencies.synthie]
 path = ".."
 
 # Disable default features to avoid pulling in audio-device initialization

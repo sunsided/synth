@@ -9,9 +9,9 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
-use synth::audio::engine::setup_audio;
-use synth::params::{AudioEvent, ChannelNo, DrumHit, MidiNote};
-use synth::presets::sid::default_patches;
+use synthie::audio::engine::setup_audio;
+use synthie::params::{AudioEvent, ChannelNo, DrumHit, MidiNote};
+use synthie::presets::sid::default_patches;
 
 const BPM: f32 = 70.0;
 const BEATS_PER_BAR: f32 = 4.0;

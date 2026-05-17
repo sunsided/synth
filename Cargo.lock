@@ -1600,16 +1600,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "synth"
-version = "0.2.0"
-dependencies = [
- "anyhow",
- "cpal",
- "crossbeam-channel",
- "serde",
-]
-
-[[package]]
 name = "synth-tui"
 version = "0.2.0"
 dependencies = [
@@ -1618,7 +1608,17 @@ dependencies = [
  "crossterm",
  "ratatui",
  "serde_json",
- "synth",
+ "synthie",
+]
+
+[[package]]
+name = "synthie"
+version = "0.2.0"
+dependencies = [
+ "anyhow",
+ "cpal",
+ "crossbeam-channel",
+ "serde",
 ]
 
 [[package]]

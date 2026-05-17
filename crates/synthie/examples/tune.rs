@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{Result, anyhow};
-use synth::audio::engine::setup_audio;
-use synth::params::{AudioEvent, DrumHit};
-use synth::presets::sid::default_patches;
+use synthie::audio::engine::setup_audio;
+use synthie::params::{AudioEvent, DrumHit};
+use synthie::presets::sid::default_patches;
 
 const BPM: f32 = 110.0;
 const BARS: usize = 16;

@@ -19,7 +19,7 @@ pub mod presets;
 /// Convenience re-exports for common consumers.
 ///
 /// ```rust
-/// use synth::prelude::*;
+/// use synthie::prelude::*;
 /// ```
 pub mod prelude {
     pub use crate::audio::engine::{NUM_CHANNELS, setup_audio};

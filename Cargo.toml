@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/synth", "crates/synth-tui"]
+members  = ["crates/synth-tui", "crates/synthie"]
 resolver = "3"
 
 [workspace.package]

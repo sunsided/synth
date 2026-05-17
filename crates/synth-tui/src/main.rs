@@ -11,7 +11,7 @@ mod preset_store;
 mod viz;
 
 use app::{input, state::AppState, ui};
-use synth::audio::engine::setup_audio;
+use synthie::audio::engine::setup_audio;
 use viz::scope::ScopeBuf;
 
 use anyhow::Result;

@@ -5,7 +5,7 @@
 
 use anyhow::{Context, Result};
 use std::path::{Path, PathBuf};
-use synth::params::Patch;
+use synthie::params::Patch;
 
 /// Return the path used to persist user presets.
 /// Stored next to the executable (or current directory as fallback).

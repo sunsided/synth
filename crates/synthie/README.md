@@ -1,7 +1,7 @@
 # synth
 
-<!-- [![docs.rs](https://docs.rs/synth/badge.svg)](https://docs.rs/synth)
-[![crates.io](https://img.shields.io/crates/v/synth.svg)](https://crates.io/crates/synth) -->
+[![docs.rs](https://docs.rs/synthie/badge.svg)](https://docs.rs/synthie)
+[![crates.io](https://img.shields.io/crates/v/synthie.svg)](https://crates.io/crates/synthie)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
 [![Lint and Test](https://github.com/sunsided/synth/actions/workflows/test.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/test.yml)
 [![Fuzz Build](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml)
@@ -22,8 +22,8 @@ A Rust synthesizer engine library with polyphonic voices, ADSR envelopes, state-
 ## Quick Start
 
 ```rust
-use synth::audio::engine::setup_audio;
-use synth::params::{AudioEvent, MidiNote};
+use synthie::audio::engine::setup_audio;
+use synthie::params::{AudioEvent, MidiNote};
 
 fn main() -> anyhow::Result<()> {
     let (stream, tx, _scope_rx) = setup_audio()?;

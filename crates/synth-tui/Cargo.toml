@@ -13,12 +13,12 @@ name = "synth-tui"
 path = "src/main.rs"
 
 [dependencies]
-synth      = { path = "../synth", features = ["serde"] }
 anyhow             = { workspace = true }
 crossbeam-channel  = { workspace = true }
 crossterm          = { workspace = true }
 ratatui    = { workspace = true }
 serde_json = { workspace = true }
+synthie      = { path = "../synthie", features = ["serde"] }
 
 [lints]
 workspace = true

@@ -18,7 +18,7 @@
 
 use crate::app::state::AppState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
-use synth::params::MidiNote;
+use synthie::params::MidiNote;
 
 /// Map a key code to a semitone offset (0 = C of the bottom row, 12 = C of
 /// the upper row).  Returns `None` for non-note keys.
