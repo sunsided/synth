@@ -180,6 +180,13 @@ tasks:
     cmds:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example fx_delay_chorus -- {{.CLI_ARGS}}
 
+  example:osc-richness:
+    desc: Run the oscillator richness demo (sine, dual-OSC unison, and hard sync across a C major arpeggio)
+    aliases:
+      - osc-richness
+    cmds:
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example osc_richness -- {{.CLI_ARGS}}
+
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
     preconditions:
