@@ -61,7 +61,8 @@ impl Section {
     /// Number of adjustable parameters in this section (0 = list navigation only).
     pub fn param_count(self) -> usize {
         match self {
-            Section::Osc | Section::Filter => 4, // waveform/mode, pulse_width/cutoff, detune/resonance, noise_mix/drive
+            Section::Osc => 9, // wave, pw, det, noise | separator | wave2, det2, mix2, sync
+            Section::Filter => 4,
             Section::Env => 6, // attack, decay, sustain, release, env_reverse, glide
             Section::Lfo | Section::Fx => 3, // rate/reverb_mix, depth/reverb_size, target/reverb_damping
             Section::Presets => 0,           // list mode
@@ -265,6 +266,23 @@ impl AppState {
             3 => {
                 self.params.osc.noise_mix = (self.params.osc.noise_mix + d * 0.05).clamp(0.0, 1.0);
             }
+            // 4 = separator row — no-op, falls through to wildcard
+            5 => {
+                self.params.osc2.waveform = if d > 0.0 {
+                    self.params.osc2.waveform.next()
+                } else {
+                    self.params.osc2.waveform.prev()
+                };
+            }
+            6 => {
+                self.params.osc2.detune = (self.params.osc2.detune + d * 5.0).clamp(-100.0, 100.0);
+            }
+            7 => {
+                self.params.osc2.osc2_mix = (self.params.osc2.osc2_mix + d * 0.05).clamp(0.0, 1.0);
+            }
+            8 if d != 0.0 => {
+                self.params.osc2.hard_sync = !self.params.osc2.hard_sync;
+            }
             _ => {}
         }
     }
@@ -389,6 +407,14 @@ impl AppState {
                 ("PW", format!("{:.2}", p.osc.pulse_width)),
                 ("Det", format!("{:+.0}ct", p.osc.detune)),
                 ("Nse", format!("{:.2}", p.osc.noise_mix)),
+                ("", "\u{2500} OSC2 \u{2500}".to_string()),
+                ("Wv2", p.osc2.waveform.name().to_string()),
+                ("Det2", format!("{:+.0}ct", p.osc2.detune)),
+                ("Mix2", format!("{:.2}", p.osc2.osc2_mix)),
+                (
+                    "Sync",
+                    if p.osc2.hard_sync { "ON" } else { "off" }.to_string(),
+                ),
             ],
             Section::Env => vec![
                 ("Atk", format!("{:.3}s", p.env.attack)),
