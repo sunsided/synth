@@ -1,5 +1,11 @@
 # synth
 
+[![docs.rs](https://docs.rs/synth/badge.svg)](https://docs.rs/synth)
+[![crates.io](https://img.shields.io/crates/v/synth.svg)](https://crates.io/crates/synth)
+[![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
+[![Lint and Test](https://github.com/sunsided/synth/actions/workflows/test.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/test.yml)
+[![Fuzz Build](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml)
+
 A Rust synthesizer engine library with polyphonic voices, ADSR envelopes, state-variable filters, LFO modulation, and reverb.
 
 ## Features
