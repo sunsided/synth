@@ -31,6 +31,14 @@ serde_json = "1"
 name = "tune"
 path = "examples/tune.rs"
 
+[[example]]
+name = "lazy_jones"
+path = "examples/lazy_jones.rs"
+
+[[example]]
+name = "kernkraft"
+path = "examples/kernkraft.rs"
+
 [lints.clippy]
 # Enforce the full pedantic lint group project-wide.
 # Intentional suppressions for API/domain naming and DSP casts are handled

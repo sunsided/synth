@@ -2,7 +2,14 @@ name: Lint and Test
 
 on:
   push:
+    branches:
+      - main
+      - 'release/*'
   pull_request:
+    branches:
+      - main
+      - 'release/*'
+      - 'feature/*'
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
