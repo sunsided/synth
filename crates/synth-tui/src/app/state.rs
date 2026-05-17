@@ -16,6 +16,8 @@ pub enum Section {
     Filter,
     /// LFO controls (rate, depth, target).
     Lfo,
+    /// Full modulation editor: LFO1, LFO2, filter env, pitch env.
+    Mod,
     /// Effects controls (reverb mix, size, damping).
     Fx,
     /// Preset list (browse and load patches).
@@ -29,6 +31,7 @@ impl Section {
         Section::Env,
         Section::Filter,
         Section::Lfo,
+        Section::Mod,
         Section::Fx,
         Section::Presets,
     ];
@@ -40,6 +43,7 @@ impl Section {
             Section::Env => "ENV",
             Section::Filter => "FILTER",
             Section::Lfo => "LFO",
+            Section::Mod => "MOD",
             Section::Fx => "FX",
             Section::Presets => "PRESETS",
         }
@@ -65,14 +69,19 @@ impl Section {
             Section::Filter => 4,
             Section::Env => 6, // attack, decay, sustain, release, env_reverse, glide
             Section::Lfo | Section::Fx => 3, // rate/reverb_mix, depth/reverb_size, target/reverb_damping
-            Section::Presets => 0,           // list mode
+            Section::Mod => 21, // LFO1(4) + sep + LFO2(4) + sep + FiltEnv(5) + sep + PitchEnv(5)
+            Section::Presets => 0, // list mode
         }
     }
 
     /// Returns `true` if `idx` is a display-only row that cannot be adjusted.
     /// Used by navigation to skip non-interactive rows (e.g. the OSC2 separator).
     fn is_display_row(self, idx: usize) -> bool {
-        matches!(self, Section::Osc) && idx == 4
+        match self {
+            Section::Osc => idx == 4,
+            Section::Mod => matches!(idx, 4 | 9 | 15),
+            _ => false,
+        }
     }
 }
 
@@ -256,6 +265,7 @@ impl AppState {
             Section::Env => self.adjust_env(delta),
             Section::Filter => self.adjust_filter(delta),
             Section::Lfo => self.adjust_lfo(delta),
+            Section::Mod => self.adjust_mod(delta),
             Section::Fx => self.adjust_fx(delta),
             Section::Presets => self.adjust_preset(delta),
         }
@@ -363,6 +373,89 @@ impl AppState {
         }
     }
 
+    /// Apply `delta` to the focused modulation parameter (Mod section).
+    fn adjust_mod(&mut self, d: f32) {
+        match self.selected_param {
+            // LFO1
+            0 => {
+                self.params.lfo.lfo_rate = (self.params.lfo.lfo_rate
+                    * if d > 0.0 { 1.15 } else { 0.87 })
+                .clamp(0.01, 20.0);
+            }
+            1 => {
+                self.params.lfo.lfo_depth = (self.params.lfo.lfo_depth + d * 0.05).clamp(0.0, 1.0);
+            }
+            2 if d != 0.0 => {
+                self.params.lfo.lfo_shape = self.params.lfo.lfo_shape.next();
+            }
+            3 if d != 0.0 => {
+                self.params.lfo.lfo_target = self.params.lfo.lfo_target.next();
+            }
+            // 4 = separator — no-op
+            // LFO2
+            5 => {
+                self.params.lfo2.lfo_rate = (self.params.lfo2.lfo_rate
+                    * if d > 0.0 { 1.15 } else { 0.87 })
+                .clamp(0.01, 20.0);
+            }
+            6 => {
+                self.params.lfo2.lfo_depth =
+                    (self.params.lfo2.lfo_depth + d * 0.05).clamp(0.0, 1.0);
+            }
+            7 if d != 0.0 => {
+                self.params.lfo2.lfo_shape = self.params.lfo2.lfo_shape.next();
+            }
+            8 if d != 0.0 => {
+                self.params.lfo2.lfo_target = self.params.lfo2.lfo_target.next();
+            }
+            // 9 = separator — no-op
+            // Filter envelope
+            10 => {
+                self.params.filter_env.attack =
+                    (self.params.filter_env.attack + d * 0.01).clamp(0.001, 4.0);
+            }
+            11 => {
+                self.params.filter_env.decay =
+                    (self.params.filter_env.decay + d * 0.01).clamp(0.001, 4.0);
+            }
+            12 => {
+                self.params.filter_env.sustain =
+                    (self.params.filter_env.sustain + d * 0.05).clamp(0.0, 1.0);
+            }
+            13 => {
+                self.params.filter_env.release =
+                    (self.params.filter_env.release + d * 0.05).clamp(0.001, 8.0);
+            }
+            14 => {
+                self.params.filter_env.depth =
+                    (self.params.filter_env.depth + d * 0.05).clamp(-1.0, 1.0);
+            }
+            // 15 = separator — no-op
+            // Pitch envelope
+            16 => {
+                self.params.pitch_env.attack =
+                    (self.params.pitch_env.attack + d * 0.01).clamp(0.001, 4.0);
+            }
+            17 => {
+                self.params.pitch_env.decay =
+                    (self.params.pitch_env.decay + d * 0.01).clamp(0.001, 4.0);
+            }
+            18 => {
+                self.params.pitch_env.sustain =
+                    (self.params.pitch_env.sustain + d * 0.05).clamp(0.0, 1.0);
+            }
+            19 => {
+                self.params.pitch_env.release =
+                    (self.params.pitch_env.release + d * 0.05).clamp(0.001, 8.0);
+            }
+            20 => {
+                self.params.pitch_env.depth =
+                    (self.params.pitch_env.depth + d * 0.05).clamp(-1.0, 1.0);
+            }
+            _ => {}
+        }
+    }
+
     /// Apply `delta` to the focused FX parameter.
     fn adjust_fx(&mut self, d: f32) {
         match self.selected_param {
@@ -456,6 +549,32 @@ impl AppState {
                 ("Dep", format!("{:.2}", p.lfo.lfo_depth)),
                 ("Tgt", p.lfo.lfo_target.name().to_string()),
             ],
+            Section::Mod => {
+                let p = &self.params;
+                vec![
+                    ("Rate", format!("{:.2}Hz", p.lfo.lfo_rate)),
+                    ("Dep", format!("{:.2}", p.lfo.lfo_depth)),
+                    ("Shape", p.lfo.lfo_shape.name().to_string()),
+                    ("Tgt", p.lfo.lfo_target.name().to_string()),
+                    ("", "\u{2500} LFO2 \u{2500}".to_string()),
+                    ("Rate2", format!("{:.2}Hz", p.lfo2.lfo_rate)),
+                    ("Dep2", format!("{:.2}", p.lfo2.lfo_depth)),
+                    ("Shp2", p.lfo2.lfo_shape.name().to_string()),
+                    ("Tgt2", p.lfo2.lfo_target.name().to_string()),
+                    ("", "\u{2500} Filter Env \u{2500}".to_string()),
+                    ("FAtk", format!("{:.3}s", p.filter_env.attack)),
+                    ("FDec", format!("{:.3}s", p.filter_env.decay)),
+                    ("FSus", format!("{:.2}", p.filter_env.sustain)),
+                    ("FRel", format!("{:.2}s", p.filter_env.release)),
+                    ("FDep", format!("{:+.2}", p.filter_env.depth)),
+                    ("", "\u{2500} Pitch Env \u{2500}".to_string()),
+                    ("PAtk", format!("{:.3}s", p.pitch_env.attack)),
+                    ("PDec", format!("{:.3}s", p.pitch_env.decay)),
+                    ("PSus", format!("{:.2}", p.pitch_env.sustain)),
+                    ("PRel", format!("{:.2}s", p.pitch_env.release)),
+                    ("PDep", format!("{:+.2}", p.pitch_env.depth)),
+                ]
+            }
             Section::Fx => vec![
                 ("RvbMix", format!("{:.2}", p.fx.reverb_mix)),
                 ("RvbSz", format!("{:.2}", p.fx.reverb_size)),
