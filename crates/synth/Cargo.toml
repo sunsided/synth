@@ -1,0 +1,40 @@
+[package]
+name        = "synth"
+version     = "0.2.0"
+edition     = "2024"
+authors     = ["Markus Mayer <widemeadows@gmail.com>"]
+description = "Rust synthesizer engine library with ADSR, filters, LFO, and reverb"
+repository  = "https://github.com/sunsided/synth"
+license     = "EUPL-1.2"
+readme      = "README.md"
+keywords    = ["synthesizer", "audio", "midi", "gamedev", "game-audio"]
+categories  = ["game-engines", "multimedia::audio"]
+
+[lib]
+name = "synth"
+path = "src/lib.rs"
+
+[[example]]
+name = "tune"
+path = "examples/tune.rs"
+
+[[example]]
+name = "lazy_jones"
+path = "examples/lazy_jones.rs"
+
+[[example]]
+name = "kernkraft"
+path = "examples/kernkraft.rs"
+
+[features]
+default = ["serde"]
+serde   = ["dep:serde"]
+
+[dependencies]
+anyhow            = "1"
+cpal              = "0.17"
+crossbeam-channel = "0.5"
+serde             = { version = "1", features = ["derive"], optional = true }
+
+[lints.clippy]
+pedantic = "warn"
