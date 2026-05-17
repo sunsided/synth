@@ -1,5 +1,6 @@
 /target
 .task/
+crates/synth/Cargo.lock
 crates/synth/fuzz/target/
 crates/synth/fuzz/corpus/
 crates/synth/fuzz/artifacts/

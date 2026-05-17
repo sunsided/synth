@@ -41,7 +41,6 @@ path = "fuzz_targets/fuzz_params_serde.rs"
 test = false
 doc = false
 
-# This workspace declaration is required by cargo-fuzz; it prevents the fuzz
-# package from being picked up by the parent workspace (which has none, but
-# is good practice regardless).
+# This `[workspace]` declaration is required by cargo-fuzz; it prevents the
+# fuzz package from being absorbed by the parent workspace.
 [workspace]
