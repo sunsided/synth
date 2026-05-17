@@ -171,7 +171,7 @@ tasks:
       - sh: rustup toolchain list | grep -q nightly
         msg: "nightly toolchain not found — please install via rustup toolchain install nightly"
     cmds:
-      - cargo +nightly fuzz build
+      - cargo +nightly fuzz build --fuzz-dir crates/synth/fuzz
 
   fuzz:targets:
     desc: List all fuzzing targets
@@ -181,7 +181,7 @@ tasks:
       - sh: rustup toolchain list | grep -q nightly
         msg: "nightly toolchain not found — please install via rustup toolchain install nightly"
     cmds:
-      - cargo fuzz list
+      - cargo fuzz list --fuzz-dir crates/synth/fuzz
 
   fuzz:
     desc: Run fuzzing on the specified target
@@ -195,7 +195,7 @@ tasks:
     env:
       RUSTFLAGS: -Z sanitizer=address
     cmds:
-      - cargo +nightly fuzz run {{.TARGET}}
+      - cargo +nightly fuzz run --fuzz-dir crates/synth/fuzz {{.TARGET}}
 
   docs:
     desc: Build the documentation; use docs:open to also open it
