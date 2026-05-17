@@ -4,6 +4,7 @@
 //! sample-by-sample render path.
 
 use crate::audio::{
+    crusher::Bitcrusher,
     env::{EnvStage, Envelope},
     filter::SvFilter,
     osc::{Lfo, Oscillator, detune_hz, midi_to_hz},
@@ -22,6 +23,8 @@ pub struct Voice {
     pub current_freq: f32,
     /// Waveform generator.
     pub osc: Oscillator,
+    /// Bitcrusher (bit depth and sample rate reduction).
+    pub crusher: Bitcrusher,
     /// Amplitude envelope.
     pub env: Envelope,
     /// State-variable filter.
@@ -48,6 +51,7 @@ impl Voice {
             target_freq: 440.0,
             current_freq: 440.0,
             osc: Oscillator::default(),
+            crusher: Bitcrusher::default(),
             env: Envelope::default(),
             filter: SvFilter::default(),
             lfo: Lfo::default(),
@@ -74,6 +78,7 @@ impl Voice {
         if !legato {
             // No glide on fresh attacks – snap to pitch immediately.
             self.current_freq = self.target_freq;
+            self.crusher.reset();
         }
         self.active = true;
         self.update_glide(params.global.glide_time, sample_rate);
@@ -90,6 +95,7 @@ impl Voice {
         self.active = false;
         self.env.reset();
         self.filter.reset();
+        self.crusher.reset();
     }
 
     /// Render one sample.  Called from the audio callback – no allocation.
@@ -137,6 +143,11 @@ impl Voice {
             pw,
             params.osc.noise_mix,
         );
+
+        // Bitcrusher (pre-filter: quantization harmonics shaped by filter resonance)
+        let osc_out = self
+            .crusher
+            .process(osc_out, params.crusher.bits, params.crusher.rate);
 
         // Envelope
         let env_val = self.env.process(
