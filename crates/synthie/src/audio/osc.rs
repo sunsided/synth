@@ -14,6 +14,7 @@ pub struct Oscillator {
     noise_lfsr: u32,
     /// Most recent LFSR output, held between period boundaries.
     last_noise: f32,
+    just_wrapped: bool,
 }
 
 impl Default for Oscillator {
@@ -23,13 +24,13 @@ impl Default for Oscillator {
             phase: 0.0,
             noise_lfsr: 0xACE1_FEED,
             last_noise: 0.0,
+            just_wrapped: false,
         }
     }
 }
 
 impl Oscillator {
     /// Reset the phase accumulator to zero (useful for hard-sync effects).
-    #[allow(dead_code)]
     pub fn reset(&mut self) {
         self.phase = 0.0;
     }
@@ -47,12 +48,14 @@ impl Oscillator {
         pulse_width: f32,
         noise_mix: f32,
     ) -> f32 {
+        self.just_wrapped = false;
         let inc = freq_hz / sample_rate;
         self.phase += inc;
 
         // Phase wrap – tick LFSR on oscillator period boundary (SID behaviour)
         if self.phase >= 1.0 {
             self.phase -= 1.0;
+            self.just_wrapped = true;
             self.last_noise = self.tick_lfsr();
         }
 
@@ -89,6 +92,12 @@ impl Oscillator {
         } else {
             osc
         }
+    }
+
+    /// Returns `true` if the phase wrapped during the most recent `next_sample()` call.
+    #[must_use]
+    pub fn just_wrapped(&self) -> bool {
+        self.just_wrapped
     }
 
     /// Advance the 32-bit Galois LFSR by one step and return a sample in -1..1.
@@ -167,6 +176,32 @@ mod tests {
             let s = osc.next_sample(440.0, 44100.0, Waveform::Pulse, 0.5, 0.0);
             assert!(s == 1.0 || s == -1.0);
         }
+    }
+
+    #[test]
+    fn osc_sine_bounds() {
+        let mut osc = Oscillator::default();
+        for _ in 0..4410 {
+            let s = osc.next_sample(440.0, 44100.0, Waveform::Sine, 0.5, 0.0);
+            assert!((-1.0..=1.0).contains(&s), "sine out of bounds: {s}");
+        }
+    }
+
+    #[test]
+    fn osc_just_wrapped_fires() {
+        let mut osc = Oscillator::default();
+        let mut wrapped_count = 0;
+        // 440 Hz at 44100 Hz: wraps every ~100.2 samples → ~44 wraps in 4410 samples
+        for _ in 0..4410 {
+            osc.next_sample(440.0, 44100.0, Waveform::Sawtooth, 0.5, 0.0);
+            if osc.just_wrapped() {
+                wrapped_count += 1;
+            }
+        }
+        assert!(
+            (40..=50).contains(&wrapped_count),
+            "unexpected wrap count: {wrapped_count}"
+        );
     }
 
     #[test]
