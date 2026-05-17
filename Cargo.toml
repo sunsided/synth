@@ -3,7 +3,7 @@ members  = ["crates/synth-tui", "crates/synthie"]
 resolver = "3"
 
 [workspace.package]
-version    = "0.3.0"
+version    = "0.3.1"
 edition    = "2024"
 authors    = ["Markus Mayer <widemeadows@gmail.com>"]
 repository = "https://github.com/sunsided/synth"

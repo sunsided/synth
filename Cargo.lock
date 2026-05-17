@@ -1601,7 +1601,7 @@ dependencies = [
 
 [[package]]
 name = "synth-tui"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "crossbeam-channel",
@@ -1613,7 +1613,7 @@ dependencies = [
 
 [[package]]
 name = "synthie"
-version = "0.3.0"
+version = "0.3.1"
 dependencies = [
  "anyhow",
  "cpal",
