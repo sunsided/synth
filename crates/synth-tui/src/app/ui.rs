@@ -67,7 +67,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
             Constraint::Length(6),  // FILTER
             Constraint::Length(5),  // LFO
             Constraint::Length(5),  // FX
-            Constraint::Min(0),     // spacer
+            Constraint::Min(2),     // MOD (scrollable, takes remaining vertical space)
         ])
         .split(left);
 
@@ -77,6 +77,7 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
     draw_section(frame, left_sections[3], state, Section::Filter);
     draw_section(frame, left_sections[4], state, Section::Lfo);
     draw_section(frame, left_sections[5], state, Section::Fx);
+    draw_section(frame, left_sections[6], state, Section::Mod);
 
     // Right column: waveform scope (top two-thirds) + presets (bottom third)
     let right_sections = Layout::default()
@@ -201,7 +202,8 @@ fn draw_section(frame: &mut Frame, area: Rect, state: &AppState, section: Sectio
         .collect();
 
     let list = List::new(items);
-    frame.render_widget(list, inner);
+    let mut list_state = ListState::default().with_selected(Some(state.selected_param));
+    frame.render_stateful_widget(list, inner, &mut list_state);
 }
 
 /// Render the waveform scope chart.
