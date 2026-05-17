@@ -35,4 +35,4 @@ jobs:
 
       - name: Build fuzz targets
         run: cargo +nightly fuzz build
-        working-directory: crates/synth
+        working-directory: crates/synthie
