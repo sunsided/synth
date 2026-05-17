@@ -12,8 +12,8 @@ use std::time::Duration;
 use anyhow::Result;
 use synthie::audio::engine::setup_audio;
 use synthie::params::{
-    AudioEvent, CrusherParams, EnvParams, FilterMode, FilterParams, FxParams, GlobalParams,
-    LfoParams, LfoTarget, MidiNote, OscParams, SynthParams, Waveform,
+    AudioEvent, ChorusParams, CrusherParams, DelayParams, EnvParams, FilterMode, FilterParams,
+    FxParams, GlobalParams, LfoParams, LfoTarget, MidiNote, OscParams, SynthParams, Waveform,
 };
 
 /// Seconds to hold each phase.
@@ -53,6 +53,8 @@ fn dry_sawtooth() -> SynthParams {
             reverb_damping: 0.5,
         },
         crusher: CrusherParams::default(),
+        chorus: ChorusParams::default(),
+        delay: DelayParams::default(),
         global: GlobalParams {
             volume: 0.7,
             glide_time: 0.0,

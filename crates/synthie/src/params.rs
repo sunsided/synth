@@ -231,6 +231,50 @@ impl Default for CrusherParams {
     }
 }
 
+/// Delay/echo FX parameters.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct DelayParams {
+    /// Delay time in ms, 1.0..=2000.0.
+    pub time_ms: f32,
+    /// Feedback gain, 0.0..=0.95.
+    pub feedback: f32,
+    /// Wet/dry mix, 0.0..=1.0.
+    pub mix: f32,
+}
+
+impl Default for DelayParams {
+    fn default() -> Self {
+        Self {
+            time_ms: 375.0,
+            feedback: 0.3,
+            mix: 0.0,
+        }
+    }
+}
+
+/// Chorus FX parameters.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ChorusParams {
+    /// LFO modulation rate in Hz, 0.1..=5.0.
+    pub rate: f32,
+    /// Modulation depth (half-swing around 15 ms center), 0.0..=10.0 ms.
+    pub depth_ms: f32,
+    /// Wet/dry mix, 0.0..=1.0.
+    pub mix: f32,
+}
+
+impl Default for ChorusParams {
+    fn default() -> Self {
+        Self {
+            rate: 0.5,
+            depth_ms: 3.0,
+            mix: 0.0,
+        }
+    }
+}
+
 /// Global section parameters.
 #[derive(Debug, Clone)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -261,6 +305,12 @@ pub struct SynthParams {
     /// Bitcrusher parameters.
     #[cfg_attr(feature = "serde", serde(default))]
     pub crusher: CrusherParams,
+    /// Chorus FX parameters.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub chorus: ChorusParams,
+    /// Delay/echo FX parameters.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub delay: DelayParams,
     /// Global parameters.
     pub global: GlobalParams,
 }
@@ -299,6 +349,8 @@ impl Default for SynthParams {
                 reverb_damping: 0.5,
             },
             crusher: CrusherParams::default(),
+            chorus: ChorusParams::default(),
+            delay: DelayParams::default(),
             global: GlobalParams {
                 volume: 0.7,
                 glide_time: 0.05,

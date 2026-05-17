@@ -8,6 +8,8 @@ use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, Sender, bounded};
 
+use crate::audio::chorus::Chorus;
+use crate::audio::delay::Delay;
 use crate::audio::drums::DrumMachine;
 use crate::audio::fx::Reverb;
 use crate::audio::voice::Voice;
@@ -135,6 +137,10 @@ struct AudioState {
     channels: [AudioChannel; NUM_CHANNELS],
     /// Shared post-mix reverb send (driven by channel 0's FX params).
     reverb: Reverb,
+    /// Shared post-mix chorus (driven by channel 0's chorus params).
+    chorus: Chorus,
+    /// Shared post-mix delay (driven by channel 0's delay params).
+    delay: Delay,
     /// Parallel drum machine (kick + hi-hats).
     drums: DrumMachine,
     /// Receives `AudioEvent` messages from the UI thread.
@@ -161,6 +167,8 @@ impl AudioState {
         Self {
             channels,
             reverb,
+            chorus: Chorus::new(sample_rate),
+            delay: Delay::new(sample_rate),
             drums: DrumMachine::new(sample_rate),
             event_rx,
             scope_tx,
@@ -228,16 +236,20 @@ impl AudioState {
 
         let sample_rate = self.sample_rate;
         let reverb_mix = self.channels[0].params.fx.reverb_mix;
+        let chorus_params = self.channels[0].params.chorus.clone();
+        let delay_params = self.channels[0].params.delay.clone();
 
         for frame in data.chunks_mut(hw_channels) {
+            // Drums are part of the pre-FX mix: they pass through chorus, delay, and reverb.
             let mix: f32 = self
                 .channels
                 .iter_mut()
                 .map(|ch| ch.process(sample_rate))
-                .sum();
-            let sample = (self.reverb.process(mix, reverb_mix)
-                + self.drums.process(self.sample_rate))
-                * MASTER_GAIN;
+                .sum::<f32>()
+                + self.drums.process(sample_rate);
+            let mix = self.chorus.process(mix, &chorus_params);
+            let mix = self.delay.process(mix, &delay_params);
+            let sample = self.reverb.process(mix, reverb_mix) * MASTER_GAIN;
 
             // Guard against denormals / clipping before writing to hardware.
             let sample = if sample.is_finite() {

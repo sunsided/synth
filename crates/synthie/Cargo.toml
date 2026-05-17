@@ -46,5 +46,9 @@ path = "examples/kernkraft.rs"
 name = "bitcrusher"
 path = "examples/bitcrusher.rs"
 
+[[example]]
+name = "fx_delay_chorus"
+path = "examples/fx_delay_chorus.rs"
+
 [lints]
 workspace = true

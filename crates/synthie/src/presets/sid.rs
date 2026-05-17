@@ -5,8 +5,8 @@
 //! the parameter choices remain legible without running the synth.
 
 use crate::params::{
-    CrusherParams, EnvParams, FilterMode, FilterParams, FxParams, GlobalParams, LfoParams,
-    LfoTarget, OscParams, Patch, SynthParams, Waveform,
+    ChorusParams, CrusherParams, DelayParams, EnvParams, FilterMode, FilterParams, FxParams,
+    GlobalParams, LfoParams, LfoTarget, OscParams, Patch, SynthParams, Waveform,
 };
 
 /// Return the built-in C64-inspired preset bank.
@@ -48,6 +48,8 @@ pub fn default_patches() -> Vec<Patch> {
                     reverb_damping: 0.6,
                 },
                 crusher: CrusherParams::default(),
+                chorus: ChorusParams::default(),
+                delay: DelayParams::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.0,
@@ -88,6 +90,8 @@ pub fn default_patches() -> Vec<Patch> {
                     reverb_damping: 0.5,
                 },
                 crusher: CrusherParams::default(),
+                chorus: ChorusParams::default(),
+                delay: DelayParams::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.0,
@@ -128,6 +132,8 @@ pub fn default_patches() -> Vec<Patch> {
                     reverb_damping: 0.55,
                 },
                 crusher: CrusherParams::default(),
+                chorus: ChorusParams::default(),
+                delay: DelayParams::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.0,
@@ -168,6 +174,8 @@ pub fn default_patches() -> Vec<Patch> {
                     reverb_damping: 0.4,
                 },
                 crusher: CrusherParams::default(),
+                chorus: ChorusParams::default(),
+                delay: DelayParams::default(),
                 global: GlobalParams {
                     volume: 0.7,
                     glide_time: 0.03,
@@ -208,6 +216,8 @@ pub fn default_patches() -> Vec<Patch> {
                     reverb_damping: 0.7,
                 },
                 crusher: CrusherParams::default(),
+                chorus: ChorusParams::default(),
+                delay: DelayParams::default(),
                 global: GlobalParams {
                     volume: 0.65,
                     glide_time: 0.0,
@@ -248,6 +258,8 @@ pub fn default_patches() -> Vec<Patch> {
                     reverb_damping: 0.8,
                 },
                 crusher: CrusherParams::default(),
+                chorus: ChorusParams::default(),
+                delay: DelayParams::default(),
                 global: GlobalParams {
                     volume: 0.8,
                     glide_time: 0.0,
@@ -288,6 +300,8 @@ pub fn default_patches() -> Vec<Patch> {
                     reverb_damping: 0.6,
                 },
                 crusher: CrusherParams::default(),
+                chorus: ChorusParams::default(),
+                delay: DelayParams::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.12,
@@ -328,6 +342,8 @@ pub fn default_patches() -> Vec<Patch> {
                     reverb_damping: 0.3,
                 },
                 crusher: CrusherParams::default(),
+                chorus: ChorusParams::default(),
+                delay: DelayParams::default(),
                 global: GlobalParams {
                     volume: 0.65,
                     glide_time: 0.0,

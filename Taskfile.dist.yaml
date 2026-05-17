@@ -173,6 +173,13 @@ tasks:
     cmds:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example bitcrusher -- {{.CLI_ARGS}}
 
+  example:fx-delay-chorus:
+    desc: Run the delay/chorus FX demo (A4 sawtooth cycling through delay time, feedback, and chorus settings)
+    aliases:
+      - fx-delay-chorus
+    cmds:
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example fx_delay_chorus -- {{.CLI_ARGS}}
+
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
     preconditions:
