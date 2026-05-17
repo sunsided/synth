@@ -9,7 +9,46 @@ use crate::audio::{
     filter::SvFilter,
     osc::{Lfo, Oscillator, detune_hz, midi_to_hz},
 };
-use crate::params::{LfoTarget, MidiNote, SynthParams};
+use crate::params::{MidiNote, SynthParams};
+
+/// Per-sample modulation accumulator.
+///
+/// All modulation sources (LFOs, envelopes) write additively into these slots.
+/// `Voice::process()` applies them in one pass, keeping the signal chain readable.
+struct ModBus {
+    /// Pitch modulation, applied as `freq *= 2^(pitch * 0.1)`.
+    /// LFO contribution: `lfo_val * depth`. Env contribution: `env_out * depth * 10`.
+    pitch: f32,
+    /// Pulse-width modulation, applied as `pw += pw_mod * 0.4` (clamped 0.05..0.95).
+    pw: f32,
+    /// Filter cutoff modulation, applied as `cutoff *= 2^(cutoff * 2.0)`.
+    cutoff: f32,
+    /// Volume/tremolo modulation, applied as `amp *= (1 - volume * 0.5)`.
+    volume: f32,
+}
+
+impl ModBus {
+    fn new() -> Self {
+        Self {
+            pitch: 0.0,
+            pw: 0.0,
+            cutoff: 0.0,
+            volume: 0.0,
+        }
+    }
+
+    /// Add an LFO contribution to the appropriate slot.
+    fn add_lfo(&mut self, lfo_val: f32, depth: f32, target: crate::params::LfoTarget) {
+        use crate::params::LfoTarget;
+        let c = lfo_val * depth;
+        match target {
+            LfoTarget::Pitch => self.pitch += c,
+            LfoTarget::PulseWidth => self.pw += c,
+            LfoTarget::Cutoff => self.cutoff += c,
+            LfoTarget::Volume => self.volume += c,
+        }
+    }
+}
 
 /// Monophonic synthesiser voice combining oscillator, envelope, filter, and LFO.
 pub struct Voice {
@@ -33,6 +72,12 @@ pub struct Voice {
     pub filter: SvFilter,
     /// Low-frequency oscillator.
     pub lfo: Lfo,
+    /// Second low-frequency oscillator.
+    pub lfo2: Lfo,
+    /// Modulation envelope for filter cutoff.
+    pub filter_env: Envelope,
+    /// Modulation envelope for oscillator pitch.
+    pub pitch_env: Envelope,
     /// Per-sample portamento smoothing coefficient (0 = instant, ~1 = very slow).
     pub glide_coeff: f32,
 }
@@ -58,6 +103,9 @@ impl Voice {
             env: Envelope::default(),
             filter: SvFilter::default(),
             lfo: Lfo::default(),
+            lfo2: Lfo::default(),
+            filter_env: Envelope::default(),
+            pitch_env: Envelope::default(),
             glide_coeff: 0.0,
         }
     }
@@ -86,11 +134,15 @@ impl Voice {
         self.active = true;
         self.update_glide(params.global.glide_time, sample_rate);
         self.env.note_on(legato);
+        self.filter_env.note_on(legato);
+        self.pitch_env.note_on(legato);
     }
 
     /// Begin the envelope release phase.
     pub fn note_off(&mut self) {
         self.env.note_off();
+        self.filter_env.note_off();
+        self.pitch_env.note_off();
     }
 
     /// Immediately silence the voice and reset DSP state (all-notes-off / panic).
@@ -98,6 +150,8 @@ impl Voice {
         self.active = false;
         self.env.reset();
         self.filter.reset();
+        self.filter_env.reset();
+        self.pitch_env.reset();
         self.crusher.reset();
     }
 
@@ -107,40 +161,63 @@ impl Voice {
             return 0.0;
         }
 
-        // Deactivate once envelope reaches Idle.
         if self.env.stage == EnvStage::Idle && !self.env.is_active() {
             self.active = false;
         }
 
-        // LFO
-        let lfo_val = self
+        // --- Modulation bus: fill from all sources, then read once ---
+
+        let mut bus = ModBus::new();
+
+        // LFO 1
+        let lfo1 = self
             .lfo
             .next(params.lfo.lfo_rate, params.lfo.lfo_shape, sample_rate);
-        let lfo_depth = params.lfo.lfo_depth;
+        bus.add_lfo(lfo1, params.lfo.lfo_depth, params.lfo.lfo_target);
+
+        // LFO 2
+        let lfo2 = self
+            .lfo2
+            .next(params.lfo2.lfo_rate, params.lfo2.lfo_shape, sample_rate);
+        bus.add_lfo(lfo2, params.lfo2.lfo_depth, params.lfo2.lfo_target);
+
+        // Filter envelope (0..1 output, scaled by depth)
+        let fenv = self.filter_env.process(
+            params.filter_env.attack,
+            params.filter_env.decay,
+            params.filter_env.sustain,
+            params.filter_env.release,
+            false,
+            sample_rate,
+        );
+        bus.cutoff += fenv * params.filter_env.depth;
+
+        // Pitch envelope (scaled ×10 so depth=1 ≈ ±1 octave vs. the 0.1 LFO scale)
+        let penv = self.pitch_env.process(
+            params.pitch_env.attack,
+            params.pitch_env.decay,
+            params.pitch_env.sustain,
+            params.pitch_env.release,
+            false,
+            sample_rate,
+        );
+        bus.pitch += penv * params.pitch_env.depth * 10.0;
+
+        // --- Signal chain ---
 
         // Glide (portamento)
         let gc = self.glide_coeff;
         self.current_freq = self.target_freq + (self.current_freq - self.target_freq) * gc;
         let freq = self.current_freq;
 
-        // Pitch modulation (vibrato)
-        let modded_freq = match params.lfo.lfo_target {
-            LfoTarget::Pitch => freq * 2.0_f32.powf(lfo_val * lfo_depth * 0.1),
-            _ => freq,
-        };
-
-        // Detune (re-apply in case params changed)
-        let final_freq = detune_hz(modded_freq, 0.0); // detune already baked into target_freq
+        // Pitch modulation (vibrato + pitch env)
+        let modded_freq = freq * 2.0_f32.powf(bus.pitch * 0.1);
+        let final_freq = detune_hz(modded_freq, 0.0);
 
         // Pulse width modulation
-        let pw = match params.lfo.lfo_target {
-            LfoTarget::PulseWidth => {
-                (params.osc.pulse_width + lfo_val * lfo_depth * 0.4).clamp(0.05, 0.95)
-            }
-            _ => params.osc.pulse_width,
-        };
+        let pw = (params.osc.pulse_width + bus.pw * 0.4).clamp(0.05, 0.95);
 
-        // Oscillator
+        // Oscillator 1
         let osc_out = self.osc.next_sample(
             final_freq,
             sample_rate,
@@ -149,6 +226,7 @@ impl Voice {
             params.osc.noise_mix,
         );
 
+        // Oscillator 2 (unchanged)
         let osc_out = if params.osc2.osc2_mix > 0.001 {
             if params.osc2.hard_sync && self.osc.just_wrapped() {
                 self.osc2.reset();
@@ -162,12 +240,12 @@ impl Voice {
             osc_out
         };
 
-        // Bitcrusher (pre-filter: quantization harmonics shaped by filter resonance)
+        // Bitcrusher (pre-filter)
         let osc_out = self
             .crusher
             .process(osc_out, params.crusher.bits, params.crusher.rate);
 
-        // Envelope
+        // Amplitude envelope
         let env_val = self.env.process(
             params.env.attack,
             params.env.decay,
@@ -177,20 +255,14 @@ impl Voice {
             sample_rate,
         );
 
-        // Volume LFO (tremolo)
-        let vol_mod = match params.lfo.lfo_target {
-            LfoTarget::Volume => 1.0 - lfo_val * lfo_depth * 0.5,
-            _ => 1.0,
-        };
+        // Volume modulation (tremolo)
+        let vol_mod = 1.0 - bus.volume * 0.5;
 
-        // Filter cutoff LFO
-        let cutoff_mod = match params.lfo.lfo_target {
-            LfoTarget::Cutoff => (params.filter.cutoff * 2.0_f32.powf(lfo_val * lfo_depth * 2.0))
-                .clamp(20.0, 18000.0),
-            _ => params.filter.cutoff,
-        };
+        // Filter cutoff modulation
+        let cutoff_mod =
+            (params.filter.cutoff * 2.0_f32.powf(bus.cutoff * 2.0)).clamp(20.0, 18000.0);
 
-        // Filter stage
+        // Filter
         let filtered = self.filter.process(
             osc_out * env_val,
             params.filter.filter_mode,
@@ -200,7 +272,6 @@ impl Voice {
             sample_rate,
         );
 
-        // Volume & tremolo (dry; post-mix reverb is handled in engine)
         filtered * env_val * vol_mod * params.global.volume
     }
 }
@@ -321,5 +392,113 @@ mod tests {
             any_positive,
             "unsynced OSC2 should produce positive values at some OSC1 wrap-points"
         );
+    }
+
+    #[test]
+    fn filter_env_opens_cutoff() {
+        use crate::params::{
+            EnvParams, FilterMode, FilterParams, GlobalParams, ModEnvParams, Waveform,
+        };
+
+        // Start with a very low cutoff so most signal is blocked.
+        // Fast-attack filter env at full positive depth (opens toward higher cutoff).
+        let mut params = SynthParams {
+            filter: FilterParams {
+                filter_mode: FilterMode::LowPass,
+                cutoff: 200.0,
+                resonance: 0.0,
+                drive: 0.0,
+            },
+            filter_env: ModEnvParams {
+                attack: 0.001,
+                decay: 4.0,
+                sustain: 1.0,
+                release: 4.0,
+                depth: 1.0,
+            },
+            env: EnvParams {
+                attack: 0.001,
+                decay: 0.0,
+                sustain: 1.0,
+                release: 4.0,
+                env_reverse: false,
+            },
+            global: GlobalParams {
+                volume: 1.0,
+                glide_time: 0.0,
+            },
+            ..SynthParams::default()
+        };
+        params.osc.waveform = Waveform::Sawtooth;
+        params.lfo.lfo_depth = 0.0;
+        params.lfo2.lfo_depth = 0.0;
+        params.pitch_env.depth = 0.0;
+
+        // With filter env open (depth = 1.0).
+        let mut v_open = Voice::new();
+        v_open.note_on(MidiNote::A4, &params, 44100.0);
+        let rms_open: f32 = (0..4410)
+            .map(|_| v_open.process(&params, 44100.0).powi(2))
+            .sum::<f32>()
+            .sqrt();
+
+        // With filter env off (depth = 0.0) — filter stays closed at 200 Hz.
+        let mut params_closed = params.clone();
+        params_closed.filter_env.depth = 0.0;
+        let mut v_closed = Voice::new();
+        v_closed.note_on(MidiNote::A4, &params_closed, 44100.0);
+        let rms_closed: f32 = (0..4410)
+            .map(|_| v_closed.process(&params_closed, 44100.0).powi(2))
+            .sum::<f32>()
+            .sqrt();
+
+        assert!(
+            rms_open > rms_closed * 1.5,
+            "filter env depth=1 should pass more signal than depth=0: open={rms_open:.4}, closed={rms_closed:.4}"
+        );
+    }
+
+    #[test]
+    fn pitch_env_is_finite() {
+        use crate::params::ModEnvParams;
+
+        let params = SynthParams {
+            pitch_env: ModEnvParams {
+                attack: 0.001,
+                decay: 0.5,
+                sustain: 0.0,
+                release: 0.1,
+                depth: 1.0,
+            },
+            ..SynthParams::default()
+        };
+        let mut voice = Voice::new();
+        voice.note_on(MidiNote::A4, &params, 44100.0);
+        for i in 0..4410 {
+            let s = voice.process(&params, 44100.0);
+            assert!(
+                s.is_finite(),
+                "non-finite sample at {i} with pitch env: {s}"
+            );
+        }
+    }
+
+    #[test]
+    fn lfo2_and_lfo1_both_active_is_finite() {
+        use crate::params::LfoShape;
+
+        let mut params = SynthParams::default();
+        params.lfo.lfo_depth = 0.5;
+        params.lfo.lfo_shape = LfoShape::Square;
+        params.lfo.lfo_target = crate::params::LfoTarget::Pitch;
+        params.lfo2.lfo_depth = 0.5;
+        params.lfo2.lfo_shape = LfoShape::Sawtooth;
+        params.lfo2.lfo_target = crate::params::LfoTarget::Pitch;
+        let mut voice = Voice::new();
+        voice.note_on(MidiNote::A4, &params, 44100.0);
+        for i in 0..4410 {
+            let s = voice.process(&params, 44100.0);
+            assert!(s.is_finite(), "non-finite sample at {i} with two LFOs: {s}");
+        }
     }
 }
