@@ -170,7 +170,6 @@ impl AudioState {
     }
 
     fn note_on(&mut self, ch: ChannelNo, midi: MidiNote) {
-        self.apply_reverb_params();
         if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
             channel.note_on(midi, self.sample_rate);
         }
@@ -222,12 +221,16 @@ impl AudioState {
         let sample_rate = self.sample_rate;
         let reverb_mix = self.channels[0].params.fx.reverb_mix;
 
+        #[allow(clippy::cast_precision_loss)]
+        let num_channels_f32 = NUM_CHANNELS as f32;
+
         for frame in data.chunks_mut(hw_channels) {
             let mix: f32 = self
                 .channels
                 .iter_mut()
                 .map(|ch| ch.process(sample_rate))
-                .sum();
+                .sum::<f32>()
+                / num_channels_f32;
             let sample =
                 self.reverb.process(mix, reverb_mix) + self.drums.process(self.sample_rate);
 

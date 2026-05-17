@@ -292,7 +292,12 @@ impl Patch {
     }
 }
 
-/// A MIDI note number, 0..=127.
+/// A typed wrapper around a MIDI note byte.
+///
+/// The inner `u8` field is public for ergonomic construction with numeric
+/// literals (`MidiNote(60)`).  No range check is performed; the MIDI spec
+/// defines valid values as 0..=127, but values up to 255 are accepted.
+/// Use [`MidiNote::new_clamped`] when constructing from untrusted input.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
 pub struct MidiNote(pub u8);
 
@@ -301,6 +306,12 @@ impl MidiNote {
     pub const MIDDLE_C: Self = Self(60);
     /// A4 (440 Hz reference pitch).
     pub const A4: Self = Self(69);
+
+    /// Clamp `v` to 0..=127 and wrap in `MidiNote`.
+    #[must_use]
+    pub const fn new_clamped(v: u8) -> Self {
+        Self(if v > 127 { 127 } else { v })
+    }
 
     /// Raw MIDI byte value.
     #[must_use]
