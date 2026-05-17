@@ -95,7 +95,7 @@ impl Voice {
             env: Envelope::default(),
             filter: SvFilter::default(),
             lfo: Lfo::default(),
-            lfo2: Lfo::default(),
+            lfo2: Lfo::seeded(0xDEAD_BEEF),
             filter_env: Envelope::default(),
             pitch_env: Envelope::default(),
             glide_coeff: 0.0,
@@ -248,7 +248,7 @@ impl Voice {
         );
 
         // Volume modulation (tremolo)
-        let vol_mod = (1.0 - bus.volume * 0.5).clamp(0.0, 1.0);
+        let vol_mod = (1.0 - bus.volume * 0.5).max(0.0);
 
         // Filter cutoff modulation
         let cutoff_mod =

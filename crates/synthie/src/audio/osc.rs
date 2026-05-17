@@ -154,7 +154,6 @@ impl Default for Lfo {
 
 impl Lfo {
     /// Create an LFO with a specific LFSR seed, for independent S&H sequences when multiple LFOs run simultaneously.
-    #[allow(dead_code)]
     pub(crate) fn seeded(lfsr_seed: u32) -> Self {
         Self {
             phase: 0.0,
