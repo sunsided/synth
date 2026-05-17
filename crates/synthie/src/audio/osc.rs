@@ -131,27 +131,65 @@ pub fn detune_hz(base_hz: f32, cents: f32) -> f32 {
     base_hz * 2.0_f32.powf(cents / 1200.0)
 }
 
-/// Simple sine-wave LFO.
+/// Low-frequency oscillator supporting four waveform shapes.
 pub struct Lfo {
     /// Current LFO phase, normalised to 0.0 .. 1.0.
     phase: f32,
+    /// Held output value for the S&H shape; updated each period boundary.
+    hold: f32,
+    /// 32-bit Galois LFSR state used by the S&H shape.
+    lfsr: u32,
 }
 
 impl Default for Lfo {
-    /// Create an LFO starting at phase zero.
     fn default() -> Self {
-        Self { phase: 0.0 }
+        Self {
+            phase: 0.0,
+            hold: 0.0,
+            lfsr: 0xACE1_FEED,
+        }
     }
 }
 
 impl Lfo {
     /// Advance the LFO by one sample and return a value in -1.0 .. 1.0.
-    pub fn next(&mut self, rate_hz: f32, sample_rate: f32) -> f32 {
+    pub fn next(&mut self, rate_hz: f32, shape: crate::params::LfoShape, sample_rate: f32) -> f32 {
+        use crate::params::LfoShape;
+
         self.phase += rate_hz / sample_rate;
         if self.phase >= 1.0 {
             self.phase -= 1.0;
+            if shape == LfoShape::SampleHold {
+                self.hold = self.tick_lfsr();
+            }
         }
-        (TAU * self.phase).sin()
+
+        let p = self.phase;
+        match shape {
+            LfoShape::Sine => (TAU * p).sin(),
+            LfoShape::Square => {
+                if p < 0.5 {
+                    1.0_f32
+                } else {
+                    -1.0_f32
+                }
+            }
+            LfoShape::Sawtooth => 2.0 * p - 1.0,
+            LfoShape::SampleHold => self.hold,
+        }
+    }
+
+    /// Advance the 32-bit Galois LFSR and return a sample in -1..1.
+    ///
+    /// Feedback polynomial: 0xB4BCD35C (same as `Oscillator`).
+    #[allow(clippy::cast_precision_loss)]
+    fn tick_lfsr(&mut self) -> f32 {
+        let bit = self.lfsr & 1;
+        self.lfsr >>= 1;
+        if bit != 0 {
+            self.lfsr ^= 0xB4BC_D35C;
+        }
+        self.lfsr.cast_signed() as f32 / 2_147_483_648.0
     }
 }
 
@@ -214,5 +252,82 @@ mod tests {
     fn midi_to_hz_c4() {
         let hz = midi_to_hz(crate::params::MidiNote::MIDDLE_C);
         assert!((hz - 261.626).abs() < 0.1);
+    }
+
+    #[test]
+    fn lfo_square_bounds() {
+        let mut lfo = Lfo::default();
+        for _ in 0..4410 {
+            let s = lfo.next(5.0, crate::params::LfoShape::Square, 44100.0);
+            assert!((-1.0..=1.0).contains(&s), "square out of bounds: {s}");
+        }
+    }
+
+    #[test]
+    fn lfo_sawtooth_bounds() {
+        let mut lfo = Lfo::default();
+        for _ in 0..4410 {
+            let s = lfo.next(5.0, crate::params::LfoShape::Sawtooth, 44100.0);
+            assert!((-1.0..=1.0).contains(&s), "sawtooth out of bounds: {s}");
+        }
+    }
+
+    #[test]
+    fn lfo_sample_hold_bounds() {
+        let mut lfo = Lfo::default();
+        for _ in 0..4410 {
+            let s = lfo.next(5.0, crate::params::LfoShape::SampleHold, 44100.0);
+            assert!((-1.0..=1.0).contains(&s), "S&H out of bounds: {s}");
+        }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // S&H hold value is an exact bit-identical copy; equality is intentional
+    fn lfo_sample_hold_constant_within_cycle() {
+        // 441 Hz rate → 100 samples per cycle at 44100 Hz sample rate.
+        let mut lfo = Lfo::default();
+        let rate = 441.0_f32;
+        let sr = 44100.0_f32;
+        let shape = crate::params::LfoShape::SampleHold;
+
+        // Advance past the first wrap to get a stable hold value.
+        for _ in 0..100 {
+            lfo.next(rate, shape, sr);
+        }
+
+        // The next 99 samples are all within the same cycle; hold must not change.
+        let held = lfo.next(rate, shape, sr);
+        for _ in 1..99 {
+            let s = lfo.next(rate, shape, sr);
+            assert_eq!(s, held, "S&H changed value within a cycle");
+        }
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // LFSR outputs are exact bit patterns; inequality is intentional
+    fn lfo_sample_hold_changes_on_wrap() {
+        // Verify the held value changes between different cycles.
+        let mut lfo = Lfo::default();
+        let rate = 441.0_f32;
+        let sr = 44100.0_f32;
+        let shape = crate::params::LfoShape::SampleHold;
+
+        // Advance to start of cycle 2.
+        for _ in 0..100 {
+            lfo.next(rate, shape, sr);
+        }
+        let cycle2 = lfo.next(rate, shape, sr);
+
+        // Advance to start of cycle 3.
+        for _ in 0..99 {
+            lfo.next(rate, shape, sr);
+        }
+        let cycle3 = lfo.next(rate, shape, sr);
+
+        // With a 32-bit LFSR the chance of equal values ≈ 2^-32.
+        assert_ne!(
+            cycle2, cycle3,
+            "S&H must produce different values each cycle"
+        );
     }
 }

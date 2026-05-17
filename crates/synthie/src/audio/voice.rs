@@ -113,7 +113,9 @@ impl Voice {
         }
 
         // LFO
-        let lfo_val = self.lfo.next(params.lfo.lfo_rate, sample_rate); // -1..1
+        let lfo_val = self
+            .lfo
+            .next(params.lfo.lfo_rate, params.lfo.lfo_shape, sample_rate);
         let lfo_depth = params.lfo.lfo_depth;
 
         // Glide (portamento)
