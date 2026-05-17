@@ -13,8 +13,8 @@ use anyhow::Result;
 use synthie::audio::engine::setup_audio;
 use synthie::params::{
     AudioEvent, ChorusParams, CrusherParams, DelayParams, EnvParams, FilterMode, FilterParams,
-    FxParams, GlobalParams, LfoParams, LfoTarget, MidiNote, Osc2Params, OscParams, SynthParams,
-    Waveform,
+    FxParams, GlobalParams, LfoParams, LfoShape, LfoTarget, MidiNote, ModEnvParams, Osc2Params,
+    OscParams, SynthParams, Waveform,
 };
 
 /// Seconds to hold each phase.
@@ -47,6 +47,7 @@ fn dry_sawtooth() -> SynthParams {
             lfo_rate: 0.0,
             lfo_depth: 0.0,
             lfo_target: LfoTarget::Pitch,
+            lfo_shape: LfoShape::Sine,
         },
         fx: FxParams {
             reverb_mix: 0.0,
@@ -57,6 +58,9 @@ fn dry_sawtooth() -> SynthParams {
         chorus: ChorusParams::default(),
         delay: DelayParams::default(),
         osc2: Osc2Params::default(),
+        lfo2: LfoParams::default(),
+        filter_env: ModEnvParams::default(),
+        pitch_env: ModEnvParams::default(),
         global: GlobalParams {
             volume: 0.7,
             glide_time: 0.0,

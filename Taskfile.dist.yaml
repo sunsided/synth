@@ -187,6 +187,13 @@ tasks:
     cmds:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example osc_richness -- {{.CLI_ARGS}}
 
+  example:mod-depth:
+    desc: Run the modulation depth demo (filter env, pitch env, four LFO shapes, dual-LFO across an A minor phrase)
+    aliases:
+      - mod-depth
+    cmds:
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example mod_depth -- {{.CLI_ARGS}}
+
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
     preconditions:
