@@ -3,7 +3,7 @@
 //! The `Oscillator` implements six waveform shapes with an integrated LFSR
 //! noise source clocked at the oscillator period boundary (SID-style behaviour).
 
-use crate::params::Waveform;
+use crate::params::{LfoShape, Waveform};
 use std::f32::consts::TAU;
 
 /// Single oscillator with LFSR-based noise (SID-style: LFSR clocked at osc frequency).
@@ -142,6 +142,7 @@ pub struct Lfo {
 }
 
 impl Default for Lfo {
+    /// Create an LFO starting at phase zero with a non-zero LFSR seed to avoid the zero-lock state.
     fn default() -> Self {
         Self {
             phase: 0.0,
@@ -153,9 +154,7 @@ impl Default for Lfo {
 
 impl Lfo {
     /// Advance the LFO by one sample and return a value in -1.0 .. 1.0.
-    pub fn next(&mut self, rate_hz: f32, shape: crate::params::LfoShape, sample_rate: f32) -> f32 {
-        use crate::params::LfoShape;
-
+    pub fn next(&mut self, rate_hz: f32, shape: LfoShape, sample_rate: f32) -> f32 {
         self.phase += rate_hz / sample_rate;
         if self.phase >= 1.0 {
             self.phase -= 1.0;
@@ -182,7 +181,7 @@ impl Lfo {
     /// Advance the 32-bit Galois LFSR and return a sample in -1..1.
     ///
     /// Feedback polynomial: 0xB4BCD35C (same as `Oscillator`).
-    #[allow(clippy::cast_precision_loss)]
+    #[allow(clippy::cast_precision_loss)] // deliberate DSP normalisation; precision loss is acceptable
     fn tick_lfsr(&mut self) -> f32 {
         let bit = self.lfsr & 1;
         self.lfsr >>= 1;
