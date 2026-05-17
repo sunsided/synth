@@ -22,7 +22,7 @@ pub mod presets;
 /// use synthie::prelude::*;
 /// ```
 pub mod prelude {
-    pub use crate::audio::engine::{NUM_CHANNELS, setup_audio};
+    pub use crate::audio::engine::{NUM_CHANNELS, setup_audio, setup_audio_n};
     pub use crate::audio::osc::{detune_hz, midi_to_hz};
     pub use crate::params::*;
     pub use crate::presets;

@@ -31,15 +31,20 @@ const POLYPHONY: usize = 4;
 /// Polyphony as `f32` for scaling the summed voice mix.
 const POLYPHONY_F32: f32 = 4.0;
 
-/// Number of independent synthesis channels (each has its own voice pool and params).
-pub const NUM_CHANNELS: usize = 2;
+/// Default number of independent synthesis channels used by [`setup_audio`].
+///
+/// Each channel has its own voice pool and parameter set.  Increase this
+/// constant or call [`setup_audio_n`] with a larger `N` when more independent
+/// audio roles are needed (e.g. background music, engine drone, one-shot
+/// stingers each on a separate channel).
+pub const NUM_CHANNELS: usize = 4;
 
 /// Master output gain applied after summing all synthesis channels.
 ///
-/// At −6 dB this gives two full-volume channels headroom to sum cleanly
-/// before the final hard clamp.  Per-channel loudness is controlled via
-/// `SynthParams::global::volume`; this constant is a fixed headroom budget,
-/// not a per-channel normaliser.
+/// Per-channel loudness is controlled via `SynthParams::global::volume`;
+/// this constant is a fixed headroom budget, not a per-channel normaliser.
+/// Reduce it (or per-channel volumes) if summing many active channels causes
+/// clipping before the final hard clamp.
 const MASTER_GAIN: f32 = 0.5;
 
 /// Voice slot metadata for note routing and age-based stealing.
@@ -132,9 +137,12 @@ impl AudioChannel {
 ///
 /// No fields are shared with the UI thread; synchronisation happens only
 /// through the bounded `event_rx` / `scope_tx` channels.
-struct AudioState {
+///
+/// `N` is the number of independent synthesis channels.  Use [`NUM_CHANNELS`]
+/// for the default, or a custom value via [`setup_audio_n`].
+struct AudioState<const N: usize> {
     /// Independent synthesis channels, each with its own voice pool and params.
-    channels: [AudioChannel; NUM_CHANNELS],
+    channels: [AudioChannel; N],
     /// Shared post-mix reverb send (driven by channel 0's FX params).
     reverb: Reverb,
     /// Shared post-mix chorus (driven by channel 0's chorus params).
@@ -155,10 +163,16 @@ struct AudioState {
     sample_rate: f32,
 }
 
-impl AudioState {
+impl<const N: usize> AudioState<N> {
     /// Construct initial audio state for the given sample rate.
     fn new(sample_rate: f32, event_rx: Receiver<AudioEvent>, scope_tx: Sender<Vec<f32>>) -> Self {
-        let channels: [AudioChannel; NUM_CHANNELS] = std::array::from_fn(|_| AudioChannel::new());
+        const {
+            assert!(
+                N >= 1,
+                "AudioState requires at least 1 synthesis channel (N >= 1)"
+            );
+        };
+        let channels: [AudioChannel; N] = std::array::from_fn(|_| AudioChannel::new());
         let mut reverb = Reverb::new();
         reverb.set_params(
             channels[0].params.fx.reverb_size,
@@ -281,7 +295,13 @@ impl AudioState {
     }
 }
 
-/// Initialise CPAL audio output.
+/// Initialise CPAL audio output with a configurable number of synthesis channels.
+///
+/// `N` controls how many independent voice pools (channels) are allocated.
+/// Each channel has its own [`SynthParams`] snapshot and polyphony pool.
+/// Use [`ChannelNo`] values `0..N` with the channel-specific [`AudioEvent`]
+/// variants to address individual channels.  Values of `N = 0` are rejected
+/// at compile time.
 ///
 /// Returns:
 /// * `cpal::Stream` – must be kept alive for the duration of the program.
@@ -292,7 +312,8 @@ impl AudioState {
 ///
 /// Returns an error if no default audio output device is available or if the
 /// device's stream configuration cannot be determined or opened.
-pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
+pub fn setup_audio_n<const N: usize>()
+-> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
     let (event_tx, event_rx) = bounded::<AudioEvent>(1024);
     let (scope_tx, scope_rx) = bounded::<Vec<f32>>(SCOPE_CHANNEL_CAPACITY);
 
@@ -313,7 +334,7 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
     // Convert from the device's native format config to a plain StreamConfig.
     let stream_config: cpal::StreamConfig = config.into();
 
-    let mut audio_state = AudioState::new(sample_rate, event_rx, scope_tx);
+    let mut audio_state = AudioState::<N>::new(sample_rate, event_rx, scope_tx);
 
     let stream = device
         .build_output_stream(
@@ -329,4 +350,23 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
     stream.play().context("failed to start audio stream")?;
 
     Ok((stream, event_tx, scope_rx))
+}
+
+/// Initialise CPAL audio output with [`NUM_CHANNELS`] synthesis channels.
+///
+/// This is a convenience wrapper around [`setup_audio_n`] that uses the
+/// library default channel count.  For a custom count, call
+/// `setup_audio_n::<N>()` directly.
+///
+/// Returns:
+/// * `cpal::Stream` – must be kept alive for the duration of the program.
+/// * `Sender<AudioEvent>` – send note on/off and param changes from the UI thread.
+/// * `Receiver<Vec<f32>>` – scope samples for waveform display.
+///
+/// # Errors
+///
+/// Returns an error if no default audio output device is available or if the
+/// device's stream configuration cannot be determined or opened.
+pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
+    setup_audio_n::<NUM_CHANNELS>()
 }
