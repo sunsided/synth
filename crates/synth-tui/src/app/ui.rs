@@ -61,13 +61,13 @@ pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)]) {
     let left_sections = Layout::default()
         .direction(Direction::Vertical)
         .constraints([
-            Constraint::Length(3), // title
-            Constraint::Length(6), // OSC
-            Constraint::Length(8), // ENV
-            Constraint::Length(6), // FILTER
-            Constraint::Length(5), // LFO
-            Constraint::Length(5), // FX
-            Constraint::Min(0),    // spacer
+            Constraint::Length(3),  // title
+            Constraint::Length(10), // OSC (includes OSC2 sub-panel)
+            Constraint::Length(8),  // ENV
+            Constraint::Length(6),  // FILTER
+            Constraint::Length(5),  // LFO
+            Constraint::Length(5),  // FX
+            Constraint::Min(0),     // spacer
         ])
         .split(left);
 
