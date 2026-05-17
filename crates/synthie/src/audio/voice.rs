@@ -78,6 +78,7 @@ impl Voice {
         if !legato {
             // No glide on fresh attacks – snap to pitch immediately.
             self.current_freq = self.target_freq;
+            self.crusher.reset();
         }
         self.active = true;
         self.update_glide(params.global.glide_time, sample_rate);

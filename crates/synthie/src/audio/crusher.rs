@@ -19,7 +19,7 @@ impl Default for Bitcrusher {
 }
 
 impl Bitcrusher {
-    /// Reset state — call on voice steal or panic.
+    /// Reset state — call on non-legato note-on and panic.
     pub fn reset(&mut self) {
         self.held_sample = 0.0;
         self.counter = 0;
@@ -27,10 +27,16 @@ impl Bitcrusher {
 
     /// Process one sample.
     ///
+    /// # Parameters
     /// * `input` - sample in -1.0..1.0
-    /// * `bits`  - bit depth 1.0..=16.0; 16.0 = pass-through
-    /// * `rate`  - sample rate divider 1.0..=16.0; 1.0 = pass-through
+    /// * `bits`  - bit depth 1.0..=16.0; 16.0 = pass-through; must be finite and >= 1.0
+    /// * `rate`  - sample rate divider 1.0..=16.0; 1.0 = pass-through; must be finite and >= 1.0
+    ///
+    /// # Panics (debug only)
+    /// Panics in debug builds if `bits` or `rate` are non-finite or less than 1.0.
     pub fn process(&mut self, input: f32, bits: f32, rate: f32) -> f32 {
+        debug_assert!(bits.is_finite() && bits >= 1.0, "bits out of range: {bits}");
+        debug_assert!(rate.is_finite() && rate >= 1.0, "rate out of range: {rate}");
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let divider = (rate.floor() as u32).max(1);
         if self.counter == 0 {
@@ -138,7 +144,7 @@ mod tests {
     }
 
     #[test]
-    fn no_nan_extreme_params() {
+    fn finite_output_with_boundary_params() {
         let mut c = Bitcrusher::default();
         for &bits in &[1.0_f32, 8.0, 16.0] {
             for &rate in &[1.0_f32, 8.0, 16.0] {
