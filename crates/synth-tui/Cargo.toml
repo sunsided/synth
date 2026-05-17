@@ -1,0 +1,23 @@
+[package]
+name        = "synth-tui"
+version     = "0.2.0"
+edition     = "2024"
+authors     = ["Markus Mayer <widemeadows@gmail.com>"]
+description = "Terminal UI for the synth engine"
+repository  = "https://github.com/sunsided/synth"
+license     = "EUPL-1.2"
+
+[[bin]]
+name = "synth-tui"
+path = "src/main.rs"
+
+[dependencies]
+synth      = { path = "../synth", features = ["serde"] }
+anyhow             = { workspace = true }
+crossbeam-channel  = { workspace = true }
+crossterm          = { workspace = true }
+ratatui    = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

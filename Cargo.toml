@@ -1,5 +1,5 @@
 [workspace]
-members  = ["crates/synth"]
+members  = ["crates/synth", "crates/synth-tui"]
 resolver = "3"
 
 [workspace.dependencies]
