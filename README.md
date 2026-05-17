@@ -30,14 +30,14 @@ A terminal-based polyphonic synthesizer written in Rust. Play notes with your ke
 ### Build and Run
 
 ```sh
-cargo run --release
+cargo run -p synth-tui --release
 ```
 
 Or build first, then run the binary directly:
 
 ```sh
 cargo build --release
-./target/release/synth
+./target/release/synth-tui
 ```
 
 > **Note:** The synthesizer runs in the terminal's alternate screen with raw mode enabled. Your normal terminal session is fully restored on exit.

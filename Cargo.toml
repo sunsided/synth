@@ -1,46 +1,22 @@
-[package]
-name = "synth"
-version = "0.1.0"
-edition = "2024"
-authors = ["Markus Mayer <widemeadows@gmail.com>"]
-description = "A terminal-based polyphonic synthesizer"
+[workspace]
+members  = ["crates/synth", "crates/synth-tui"]
+resolver = "3"
+
+[workspace.package]
+version    = "0.2.0"
+edition    = "2024"
+authors    = ["Markus Mayer <widemeadows@gmail.com>"]
 repository = "https://github.com/sunsided/synth"
-license = "EUPL-1.2"
-readme = "README.md"
-keywords = ["synthesizer", "audio", "tui", "terminal", "midi"]
-categories = ["command-line-utilities", "multimedia::audio"]
+license    = "EUPL-1.2"
 
-[lib]
-name = "synth"
-path = "src/lib.rs"
-
-[[bin]]
-name = "synth"
-path = "src/main.rs"
-
-[dependencies]
-anyhow = "1"
-cpal = "0.17"
+[workspace.dependencies]
+anyhow            = "1"
+cpal              = "0.17"
 crossbeam-channel = "0.5"
-crossterm = "0.29"
-ratatui = "0.30"
-serde = { version = "1", features = ["derive"] }
-serde_json = "1"
+crossterm         = "0.29"
+ratatui           = "0.30"
+serde             = { version = "1", features = ["derive"] }
+serde_json        = "1"
 
-[[example]]
-name = "tune"
-path = "examples/tune.rs"
-
-[[example]]
-name = "lazy_jones"
-path = "examples/lazy_jones.rs"
-
-[[example]]
-name = "kernkraft"
-path = "examples/kernkraft.rs"
-
-[lints.clippy]
-# Enforce the full pedantic lint group project-wide.
-# Intentional suppressions for API/domain naming and DSP casts are handled
-# with item-level #[allow(...)] attributes at the relevant declaration sites.
+[workspace.lints.clippy]
 pedantic = "warn"

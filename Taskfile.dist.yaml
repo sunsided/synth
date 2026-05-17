@@ -18,18 +18,20 @@ tasks:
         msg: "cargo-sort not found — please install via cargo install cargo-sort"
     sources:
       - Cargo.toml
+      - crates/*/Cargo.toml
     cmds:
-      - cargo sort
+      - cargo sort --workspace
 
   fmt:
     aliases:
       - format
     sources:
       - Cargo.toml
-      - ./**/*.rs
+      - crates/**/*.toml
+      - crates/**/*.rs
     cmds:
       - task: sort:toml
-      - cargo fmt
+      - cargo fmt --all
 
   lint:
     desc: Lint the code
@@ -93,9 +95,10 @@ tasks:
     sources:
       - Cargo.toml
       - Cargo.lock
-      - src/**/*.rs
+      - crates/**/*.rs
+      - crates/**/*.toml
     generates:
-      - target/{{.PROFILE_DIR}}/synth
+      - target/{{.PROFILE_DIR}}/synth-tui
     requires:
       vars:
         - name: PROFILE
@@ -103,7 +106,7 @@ tasks:
             - debug
             - release
     cmds:
-      - cargo build {{.PROFILE_FLAG}}
+      - cargo build -p synth-tui {{.PROFILE_FLAG}}
 
   build:timing:
     desc: Build with timings (nightly)
@@ -114,7 +117,7 @@ tasks:
             - debug
             - release
     cmds:
-      - cargo +nightly build --timings=html,json -Zunstable-options {{.PROFILE_FLAG}}
+      - cargo +nightly build --workspace --timings=html,json -Zunstable-options {{.PROFILE_FLAG}}
 
   test:
     desc: Run all tests
@@ -139,14 +142,14 @@ tasks:
   run:
     desc: Run the application
     cmds:
-      - cargo run {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
+      - cargo run -p synth-tui {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
 
   example:tune:
     desc: Run the tune example (chord progression + melody, SID-style)
     aliases:
       - tune
     cmds:
-      - cargo run {{.PROFILE_FLAG}} --example tune -- {{.CLI_ARGS}}
+      - cargo run -p synth {{.PROFILE_FLAG}} --example tune -- {{.CLI_ARGS}}
 
   example:lazy-jones:
     desc: Run the Lazy Jones example (B minor hook, 140 BPM, two-channel)
@@ -154,14 +157,14 @@ tasks:
       - lazy
       - example
     cmds:
-      - cargo run {{.PROFILE_FLAG}} --example lazy_jones -- {{.CLI_ARGS}}
+      - cargo run -p synth {{.PROFILE_FLAG}} --example lazy_jones -- {{.CLI_ARGS}}
 
   example:kernkraft:
     desc: Run the Kernkraft 400 / Zombie Nation example (Bb minor, full song structure)
     aliases:
       - kernkraft
     cmds:
-      - cargo run {{.PROFILE_FLAG}} --example kernkraft -- {{.CLI_ARGS}}
+      - cargo run -p synth {{.PROFILE_FLAG}} --example kernkraft -- {{.CLI_ARGS}}
 
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
@@ -171,7 +174,7 @@ tasks:
       - sh: rustup toolchain list | grep -q nightly
         msg: "nightly toolchain not found — please install via rustup toolchain install nightly"
     cmds:
-      - cargo +nightly fuzz build
+      - cargo +nightly fuzz build --fuzz-dir crates/synth/fuzz
 
   fuzz:targets:
     desc: List all fuzzing targets
@@ -181,7 +184,7 @@ tasks:
       - sh: rustup toolchain list | grep -q nightly
         msg: "nightly toolchain not found — please install via rustup toolchain install nightly"
     cmds:
-      - cargo fuzz list
+      - cargo fuzz list --fuzz-dir crates/synth/fuzz
 
   fuzz:
     desc: Run fuzzing on the specified target
@@ -195,18 +198,18 @@ tasks:
     env:
       RUSTFLAGS: -Z sanitizer=address
     cmds:
-      - cargo +nightly fuzz run {{.TARGET}}
+      - cargo +nightly fuzz run --fuzz-dir crates/synth/fuzz {{.TARGET}}
 
   docs:
     desc: Build the documentation; use docs:open to also open it
     sources:
-      - ./**/*.toml
-      - ./**/*.rs
+      - crates/**/*.toml
+      - crates/**/*.rs
     generates:
       - target/doc/**
     cmds:
       - rm -rf target/doc
-      - cargo doc --document-private-items --no-deps {{.CLI_ARGS}}
+      - cargo doc --workspace --document-private-items --no-deps {{.CLI_ARGS}}
 
   docs:open:
     desc: Build and open the docs

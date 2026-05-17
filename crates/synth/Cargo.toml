@@ -1,0 +1,40 @@
+[package]
+name        = "synth"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description = "Rust synthesizer engine library with ADSR, filters, LFO, and reverb"
+repository.workspace = true
+license.workspace = true
+readme      = "README.md"
+keywords    = ["synthesizer", "audio", "midi", "gamedev", "game-audio"]
+categories  = ["game-engines", "multimedia::audio"]
+
+[lib]
+name = "synth"
+path = "src/lib.rs"
+
+[[example]]
+name = "tune"
+path = "examples/tune.rs"
+
+[[example]]
+name = "lazy_jones"
+path = "examples/lazy_jones.rs"
+
+[[example]]
+name = "kernkraft"
+path = "examples/kernkraft.rs"
+
+[features]
+default = ["serde"]
+serde   = ["dep:serde"]
+
+[dependencies]
+anyhow            = { workspace = true }
+cpal              = { workspace = true }
+crossbeam-channel = { workspace = true }
+serde             = { workspace = true, optional = true }
+
+[lints]
+workspace = true

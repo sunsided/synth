@@ -1,0 +1,24 @@
+[package]
+name              = "synth-tui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description       = "Terminal UI for the synth engine"
+repository.workspace = true
+license.workspace = true
+publish           = false
+
+[[bin]]
+name = "synth-tui"
+path = "src/main.rs"
+
+[dependencies]
+synth      = { path = "../synth", features = ["serde"] }
+anyhow             = { workspace = true }
+crossbeam-channel  = { workspace = true }
+crossterm          = { workspace = true }
+ratatui    = { workspace = true }
+serde_json = { workspace = true }
+
+[lints]
+workspace = true

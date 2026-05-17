@@ -18,6 +18,9 @@ path = ".."
 # during fuzz runs (no terminal/audio device available in the fuzzer sandbox).
 default-features = false
 
+# Re-enable the serde feature so fuzz_params_serde can use SynthParams' serde impls.
+features = ["serde"]
+
 # Fuzz targets are compiled as separate binaries; keep them out of normal
 # workspace builds and disable doc/test targets to speed up fuzzer compilation.
 [[bin]]
@@ -38,7 +41,6 @@ path = "fuzz_targets/fuzz_params_serde.rs"
 test = false
 doc = false
 
-# This workspace declaration is required by cargo-fuzz; it prevents the fuzz
-# package from being picked up by the parent workspace (which has none, but
-# is good practice regardless).
+# This `[workspace]` declaration is required by cargo-fuzz; it prevents the
+# fuzz package from being absorbed by the parent workspace.
 [workspace]

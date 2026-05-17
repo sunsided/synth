@@ -4,10 +4,12 @@
 //! and sends a boxed clone to the audio thread via `AudioEvent::LoadPatch`
 //! whenever a value changes.
 
+#[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
 /// Oscillator waveform shape.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum Waveform {
     /// Classic square/pulse wave; width controlled by `pulse_width`.
     Pulse,
@@ -61,7 +63,8 @@ impl Waveform {
 
 /// State-variable filter topology selector.
 #[allow(clippy::enum_variant_names)] // LP/BP/HP suffix is standard audio industry terminology
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum FilterMode {
     /// Low-pass output.
     LowPass,
@@ -98,7 +101,8 @@ impl FilterMode {
 }
 
 /// Selects which parameter the LFO modulates.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub enum LfoTarget {
     /// Pitch modulation (vibrato).
     Pitch,
@@ -139,7 +143,8 @@ impl LfoTarget {
 }
 
 /// Oscillator section parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct OscParams {
     /// Active waveform shape.
     pub waveform: Waveform,
@@ -152,7 +157,8 @@ pub struct OscParams {
 }
 
 /// Amplitude envelope section parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct EnvParams {
     /// Attack time in seconds.
     pub attack: f32,
@@ -167,7 +173,8 @@ pub struct EnvParams {
 }
 
 /// Filter section parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FilterParams {
     /// Filter topology (LP / BP / HP).
     pub filter_mode: FilterMode,
@@ -181,7 +188,8 @@ pub struct FilterParams {
 
 /// LFO section parameters.
 #[allow(clippy::struct_field_names)] // lfo_ prefix is intentional for clarity in a flat params struct
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LfoParams {
     /// LFO rate in Hz.
     pub lfo_rate: f32,
@@ -193,7 +201,8 @@ pub struct LfoParams {
 
 /// FX section parameters.
 #[allow(clippy::struct_field_names)] // reverb_ prefix is intentional; struct may gain non-reverb fields
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FxParams {
     /// Reverb wet/dry mix, 0 .. 1.
     pub reverb_mix: f32,
@@ -204,7 +213,8 @@ pub struct FxParams {
 }
 
 /// Global section parameters.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GlobalParams {
     /// Master output volume, 0 .. 1.
     pub volume: f32,
@@ -216,7 +226,8 @@ pub struct GlobalParams {
 ///
 /// The UI owns the authoritative copy; the audio thread receives a boxed clone
 /// via `AudioEvent::LoadPatch` on every user edit.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SynthParams {
     /// Oscillator parameters.
     pub osc: OscParams,
@@ -274,7 +285,8 @@ impl Default for SynthParams {
 }
 
 /// A named preset: a display name paired with a full parameter snapshot.
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Patch {
     /// Human-readable patch name shown in the preset list.
     pub name: String,
@@ -298,7 +310,8 @@ impl Patch {
 /// literals (`MidiNote(60)`).  No range check is performed; the MIDI spec
 /// defines valid values as 0..=127, but values up to 255 are accepted.
 /// Use [`MidiNote::new_clamped`] when constructing from untrusted input.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct MidiNote(pub u8);
 
 impl MidiNote {
@@ -337,7 +350,8 @@ impl Default for MidiNote {
 /// Channel 0 is the default; `NoteOn` / `LoadPatch` without a channel argument
 /// implicitly target it.  Values beyond the engine's `NUM_CHANNELS` limit are
 /// silently ignored.
-#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChannelNo(pub u8);
 
 impl ChannelNo {
