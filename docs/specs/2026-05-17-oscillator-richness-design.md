@@ -130,7 +130,7 @@ Hard Sync  [ off ]
 
 ### Section enum / input
 
-Add `Section::Osc2` entries (or extend OSC section navigation) so Tab/arrow keys reach the four new params. Input handler maps up/down to waveform cycle, left/right to detune/mix nudge, enter to toggle hard_sync.
+Extend existing `Section::Osc` navigation (no new enum variant). The OSC panel's param list gains four entries; Tab/arrow keys reach them via the same row-index mechanism used for the existing four OSC params. Input handler maps up/down to waveform cycle, left/right to detune/mix nudge, enter to toggle hard_sync.
 
 ## Tests
 
