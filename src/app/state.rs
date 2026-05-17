@@ -140,13 +140,15 @@ impl AppState {
     }
 
     /// Record a note-on and forward it to the audio thread.
-    pub fn note_on(&mut self, midi: MidiNote) {
+    pub fn note_on(&mut self, midi: impl Into<MidiNote>) {
+        let midi = midi.into();
         self.active_note = Some(midi);
         self.send(AudioEvent::NoteOn(midi));
     }
 
     /// Record a note-off and forward it to the audio thread.
-    pub fn note_off(&mut self, midi: MidiNote) {
+    pub fn note_off(&mut self, midi: impl Into<MidiNote>) {
+        let midi = midi.into();
         if self.active_note == Some(midi) {
             self.active_note = None;
         }

@@ -109,7 +109,8 @@ impl Oscillator {
 /// Convert a MIDI note number to Hz (A4 = 69 = 440 Hz).
 #[inline]
 #[must_use]
-pub fn midi_to_hz(note: crate::params::MidiNote) -> f32 {
+pub fn midi_to_hz(note: impl Into<crate::params::MidiNote>) -> f32 {
+    let note = note.into();
     440.0 * 2.0_f32.powf((f32::from(note.as_u8()) - 69.0) / 12.0)
 }
 

@@ -65,7 +65,8 @@ impl Voice {
     }
 
     /// Start a new note (or retrigger legato if the voice is already active).
-    pub fn note_on(&mut self, note: MidiNote, params: &SynthParams, sample_rate: f32) {
+    pub fn note_on(&mut self, note: impl Into<MidiNote>, params: &SynthParams, sample_rate: f32) {
+        let note = note.into();
         let legato = self.active;
         self.target_note = note;
         let base = midi_to_hz(note);
