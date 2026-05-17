@@ -61,11 +61,18 @@ impl Section {
     /// Number of adjustable parameters in this section (0 = list navigation only).
     pub fn param_count(self) -> usize {
         match self {
-            Section::Osc | Section::Filter => 4, // waveform/mode, pulse_width/cutoff, detune/resonance, noise_mix/drive
+            Section::Osc => 9, // wave, pw, det, noise | separator | wave2, det2, mix2, sync
+            Section::Filter => 4,
             Section::Env => 6, // attack, decay, sustain, release, env_reverse, glide
             Section::Lfo | Section::Fx => 3, // rate/reverb_mix, depth/reverb_size, target/reverb_damping
             Section::Presets => 0,           // list mode
         }
+    }
+
+    /// Returns `true` if `idx` is a display-only row that cannot be adjusted.
+    /// Used by navigation to skip non-interactive rows (e.g. the OSC2 separator).
+    fn is_display_row(self, idx: usize) -> bool {
+        matches!(self, Section::Osc) && idx == 4
     }
 }
 
@@ -211,21 +218,33 @@ impl AppState {
     }
 
     /// Move the param cursor forward within the current section (wraps).
+    /// Automatically skips display-only rows (e.g. the OSC2 separator).
     pub fn next_param(&mut self) {
         let count = self.selected_section.param_count();
         if count > 0 {
-            self.selected_param = (self.selected_param + 1) % count;
+            let next = (self.selected_param + 1) % count;
+            self.selected_param = if self.selected_section.is_display_row(next) {
+                (next + 1) % count
+            } else {
+                next
+            };
         }
     }
 
     /// Move the param cursor backward within the current section (wraps).
+    /// Automatically skips display-only rows (e.g. the OSC2 separator).
     pub fn prev_param(&mut self) {
         let count = self.selected_section.param_count();
         if count > 0 {
-            self.selected_param = if self.selected_param == 0 {
+            let prev = if self.selected_param == 0 {
                 count - 1
             } else {
                 self.selected_param - 1
+            };
+            self.selected_param = if self.selected_section.is_display_row(prev) {
+                if prev == 0 { count - 1 } else { prev - 1 }
+            } else {
+                prev
             };
         }
     }
@@ -264,6 +283,23 @@ impl AppState {
             }
             3 => {
                 self.params.osc.noise_mix = (self.params.osc.noise_mix + d * 0.05).clamp(0.0, 1.0);
+            }
+            // 4 = separator row — no-op, falls through to wildcard
+            5 => {
+                self.params.osc2.waveform = if d > 0.0 {
+                    self.params.osc2.waveform.next()
+                } else {
+                    self.params.osc2.waveform.prev()
+                };
+            }
+            6 => {
+                self.params.osc2.detune = (self.params.osc2.detune + d * 5.0).clamp(-100.0, 100.0);
+            }
+            7 => {
+                self.params.osc2.osc2_mix = (self.params.osc2.osc2_mix + d * 0.05).clamp(0.0, 1.0);
+            }
+            8 if d != 0.0 => {
+                self.params.osc2.hard_sync = !self.params.osc2.hard_sync;
             }
             _ => {}
         }
@@ -389,6 +425,14 @@ impl AppState {
                 ("PW", format!("{:.2}", p.osc.pulse_width)),
                 ("Det", format!("{:+.0}ct", p.osc.detune)),
                 ("Nse", format!("{:.2}", p.osc.noise_mix)),
+                ("", "\u{2500} OSC2 \u{2500}".to_string()),
+                ("Wv2", p.osc2.waveform.name().to_string()),
+                ("Det2", format!("{:+.0}ct", p.osc2.detune)),
+                ("Mix2", format!("{:.2}", p.osc2.osc2_mix)),
+                (
+                    "Sync",
+                    if p.osc2.hard_sync { "ON" } else { "off" }.to_string(),
+                ),
             ],
             Section::Env => vec![
                 ("Atk", format!("{:.3}s", p.env.attack)),

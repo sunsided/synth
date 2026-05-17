@@ -6,7 +6,7 @@
 
 use crate::params::{
     ChorusParams, CrusherParams, DelayParams, EnvParams, FilterMode, FilterParams, FxParams,
-    GlobalParams, LfoParams, LfoTarget, OscParams, Patch, SynthParams, Waveform,
+    GlobalParams, LfoParams, LfoTarget, Osc2Params, OscParams, Patch, SynthParams, Waveform,
 };
 
 /// Return the built-in C64-inspired preset bank.
@@ -50,6 +50,7 @@ pub fn default_patches() -> Vec<Patch> {
                 crusher: CrusherParams::default(),
                 chorus: ChorusParams::default(),
                 delay: DelayParams::default(),
+                osc2: Osc2Params::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.0,
@@ -92,6 +93,7 @@ pub fn default_patches() -> Vec<Patch> {
                 crusher: CrusherParams::default(),
                 chorus: ChorusParams::default(),
                 delay: DelayParams::default(),
+                osc2: Osc2Params::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.0,
@@ -134,6 +136,7 @@ pub fn default_patches() -> Vec<Patch> {
                 crusher: CrusherParams::default(),
                 chorus: ChorusParams::default(),
                 delay: DelayParams::default(),
+                osc2: Osc2Params::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.0,
@@ -176,6 +179,7 @@ pub fn default_patches() -> Vec<Patch> {
                 crusher: CrusherParams::default(),
                 chorus: ChorusParams::default(),
                 delay: DelayParams::default(),
+                osc2: Osc2Params::default(),
                 global: GlobalParams {
                     volume: 0.7,
                     glide_time: 0.03,
@@ -218,6 +222,7 @@ pub fn default_patches() -> Vec<Patch> {
                 crusher: CrusherParams::default(),
                 chorus: ChorusParams::default(),
                 delay: DelayParams::default(),
+                osc2: Osc2Params::default(),
                 global: GlobalParams {
                     volume: 0.65,
                     glide_time: 0.0,
@@ -260,6 +265,7 @@ pub fn default_patches() -> Vec<Patch> {
                 crusher: CrusherParams::default(),
                 chorus: ChorusParams::default(),
                 delay: DelayParams::default(),
+                osc2: Osc2Params::default(),
                 global: GlobalParams {
                     volume: 0.8,
                     glide_time: 0.0,
@@ -302,6 +308,7 @@ pub fn default_patches() -> Vec<Patch> {
                 crusher: CrusherParams::default(),
                 chorus: ChorusParams::default(),
                 delay: DelayParams::default(),
+                osc2: Osc2Params::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.12,
@@ -344,6 +351,7 @@ pub fn default_patches() -> Vec<Patch> {
                 crusher: CrusherParams::default(),
                 chorus: ChorusParams::default(),
                 delay: DelayParams::default(),
+                osc2: Osc2Params::default(),
                 global: GlobalParams {
                     volume: 0.65,
                     glide_time: 0.0,

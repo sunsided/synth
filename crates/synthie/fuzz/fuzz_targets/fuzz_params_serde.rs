@@ -23,7 +23,7 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use synthie::params::{FxParams, GlobalParams, LfoParams, OscParams, SynthParams};
+use synthie::params::{FxParams, GlobalParams, LfoParams, Osc2Params, OscParams, SynthParams};
 
 fuzz_target!(|data: &[u8]| {
     // --- Part 1: deserialisation must not panic ---
@@ -130,6 +130,20 @@ fn assert_float_fields_finite(p: &SynthParams) {
         "fx.reverb_damping is not finite: {reverb_damping}"
     );
 
+    let Osc2Params {
+        detune: osc2_detune,
+        osc2_mix,
+        ..
+    } = &p.osc2;
+    assert!(
+        osc2_detune.is_finite(),
+        "osc2.detune is not finite: {osc2_detune}"
+    );
+    assert!(
+        osc2_mix.is_finite(),
+        "osc2.osc2_mix is not finite: {osc2_mix}"
+    );
+
     let GlobalParams { volume, glide_time } = &p.global;
     assert!(volume.is_finite(), "global.volume is not finite: {volume}");
     assert!(
@@ -224,6 +238,23 @@ fn assert_params_equal(a: &SynthParams, b: &SynthParams) {
     assert_eq!(
         a.fx.reverb_damping, b.fx.reverb_damping,
         "fx.reverb_damping diverged after round-trip"
+    );
+
+    assert_eq!(
+        a.osc2.waveform, b.osc2.waveform,
+        "osc2.waveform diverged after round-trip"
+    );
+    assert_eq!(
+        a.osc2.detune, b.osc2.detune,
+        "osc2.detune diverged after round-trip"
+    );
+    assert_eq!(
+        a.osc2.osc2_mix, b.osc2.osc2_mix,
+        "osc2.osc2_mix diverged after round-trip"
+    );
+    assert_eq!(
+        a.osc2.hard_sync, b.osc2.hard_sync,
+        "osc2.hard_sync diverged after round-trip"
     );
 
     assert_eq!(

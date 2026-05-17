@@ -30,6 +30,9 @@ cpal              = { workspace = true }
 crossbeam-channel = { workspace = true }
 serde             = { workspace = true, optional = true }
 
+[dev-dependencies]
+serde_json = { workspace = true }
+
 [[example]]
 name = "tune"
 path = "examples/tune.rs"
@@ -49,6 +52,10 @@ path = "examples/bitcrusher.rs"
 [[example]]
 name = "fx_delay_chorus"
 path = "examples/fx_delay_chorus.rs"
+
+[[example]]
+name = "osc_richness"
+path = "examples/osc_richness.rs"
 
 [lints]
 workspace = true

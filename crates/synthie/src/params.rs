@@ -21,6 +21,8 @@ pub enum Waveform {
     Noise,
     /// 50/50 mix of pulse and sawtooth for a thicker timbre.
     PulseSaw,
+    /// Pure sine wave.
+    Sine,
 }
 
 impl Waveform {
@@ -31,6 +33,7 @@ impl Waveform {
         Waveform::Triangle,
         Waveform::Noise,
         Waveform::PulseSaw,
+        Waveform::Sine,
     ];
 
     /// Short display name shown in the UI.
@@ -42,6 +45,7 @@ impl Waveform {
             Waveform::Triangle => "Tri",
             Waveform::Noise => "Noise",
             Waveform::PulseSaw => "Pls+Saw",
+            Waveform::Sine => "Sine",
         }
     }
 
@@ -154,6 +158,31 @@ pub struct OscParams {
     pub detune: f32,
     /// Noise blend amount, 0 .. 1.
     pub noise_mix: f32,
+}
+
+/// Second oscillator section parameters.
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct Osc2Params {
+    /// Waveform shape for the second oscillator.
+    pub waveform: Waveform,
+    /// Detune relative to OSC1 in cents, -100 .. 100.
+    pub detune: f32,
+    /// Blend of OSC2 into the output, 0..1.  At 0.0 OSC2 is bypassed.
+    pub osc2_mix: f32,
+    /// When true, OSC1 period boundary resets OSC2 phase (hard sync).
+    pub hard_sync: bool,
+}
+
+impl Default for Osc2Params {
+    fn default() -> Self {
+        Self {
+            waveform: Waveform::Sawtooth,
+            detune: 7.0,
+            osc2_mix: 0.0,
+            hard_sync: false,
+        }
+    }
 }
 
 /// Amplitude envelope section parameters.
@@ -311,6 +340,9 @@ pub struct SynthParams {
     /// Delay/echo FX parameters.
     #[cfg_attr(feature = "serde", serde(default))]
     pub delay: DelayParams,
+    /// Second oscillator parameters.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub osc2: Osc2Params,
     /// Global parameters.
     pub global: GlobalParams,
 }
@@ -351,6 +383,7 @@ impl Default for SynthParams {
             crusher: CrusherParams::default(),
             chorus: ChorusParams::default(),
             delay: DelayParams::default(),
+            osc2: Osc2Params::default(),
             global: GlobalParams {
                 volume: 0.7,
                 glide_time: 0.05,
@@ -461,6 +494,34 @@ pub enum DrumHit {
     HiHatClosed,
     /// Trigger a longer, ringing open hi-hat hit.
     HiHatOpen,
+}
+
+#[cfg(all(test, feature = "serde"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn synth_params_osc2_defaults_when_missing_from_json() {
+        // JSON from before `osc2` was added: the field should deserialise to
+        // `Osc2Params::default()` rather than failing or panicking.
+        let json = r#"{
+            "osc":    {"waveform":"Sawtooth","pulse_width":0.5,"detune":0.0,"noise_mix":0.0},
+            "env":    {"attack":0.01,"decay":0.1,"sustain":0.8,"release":0.3,"env_reverse":false},
+            "filter": {"filter_mode":"LowPass","cutoff":4000.0,"resonance":0.3,"drive":0.0},
+            "lfo":    {"lfo_rate":3.0,"lfo_depth":0.0,"lfo_target":"Pitch"},
+            "fx":     {"reverb_mix":0.15,"reverb_size":0.5,"reverb_damping":0.5},
+            "global": {"volume":0.7,"glide_time":0.05}
+        }"#;
+
+        let params: SynthParams =
+            serde_json::from_str(json).expect("old-style JSON must deserialise without osc2 key");
+
+        let def = Osc2Params::default();
+        assert_eq!(params.osc2.waveform, def.waveform);
+        assert!((params.osc2.detune - def.detune).abs() < f32::EPSILON);
+        assert!((params.osc2.osc2_mix - def.osc2_mix).abs() < f32::EPSILON);
+        assert_eq!(params.osc2.hard_sync, def.hard_sync);
+    }
 }
 
 /// Messages sent from the UI thread to the audio thread over the event channel.
