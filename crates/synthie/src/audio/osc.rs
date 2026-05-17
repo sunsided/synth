@@ -4,7 +4,7 @@
 //! noise source clocked at the oscillator period boundary (SID-style behaviour).
 
 use crate::params::{LfoShape, Waveform};
-use std::f32::consts::TAU;
+use core::f32::consts::TAU;
 
 /// Single oscillator with LFSR-based noise (SID-style: LFSR clocked at osc frequency).
 pub struct Oscillator {
@@ -83,7 +83,7 @@ impl Oscillator {
                 let saw = 2.0 * p - 1.0;
                 (pulse + saw) * 0.5
             }
-            Waveform::Sine => (TAU * p).sin(),
+            Waveform::Sine => crate::math::sinf(TAU * p),
         };
 
         // Blend oscillator output with raw noise
@@ -121,14 +121,14 @@ impl Oscillator {
 #[must_use]
 pub fn midi_to_hz(note: impl Into<crate::params::MidiNote>) -> f32 {
     let note = note.into();
-    440.0 * 2.0_f32.powf((f32::from(note.as_u8()) - 69.0) / 12.0)
+    440.0 * crate::math::powf(2.0_f32, (f32::from(note.as_u8()) - 69.0) / 12.0)
 }
 
 /// Apply detune in cents to a base frequency.
 #[inline]
 #[must_use]
 pub fn detune_hz(base_hz: f32, cents: f32) -> f32 {
-    base_hz * 2.0_f32.powf(cents / 1200.0)
+    base_hz * crate::math::powf(2.0_f32, cents / 1200.0)
 }
 
 /// Low-frequency oscillator supporting four waveform shapes.
@@ -174,7 +174,7 @@ impl Lfo {
 
         let p = self.phase;
         match shape {
-            LfoShape::Sine => (TAU * p).sin(),
+            LfoShape::Sine => crate::math::sinf(TAU * p),
             LfoShape::Square => {
                 if p < 0.5 {
                     1.0_f32

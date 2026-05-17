@@ -4,7 +4,7 @@
 //! melodic voice slots.
 
 use crate::params::DrumHit;
-use std::f32::consts::TAU;
+use core::f32::consts::TAU;
 
 /// Global drum bus gain applied after summing kick and hats.
 const DRUM_GAIN: f32 = 0.85;
@@ -76,8 +76,8 @@ impl KickVoice {
 
     /// Recompute per-sample decay coefficients for a given sample rate.
     fn update_coefficients(&mut self, sample_rate: f32) {
-        self.pitch_coeff = (-1.0 / (KICK_PITCH_DECAY_SECONDS * sample_rate)).exp();
-        self.amp_coeff = (-1.0 / (KICK_AMP_DECAY_SECONDS * sample_rate)).exp();
+        self.pitch_coeff = crate::math::expf(-1.0 / (KICK_PITCH_DECAY_SECONDS * sample_rate));
+        self.amp_coeff = crate::math::expf(-1.0 / (KICK_AMP_DECAY_SECONDS * sample_rate));
     }
 
     /// Render one kick sample.
@@ -95,7 +95,7 @@ impl KickVoice {
             self.phase -= self.phase.floor();
         }
 
-        (TAU * self.phase).sin() * self.amp
+        crate::math::sinf(TAU * self.phase) * self.amp
     }
 }
 
@@ -159,8 +159,8 @@ impl HatVoice {
 
     /// Recompute per-sample decay coefficients for a given sample rate.
     fn update_coefficients(&mut self, sample_rate: f32) {
-        self.closed_coeff = (-1.0 / (HAT_CLOSED_DECAY_SECONDS * sample_rate)).exp();
-        self.open_coeff = (-1.0 / (HAT_OPEN_DECAY_SECONDS * sample_rate)).exp();
+        self.closed_coeff = crate::math::expf(-1.0 / (HAT_CLOSED_DECAY_SECONDS * sample_rate));
+        self.open_coeff = crate::math::expf(-1.0 / (HAT_OPEN_DECAY_SECONDS * sample_rate));
     }
 
     /// Advance the LFSR one step and map the value to the -1.0..1.0 range.

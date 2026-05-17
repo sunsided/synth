@@ -216,7 +216,7 @@ impl<const N: usize> SynthProcessor<N> {
             let sample = if sample.is_finite() {
                 sample.clamp(-1.0, 1.0)
             } else {
-                std::hint::cold_path();
+                core::hint::cold_path();
                 0.0
             };
 

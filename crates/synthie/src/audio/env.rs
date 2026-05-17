@@ -138,7 +138,7 @@ impl Envelope {
                     self.stage = EnvStage::Idle;
                 } else {
                     // Exponential decay from wherever the level is now.
-                    let coeff = (-1.0_f32 / (release * sample_rate)).exp();
+                    let coeff = crate::math::expf(-1.0_f32 / (release * sample_rate));
                     self.level *= coeff;
                     if self.level < 1e-3 {
                         self.level = 0.0;

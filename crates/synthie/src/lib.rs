@@ -13,6 +13,7 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub mod audio;
+mod math;
 pub mod params;
 pub mod presets;
 

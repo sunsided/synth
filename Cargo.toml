@@ -13,6 +13,7 @@ license    = "EUPL-1.2"
 anyhow            = "1"
 cpal              = "0.17"
 crossbeam-channel = "0.5"
+libm              = "0.2"
 crossterm         = "0.29"
 ratatui           = "0.30"
 serde             = { version = "1", features = ["derive"] }

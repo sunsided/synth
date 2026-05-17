@@ -19,18 +19,21 @@ name = "synthie"
 path = "src/lib.rs"
 
 [features]
-## Enables `serde` support and the `cpal`-based I/O layer by default.
-default = ["serde", "io"]
+## Enables `std`, `serde` support, and the `cpal`-based I/O layer by default.
+default = ["std", "serde", "io"]
+## Links against the Rust standard library (enables native f32 transcendentals).
+## Disable for embedded / WASM / `no_std` targets; `libm` provides the math instead.
+std     = []
 ## Enables `serde` support.
 serde   = ["dep:serde"]
-## Enables the `cpal`-based audio I/O layer (`engine` module).
-## Disable to get a DSP-only build suitable for embedding or `no_std` targets.
-io      = ["dep:anyhow", "dep:cpal", "dep:crossbeam-channel"]
+## Enables the `cpal`-based audio I/O layer (`engine` module). Implies `std`.
+io      = ["std", "dep:anyhow", "dep:cpal", "dep:crossbeam-channel"]
 
 [dependencies]
 anyhow            = { workspace = true, optional = true }
 cpal              = { workspace = true, optional = true }
 crossbeam-channel = { workspace = true, optional = true }
+libm              = { workspace = true }
 serde             = { workspace = true, optional = true }
 
 [dev-dependencies]
