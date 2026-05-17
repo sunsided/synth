@@ -32,6 +32,14 @@ const POLYPHONY_F32: f32 = 4.0;
 /// Number of independent synthesis channels (each has its own voice pool and params).
 pub const NUM_CHANNELS: usize = 2;
 
+/// Master output gain applied after summing all synthesis channels.
+///
+/// At −6 dB this gives two full-volume channels headroom to sum cleanly
+/// before the final hard clamp.  Per-channel loudness is controlled via
+/// `SynthParams::global::volume`; this constant is a fixed headroom budget,
+/// not a per-channel normaliser.
+const MASTER_GAIN: f32 = 0.5;
+
 /// Voice slot metadata for note routing and age-based stealing.
 #[derive(Clone, Copy, Default)]
 struct VoiceSlot {
@@ -221,18 +229,15 @@ impl AudioState {
         let sample_rate = self.sample_rate;
         let reverb_mix = self.channels[0].params.fx.reverb_mix;
 
-        #[allow(clippy::cast_precision_loss)]
-        let num_channels_f32 = NUM_CHANNELS as f32;
-
         for frame in data.chunks_mut(hw_channels) {
             let mix: f32 = self
                 .channels
                 .iter_mut()
                 .map(|ch| ch.process(sample_rate))
-                .sum::<f32>()
-                / num_channels_f32;
-            let sample =
-                self.reverb.process(mix, reverb_mix) + self.drums.process(self.sample_rate);
+                .sum();
+            let sample = (self.reverb.process(mix, reverb_mix)
+                + self.drums.process(self.sample_rate))
+                * MASTER_GAIN;
 
             // Guard against denormals / clipping before writing to hardware.
             let sample = if sample.is_finite() {
