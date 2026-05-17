@@ -18,6 +18,11 @@ pub use crate::audio::processor::NUM_CHANNELS;
 /// before the audio thread starts dropping them).
 const SCOPE_CHANNEL_CAPACITY: usize = 32;
 
+/// Capacity of the event channel and the per-callback drain buffer.
+/// Pre-sizing the drain buffer to this value avoids heap allocation on the
+/// audio thread even when a full burst of events arrives in one callback.
+const EVENT_CHANNEL_CAPACITY: usize = 1024;
+
 /// Send every Nth sample to the scope to reduce channel traffic.
 const SCOPE_DECIMATION: usize = 4;
 
@@ -43,7 +48,7 @@ const SCOPE_BATCH: usize = 128;
 /// stream configuration cannot be determined or opened.
 pub fn setup_audio_n<const N: usize>()
 -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
-    let (event_tx, event_rx) = bounded::<AudioEvent>(1024);
+    let (event_tx, event_rx) = bounded::<AudioEvent>(EVENT_CHANNEL_CAPACITY);
     let (scope_tx, scope_rx) = bounded::<Vec<f32>>(SCOPE_CHANNEL_CAPACITY);
 
     let host = cpal::default_host();
@@ -63,7 +68,7 @@ pub fn setup_audio_n<const N: usize>()
     let stream_config: cpal::StreamConfig = config.into();
 
     let mut processor = SynthProcessor::<N>::new(sample_rate);
-    let mut events_buf: Vec<AudioEvent> = Vec::with_capacity(64);
+    let mut events_buf: Vec<AudioEvent> = Vec::with_capacity(EVENT_CHANNEL_CAPACITY);
     let mut scope_accum: Vec<f32> = Vec::with_capacity(SCOPE_BATCH * 2);
     let mut scope_dec_counter: usize = 0;
 

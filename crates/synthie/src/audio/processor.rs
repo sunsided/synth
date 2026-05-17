@@ -194,7 +194,17 @@ impl<const N: usize> SynthProcessor<N> {
     /// `buf.len()` must be a multiple of `hw_channels`. Events are applied
     /// once before the entire buffer is rendered (same semantics as a
     /// sample-accurate block boundary).
+    ///
+    /// # Panics
+    ///
+    /// Panics if `hw_channels` is zero.
     pub fn process_block(&mut self, events: &[AudioEvent], buf: &mut [f32], hw_channels: usize) {
+        assert!(hw_channels > 0, "hw_channels must be > 0");
+        debug_assert_eq!(
+            buf.len() % hw_channels,
+            0,
+            "buf.len() must be a multiple of hw_channels"
+        );
         self.apply_events(events);
 
         let sample_rate = self.sample_rate;

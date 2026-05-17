@@ -58,7 +58,7 @@ impl SvFilter {
             let gain = 1.0 + drive * 4.0;
             let x = input * gain;
             // Soft clip: x / sqrt(1 + x²)  (keeps odd harmonics, no hard edge)
-            let clipped = x / (1.0 + x * x).sqrt();
+            let clipped = x / crate::math::sqrtf(1.0 + x * x);
             // When gain·input overflows f32 to ±Inf, x²→Inf and we get Inf/Inf=NaN.
             // The analytic limit as |x|→∞ is ±1; recover with copysign.
             if clipped.is_finite() {

@@ -22,18 +22,21 @@ path = "src/lib.rs"
 ## Enables `std`, `serde` support, and the `cpal`-based I/O layer by default.
 default = ["std", "serde", "io"]
 ## Links against the Rust standard library (enables native f32 transcendentals).
-## Disable for embedded / WASM / `no_std` targets; `libm` provides the math instead.
+## Disable for embedded / WASM / `no_std` targets; enable `libm` alongside.
 std     = []
 ## Enables `serde` support.
 serde   = ["dep:serde"]
 ## Enables the `cpal`-based audio I/O layer (`engine` module). Implies `std`.
 io      = ["std", "dep:anyhow", "dep:cpal", "dep:crossbeam-channel"]
+## Enables `libm`-based transcendentals for `no_std` targets.
+## Required when `std` is not enabled. Has no effect when `std` is active.
+libm    = ["dep:libm"]
 
 [dependencies]
 anyhow            = { workspace = true, optional = true }
 cpal              = { workspace = true, optional = true }
 crossbeam-channel = { workspace = true, optional = true }
-libm              = { workspace = true }
+libm              = { workspace = true, optional = true }
 serde             = { workspace = true, optional = true }
 
 [dev-dependencies]

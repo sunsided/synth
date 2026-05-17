@@ -4,6 +4,15 @@
 //! turn call the platform libm or use hardware instructions).  Without `std` they
 //! call into the `libm` crate, which is `no_std`-compatible and ships its own
 //! portable implementations.
+//!
+//! For `no_std` builds, enable the `libm` feature alongside disabling `std`:
+//! `--no-default-features --features libm`
+
+#[cfg(all(not(feature = "std"), not(feature = "libm")))]
+compile_error!(
+    "Either the `std` or `libm` feature must be enabled. \
+     For no_std targets, use: --no-default-features --features libm"
+);
 
 #[cfg(feature = "std")]
 #[allow(dead_code)]
@@ -27,6 +36,10 @@ mod imp {
     #[inline]
     pub fn powf(base: f32, exp: f32) -> f32 {
         base.powf(exp)
+    }
+    #[inline]
+    pub fn sqrtf(x: f32) -> f32 {
+        x.sqrt()
     }
     #[inline]
     pub fn sin_cos(x: f32) -> (f32, f32) {
@@ -56,6 +69,11 @@ mod imp {
     #[inline]
     pub fn powf(base: f32, exp: f32) -> f32 {
         libm::powf(base, exp)
+    }
+    #[inline]
+    pub fn sqrtf(x: f32) -> f32 {
+        // f32::sqrt() is a core compiler intrinsic — available in no_std.
+        x.sqrt()
     }
     #[inline]
     pub fn sin_cos(x: f32) -> (f32, f32) {
