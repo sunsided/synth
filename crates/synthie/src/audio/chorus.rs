@@ -50,6 +50,13 @@ impl Chorus {
             return input;
         }
 
+        debug_assert!(
+            params.depth_ms <= CENTER_DELAY_MS,
+            "depth_ms ({}) exceeds center delay ({}ms) — read offset would wrap to zero-latency tap",
+            params.depth_ms,
+            CENTER_DELAY_MS
+        );
+
         let buf_len = self.buf.len();
         self.buf[self.write_idx] = input;
 
@@ -59,9 +66,9 @@ impl Chorus {
 
         let mut tap_sum = 0.0_f32;
         for i in 0..NUM_TAPS {
-            self.phases[i] = (self.phases[i] + phase_inc) % TAU;
             let offset = (center_samples + depth_samples * self.phases[i].sin())
                 .clamp(0.0, buf_len as f32 - 1.001);
+            self.phases[i] = (self.phases[i] + phase_inc) % TAU;
 
             // Fractional read position (backwards from write head).
             let read_pos =
