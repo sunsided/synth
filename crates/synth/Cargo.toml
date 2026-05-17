@@ -1,11 +1,11 @@
 [package]
 name        = "synth"
-version     = "0.2.0"
-edition     = "2024"
-authors     = ["Markus Mayer <widemeadows@gmail.com>"]
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
 description = "Rust synthesizer engine library with ADSR, filters, LFO, and reverb"
-repository  = "https://github.com/sunsided/synth"
-license     = "EUPL-1.2"
+repository.workspace = true
+license.workspace = true
 readme      = "README.md"
 keywords    = ["synthesizer", "audio", "midi", "gamedev", "game-audio"]
 categories  = ["game-engines", "multimedia::audio"]

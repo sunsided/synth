@@ -2,6 +2,13 @@
 members  = ["crates/synth", "crates/synth-tui"]
 resolver = "3"
 
+[workspace.package]
+version    = "0.2.0"
+edition    = "2024"
+authors    = ["Markus Mayer <widemeadows@gmail.com>"]
+repository = "https://github.com/sunsided/synth"
+license    = "EUPL-1.2"
+
 [workspace.dependencies]
 anyhow            = "1"
 cpal              = "0.17"
