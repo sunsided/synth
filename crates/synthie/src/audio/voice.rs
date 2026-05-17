@@ -23,6 +23,8 @@ pub struct Voice {
     pub current_freq: f32,
     /// Waveform generator.
     pub osc: Oscillator,
+    /// Second oscillator for unison/detune/hard-sync effects.
+    pub osc2: Oscillator,
     /// Bitcrusher (bit depth and sample rate reduction).
     pub crusher: Bitcrusher,
     /// Amplitude envelope.
@@ -51,6 +53,7 @@ impl Voice {
             target_freq: 440.0,
             current_freq: 440.0,
             osc: Oscillator::default(),
+            osc2: Oscillator::default(),
             crusher: Bitcrusher::default(),
             env: Envelope::default(),
             filter: SvFilter::default(),
@@ -144,6 +147,19 @@ impl Voice {
             params.osc.noise_mix,
         );
 
+        let osc_out = if params.osc2.osc2_mix > 0.001 {
+            if params.osc2.hard_sync && self.osc.just_wrapped() {
+                self.osc2.reset();
+            }
+            let osc2_freq = detune_hz(final_freq, params.osc2.detune);
+            let secondary =
+                self.osc2
+                    .next_sample(osc2_freq, sample_rate, params.osc2.waveform, pw, 0.0);
+            osc_out * (1.0 - params.osc2.osc2_mix) + secondary * params.osc2.osc2_mix
+        } else {
+            osc_out
+        };
+
         // Bitcrusher (pre-filter: quantization harmonics shaped by filter resonance)
         let osc_out = self
             .crusher
@@ -184,5 +200,37 @@ impl Voice {
 
         // Volume & tremolo (dry; post-mix reverb is handled in engine)
         filtered * env_val * vol_mod * params.global.volume
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::params::{MidiNote, SynthParams, Waveform};
+
+    #[test]
+    fn voice_osc2_mix_zero_is_finite() {
+        let mut voice = Voice::new();
+        let params = SynthParams::default(); // osc2_mix = 0.0
+        voice.note_on(MidiNote::A4, &params, 44100.0);
+        for _ in 0..1000 {
+            let s = voice.process(&params, 44100.0);
+            assert!(s.is_finite(), "non-finite sample with osc2 off: {s}");
+        }
+    }
+
+    #[test]
+    fn voice_osc2_hard_sync_is_finite() {
+        let mut voice = Voice::new();
+        let mut params = SynthParams::default();
+        params.osc2.osc2_mix = 0.5;
+        params.osc2.hard_sync = true;
+        params.osc2.waveform = Waveform::Sawtooth;
+        params.osc2.detune = 7.0;
+        voice.note_on(MidiNote::A4, &params, 44100.0);
+        for _ in 0..1000 {
+            let s = voice.process(&params, 44100.0);
+            assert!(s.is_finite(), "non-finite sample with hard sync on: {s}");
+        }
     }
 }
