@@ -1,162 +1,263 @@
-//! Delay and chorus FX demo: plays a sustained A4 sawtooth and steps through
-//! delay time/feedback and chorus rate/depth settings so you can hear each
-//! axis of the effect in isolation and combined.
+//! Delay and chorus FX demo: plays a 4-bar C–Am–F–G phrase with the "PWM Lead"
+//! preset and cycles through delay and chorus settings so you can hear each
+//! effect in context rather than on a static drone.
 //!
 //! Run:  `cargo run -p synthie --example fx_delay_chorus`
 
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
-use anyhow::Result;
+use anyhow::{Result, anyhow};
 use synthie::audio::engine::setup_audio;
-use synthie::params::{
-    AudioEvent, ChorusParams, CrusherParams, DelayParams, EnvParams, FilterMode, FilterParams,
-    FxParams, GlobalParams, LfoParams, LfoTarget, MidiNote, OscParams, SynthParams, Waveform,
-};
+use synthie::params::{AudioEvent, ChorusParams, DelayParams, MidiNote};
+use synthie::presets::sid::default_patches;
 
-/// Seconds to hold each phase.
-const PHASE_SECS: u64 = 4;
+const BPM: f32 = 100.0;
+const BEATS_PER_BAR: f32 = 4.0;
 
-/// Dry sawtooth patch: no reverb, open filter, sustained envelope, all FX bypassed.
-fn dry_sawtooth() -> SynthParams {
-    SynthParams {
-        osc: OscParams {
-            waveform: Waveform::Sawtooth,
-            pulse_width: 0.5,
-            detune: 0.0,
-            noise_mix: 0.0,
-        },
-        env: EnvParams {
-            attack: 0.01,
-            decay: 0.0,
-            sustain: 1.0,
-            release: 0.05,
-            env_reverse: false,
-        },
-        filter: FilterParams {
-            filter_mode: FilterMode::LowPass,
-            cutoff: 8000.0,
-            resonance: 0.1,
-            drive: 0.0,
-        },
-        lfo: LfoParams {
-            lfo_rate: 0.0,
-            lfo_depth: 0.0,
-            lfo_target: LfoTarget::Pitch,
-        },
-        fx: FxParams {
-            reverb_mix: 0.0,
-            reverb_size: 0.5,
-            reverb_damping: 0.5,
-        },
-        crusher: CrusherParams::default(),
-        chorus: ChorusParams::default(),
-        delay: DelayParams::default(),
-        global: GlobalParams {
-            volume: 0.7,
-            glide_time: 0.0,
-        },
-    }
+// --- timing helpers ----------------------------------------------------------
+
+fn beats(n: f32) -> Duration {
+    Duration::from_secs_f32(n * 60.0 / BPM)
 }
 
-type Phase = (&'static str, f32, f32, f32, f32, f32, f32, &'static str);
-//              label        dly   fdbk  dmix  rate  dep   cmix  description
+// --- phrase ------------------------------------------------------------------
 
-//  label           delay_ms  feedback  delay_mix  rate   depth_ms  chorus_mix  description
-static PHASES: &[Phase] = &[
-    ("dry", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "no FX"),
-    (
-        "slapback",
-        80.0,
-        0.0,
-        0.6,
-        0.0,
-        0.0,
-        0.0,
-        "short echo, no feedback",
-    ),
-    ("echo", 375.0, 0.4, 0.5, 0.0, 0.0, 0.0, "dotted-eighth echo"),
-    (
-        "long echo",
-        750.0,
-        0.6,
-        0.5,
-        0.0,
-        0.0,
-        0.0,
-        "slow decay feedback",
-    ),
-    (
-        "chorus slow",
-        0.0,
-        0.0,
-        0.0,
-        0.5,
-        3.0,
-        0.7,
-        "gentle thickening",
-    ),
-    ("chorus fast", 0.0, 0.0, 0.0, 2.5, 5.0, 0.8, "vibrato-heavy"),
-    (
-        "delay+chorus",
-        375.0,
-        0.35,
-        0.4,
-        0.5,
-        3.0,
-        0.6,
-        "echo with chorus tails",
-    ),
-    ("dry", 0.0, 0.0, 0.0, 0.0, 0.0, 0.0, "restored"),
+#[derive(Clone, Copy)]
+enum Ev {
+    On(u8),
+    Off(u8),
+}
+
+/// One note on/off pair with beat-relative timing.
+#[derive(Clone, Copy)]
+struct TimedEvent {
+    at: Duration,
+    ev: Ev,
+}
+
+fn note(at: f32, hold: f32, midi: u8) -> [TimedEvent; 2] {
+    [
+        TimedEvent {
+            at: beats(at),
+            ev: Ev::On(midi),
+        },
+        TimedEvent {
+            at: beats(at + hold),
+            ev: Ev::Off(midi),
+        },
+    ]
+}
+
+/// 4-bar C–Am–F–G phrase: sustained chords on beats 1 and 3, ascending melody.
+///
+/// Chords give the chorus something wide to thicken; the spaced melody lets
+/// delay repeats speak clearly before the next note.
+fn build_phrase() -> Vec<TimedEvent> {
+    const CHORD_HOLD: f32 = 1.8;
+    const MEL_HOLD: f32 = 0.85;
+
+    // Chord roots / thirds / fifths – one per half-bar (beats 0 and 2).
+    let chords: [([u8; 3], f32); 8] = [
+        ([60, 64, 67], 0.0),  // C  – bar 0, beat 1
+        ([60, 64, 67], 2.0),  // C  – bar 0, beat 3
+        ([57, 60, 64], 4.0),  // Am – bar 1, beat 1
+        ([57, 60, 64], 6.0),  // Am – bar 1, beat 3
+        ([53, 57, 60], 8.0),  // F  – bar 2, beat 1
+        ([53, 57, 60], 10.0), // F  – bar 2, beat 3
+        ([55, 59, 62], 12.0), // G  – bar 3, beat 1
+        ([55, 59, 62], 14.0), // G  – bar 3, beat 3
+    ];
+
+    // Simple quarter-note melody across 4 bars.
+    let melody: [(u8, f32); 16] = [
+        (72, 0.0),  // C5
+        (76, 1.0),  // E5
+        (79, 2.0),  // G5
+        (76, 3.0),  // E5
+        (74, 4.0),  // D5
+        (72, 5.0),  // C5
+        (69, 6.0),  // A4
+        (71, 7.0),  // B4
+        (72, 8.0),  // C5
+        (69, 9.0),  // A4
+        (65, 10.0), // F4
+        (67, 11.0), // G4
+        (67, 12.0), // G4
+        (69, 13.0), // A4
+        (71, 14.0), // B4
+        (72, 15.0), // C5
+    ];
+
+    let mut events: Vec<TimedEvent> = Vec::new();
+
+    for ([r, t, f], beat) in chords {
+        for midi in [r, t, f] {
+            events.extend(note(beat, CHORD_HOLD, midi));
+        }
+    }
+    for (midi, beat) in melody {
+        events.extend(note(beat, MEL_HOLD, midi));
+    }
+
+    events.sort_by_key(|e| e.at);
+    events
+}
+
+// --- FX phases ---------------------------------------------------------------
+
+struct FxPhase {
+    label: &'static str,
+    desc: &'static str,
+    delay: DelayParams,
+    chorus: ChorusParams,
+}
+
+static PHASES: &[FxPhase] = &[
+    FxPhase {
+        label: "dry",
+        desc: "no FX – reference sound",
+        delay: DelayParams {
+            time_ms: 375.0,
+            feedback: 0.0,
+            mix: 0.0,
+        },
+        chorus: ChorusParams {
+            rate: 0.5,
+            depth_ms: 3.0,
+            mix: 0.0,
+        },
+    },
+    FxPhase {
+        label: "slapback",
+        desc: "80 ms echo, no feedback – rockabilly/chiptune flavour",
+        delay: DelayParams {
+            time_ms: 80.0,
+            feedback: 0.0,
+            mix: 0.6,
+        },
+        chorus: ChorusParams {
+            rate: 0.5,
+            depth_ms: 3.0,
+            mix: 0.0,
+        },
+    },
+    FxPhase {
+        label: "dotted echo",
+        desc: "375 ms dotted-eighth echo with feedback – rhythmic tails",
+        delay: DelayParams {
+            time_ms: 375.0,
+            feedback: 0.45,
+            mix: 0.45,
+        },
+        chorus: ChorusParams {
+            rate: 0.5,
+            depth_ms: 3.0,
+            mix: 0.0,
+        },
+    },
+    FxPhase {
+        label: "chorus",
+        desc: "gentle 0.5 Hz chorus – chords thicken, melody shimmers",
+        delay: DelayParams {
+            time_ms: 375.0,
+            feedback: 0.0,
+            mix: 0.0,
+        },
+        chorus: ChorusParams {
+            rate: 0.5,
+            depth_ms: 3.0,
+            mix: 0.7,
+        },
+    },
+    FxPhase {
+        label: "deep chorus",
+        desc: "wide 2.5 Hz chorus – strong pitch modulation",
+        delay: DelayParams {
+            time_ms: 375.0,
+            feedback: 0.0,
+            mix: 0.0,
+        },
+        chorus: ChorusParams {
+            rate: 2.5,
+            depth_ms: 6.0,
+            mix: 0.8,
+        },
+    },
+    FxPhase {
+        label: "delay+chorus",
+        desc: "echo tails with chorus thickening – classic retro pad sound",
+        delay: DelayParams {
+            time_ms: 375.0,
+            feedback: 0.4,
+            mix: 0.4,
+        },
+        chorus: ChorusParams {
+            rate: 0.5,
+            depth_ms: 3.0,
+            mix: 0.6,
+        },
+    },
+    FxPhase {
+        label: "dry",
+        desc: "restored – confirm no tail bleed between phases",
+        delay: DelayParams {
+            time_ms: 375.0,
+            feedback: 0.0,
+            mix: 0.0,
+        },
+        chorus: ChorusParams {
+            rate: 0.5,
+            depth_ms: 3.0,
+            mix: 0.0,
+        },
+    },
 ];
+
+// --- main --------------------------------------------------------------------
 
 fn main() -> Result<()> {
     let (_stream, event_tx, _scope_rx) = setup_audio()?;
 
-    event_tx.send(AudioEvent::LoadPatch(Box::new(dry_sawtooth())))?;
-    event_tx.send(AudioEvent::NoteOn(MidiNote::A4))?;
+    let base = default_patches()
+        .into_iter()
+        .find(|p| p.name == "PWM Lead")
+        .ok_or_else(|| anyhow!("preset 'PWM Lead' not found"))?
+        .params;
 
     println!("=== Delay / Chorus FX Demo ===");
-    println!("Sawtooth A4  |  {PHASE_SECS}s per phase\n");
-    println!(
-        "{:<16}  {:>8}  {:>8}  {:>9}  {:>6}  {:>8}  {:>9}  description",
-        "phase", "dly_ms", "fdbk", "dly_mix", "rate", "depth", "chorus_mix"
-    );
-    println!("{}", "-".repeat(96));
+    println!("PWM Lead  |  C–Am–F–G  |  {BPM} BPM  |  4 bars per phase\n");
 
-    for &(label, delay_ms, feedback, delay_mix, rate, depth_ms, chorus_mix, desc) in PHASES {
-        let mut patch = dry_sawtooth();
+    let phrase = build_phrase();
 
-        if delay_mix > 0.0 {
-            patch.delay = DelayParams {
-                time_ms: delay_ms,
-                feedback,
-                mix: delay_mix,
-            };
-        }
-        if chorus_mix > 0.0 {
-            patch.chorus = ChorusParams {
-                rate,
-                depth_ms,
-                mix: chorus_mix,
-            };
-        }
+    for phase in PHASES {
+        let mut patch = base.clone();
+        patch.delay = phase.delay.clone();
+        patch.chorus = phase.chorus.clone();
 
         event_tx.send(AudioEvent::LoadPatch(Box::new(patch)))?;
+        println!("[{}]  {}", phase.label, phase.desc);
 
-        println!(
-            "  {label:<14}  {delay_ms:>8.0}  {feedback:>8.2}  {delay_mix:>9.2}  \
-             {rate:>6.1}  {depth_ms:>8.1}  {chorus_mix:>9.2}  {desc}"
-        );
+        let started = Instant::now();
+        for ev in &phrase {
+            let deadline = started + ev.at;
+            let now = Instant::now();
+            if deadline > now {
+                std::thread::sleep(deadline.duration_since(now));
+            }
+            let msg = match ev.ev {
+                Ev::On(midi) => AudioEvent::NoteOn(MidiNote(midi)),
+                Ev::Off(midi) => AudioEvent::NoteOff(MidiNote(midi)),
+            };
+            event_tx.send(msg)?;
+        }
 
-        std::thread::sleep(Duration::from_secs(PHASE_SECS));
+        // Brief silence so any delay/reverb tail is audible before the next phase.
+        std::thread::sleep(beats(BEATS_PER_BAR));
     }
 
     println!("\nDone.");
-
-    event_tx.send(AudioEvent::NoteOff(MidiNote::A4))?;
-    std::thread::sleep(Duration::from_millis(200));
     event_tx.send(AudioEvent::Panic)?;
-    std::thread::sleep(Duration::from_millis(100));
+    std::thread::sleep(Duration::from_millis(150));
 
     Ok(())
 }
