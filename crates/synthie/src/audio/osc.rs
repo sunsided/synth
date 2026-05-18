@@ -100,6 +100,13 @@ impl Oscillator {
         self.just_wrapped
     }
 
+    /// Returns the sign of the phase accumulator MSB: +1.0 if phase < 0.5, else -1.0.
+    /// Used as the ring modulation carrier signal (matches SID accumulator MSB behaviour).
+    #[must_use]
+    pub fn phase_sign(&self) -> f32 {
+        if self.phase < 0.5 { 1.0 } else { -1.0 }
+    }
+
     /// Advance the 32-bit Galois LFSR by one step and return a sample in -1..1.
     ///
     /// Feedback polynomial: 0xB4BCD35C.  The LFSR is clocked once per oscillator
@@ -337,5 +344,23 @@ mod tests {
             cycle2, cycle3,
             "S&H must produce different values each cycle"
         );
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // phase_sign returns exact ±1.0 by construction
+    fn phase_sign_matches_phase() {
+        let mut osc = Oscillator::default();
+        // freq=1 Hz, sample_rate=100 Hz → phase increments 0.01 per sample.
+        // After 25 samples: phase ≈ 0.25 (< 0.5) → sign must be +1.0.
+        for _ in 0..25 {
+            osc.next_sample(1.0, 100.0, Waveform::Sawtooth, 0.5, 0.0);
+        }
+        assert_eq!(osc.phase_sign(), 1.0, "phase ~0.25 should give +1.0");
+
+        // After 50 more samples: phase ≈ 0.75 (>= 0.5) → sign must be -1.0.
+        for _ in 0..50 {
+            osc.next_sample(1.0, 100.0, Waveform::Sawtooth, 0.5, 0.0);
+        }
+        assert_eq!(osc.phase_sign(), -1.0, "phase ~0.75 should give -1.0");
     }
 }
