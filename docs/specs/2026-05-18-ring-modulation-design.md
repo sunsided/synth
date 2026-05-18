@@ -60,7 +60,7 @@ let modulated = match params.osc2.ring_mod {
 osc_out * (1.0 - params.osc2.osc2_mix) + modulated * params.osc2.osc2_mix
 ```
 
-`Analog` mode output stays within -1..1 because both operands are in -1..1 and multiplication of two values in that range cannot exceed 1.0 in absolute value.
+The raw `Analog` ring-mod product (OSC1 × OSC2) is bounded to -1..1 because both operands are in -1..1. Downstream processing (filter, drive, FX) can exceed ±1 - voice output is guaranteed finite, not bounded to ±1.
 
 ## Tests
 
@@ -68,9 +68,9 @@ osc_out * (1.0 - params.osc2.osc2_mix) + modulated * params.osc2.osc2_mix
 - `phase_sign_matches_phase`: advance oscillator through one period, verify sign is +1 in [0, 0.5) and -1 in [0.5, 1.0).
 
 ### `voice.rs`
-- `ring_mod_off_matches_normal_mix`: `RingModMode::Off` output equals output with no ring_mod (regression guard).
-- `ring_mod_osc2_by_osc1_sign_is_finite`: 1000 samples, `Osc2ByOsc1Sign`, various waveform combos - all finite.
-- `ring_mod_analog_stays_in_bounds`: 1000 samples, `Analog` mode - all samples in -1..1.
+- `ring_mod_off_is_deterministic`: `RingModMode::Off` produces bit-identical output across two independent voices (regression guard).
+- `ring_mod_modes_alter_output`: each active mode produces measurably different output from `Off` (abs_diff sum over 500 samples).
+- `ring_mod_analog_output_is_finite`: 1000 samples, `Analog` mode - all samples finite (SVF can exceed ±1 near Nyquist, so bounds check is intentionally omitted).
 
 ## Out of Scope
 

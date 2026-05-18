@@ -21,15 +21,18 @@ path = "src/lib.rs"
 [features]
 ## Enables `std`, `serde` support, and the `cpal`-based I/O layer by default.
 default = ["std", "serde", "io"]
-## Links against the Rust standard library (enables native f32 transcendentals).
-## Disable for embedded / WASM / `no_std` targets; enable `libm` alongside.
+## Selects native `std` f32 transcendentals (sin, exp, pow, etc.).
+## When disabled, enable `libm` to provide the math backend instead.
+## Note: full `no_std` support (removing `std` from the dependency graph) is
+## not yet implemented; this flag currently controls the math backend only.
 std     = []
 ## Enables `serde` support.
 serde   = ["dep:serde"]
 ## Enables the `cpal`-based audio I/O layer (`engine` module). Implies `std`.
 io      = ["std", "dep:anyhow", "dep:cpal", "dep:crossbeam-channel"]
-## Enables `libm`-based transcendentals for `no_std` targets.
-## Required when `std` is not enabled. Has no effect when `std` is active.
+## Enables `libm`-based transcendentals as the math backend.
+## Use alongside `--no-default-features` when targeting platforms without `std` math.
+## Has no effect when `std` is active (std backend takes precedence).
 libm    = ["dep:libm"]
 
 [dependencies]
