@@ -1,7 +1,8 @@
 //! Pure-DSP synthesis processor: N polyphonic channels, shared FX, no I/O.
 //!
-//! [`SynthProcessor`] is the embedding surface for `no_std` / WASM / game-engine
+//! [`SynthProcessor`] is the embedding surface for WASM and game-engine
 //! consumers. Call [`SynthProcessor::process_block`] from any audio callback.
+//! Full `no_std` support is planned but not yet implemented.
 
 use crate::audio::chorus::Chorus;
 use crate::audio::delay::Delay;

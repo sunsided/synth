@@ -9,7 +9,7 @@ use crate::audio::{
     filter::SvFilter,
     osc::{Lfo, Oscillator, detune_hz, midi_to_hz},
 };
-use crate::params::{MidiNote, SynthParams};
+use crate::params::{MidiNote, RingModMode, SynthParams};
 
 /// Per-sample modulation accumulator.
 ///
@@ -218,7 +218,7 @@ impl Voice {
             params.osc.noise_mix,
         );
 
-        // Oscillator 2 (unchanged)
+        // Oscillator 2 with optional ring modulation
         let osc_out = if params.osc2.osc2_mix > 0.001 {
             if params.osc2.hard_sync && self.osc.just_wrapped() {
                 self.osc2.reset();
@@ -227,7 +227,15 @@ impl Voice {
             let secondary =
                 self.osc2
                     .next_sample(osc2_freq, sample_rate, params.osc2.waveform, pw, 0.0);
-            osc_out * (1.0 - params.osc2.osc2_mix) + secondary * params.osc2.osc2_mix
+
+            let modulated = match params.osc2.ring_mod {
+                RingModMode::Off => secondary,
+                RingModMode::Osc2ByOsc1Sign => secondary * self.osc.phase_sign(),
+                RingModMode::Osc1ByOsc2Sign => osc_out * self.osc2.phase_sign(),
+                RingModMode::Analog => osc_out * secondary,
+            };
+
+            osc_out * (1.0 - params.osc2.osc2_mix) + modulated * params.osc2.osc2_mix
         } else {
             osc_out
         };
@@ -271,7 +279,7 @@ impl Voice {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::params::{MidiNote, SynthParams, Waveform};
+    use crate::params::{MidiNote, RingModMode, SynthParams, Waveform};
 
     #[test]
     fn voice_osc2_mix_zero_is_finite() {
@@ -491,6 +499,116 @@ mod tests {
         for i in 0..4410 {
             let s = voice.process(&params, 44100.0);
             assert!(s.is_finite(), "non-finite sample at {i} with two LFOs: {s}");
+        }
+    }
+
+    #[test]
+    fn ring_mod_modes_alter_output() {
+        // Each active RingModMode must produce output different from Off.
+        // Sawtooth (non-symmetric) avoids signed-sum cancellation.
+        // Comparison uses cumulative absolute per-sample difference (robust to phase).
+        use crate::params::EnvParams;
+
+        let base_params = {
+            let mut p = SynthParams::default();
+            p.osc.waveform = Waveform::Sawtooth;
+            p.osc2.osc2_mix = 1.0;
+            p.osc2.waveform = Waveform::Sawtooth;
+            p.osc2.detune = 700.0; // ~5x faster than OSC1, ensures phase difference
+            p.env = EnvParams {
+                attack: 0.0,
+                decay: 0.0,
+                sustain: 1.0,
+                release: 0.0,
+                env_reverse: false,
+            };
+            p
+        };
+
+        // Collect Off-mode samples as baseline.
+        let mut params_off = base_params.clone();
+        params_off.osc2.ring_mod = RingModMode::Off;
+        let mut voice_off = Voice::new();
+        voice_off.note_on(MidiNote::A4, &params_off, 44100.0);
+        let samples_off: Vec<f32> = (0..500)
+            .map(|_| voice_off.process(&params_off, 44100.0))
+            .collect();
+
+        for mode in [
+            RingModMode::Osc2ByOsc1Sign,
+            RingModMode::Osc1ByOsc2Sign,
+            RingModMode::Analog,
+        ] {
+            let mut params_rm = base_params.clone();
+            params_rm.osc2.ring_mod = mode;
+            let mut voice_rm = Voice::new();
+            voice_rm.note_on(MidiNote::A4, &params_rm, 44100.0);
+            let abs_diff: f32 = samples_off
+                .iter()
+                .map(|&off| {
+                    let rm = voice_rm.process(&params_rm, 44100.0);
+                    (rm - off).abs()
+                })
+                .sum();
+            assert!(
+                abs_diff > 0.1,
+                "RingModMode::{mode:?}: cumulative |diff| vs Off = {abs_diff:.6} (expected > 0.1)"
+            );
+        }
+    }
+
+    #[test]
+    fn ring_mod_analog_output_is_finite() {
+        // Analog mode multiplies osc1 × osc2. Both oscillators are in -1..1,
+        // so the product is bounded; verify no NaN/Inf escapes through the
+        // voice pipeline regardless of waveform or detune ratio.
+        use crate::params::EnvParams;
+
+        let mut params = SynthParams::default();
+        params.osc2.osc2_mix = 1.0;
+        params.osc2.waveform = Waveform::Sawtooth;
+        params.osc2.detune = 700.0;
+        params.osc2.ring_mod = RingModMode::Analog;
+        params.env = EnvParams {
+            attack: 0.0,
+            decay: 0.0,
+            sustain: 1.0,
+            release: 0.0,
+            env_reverse: false,
+        };
+
+        let mut voice = Voice::new();
+        voice.note_on(MidiNote::A4, &params, 44100.0);
+        for i in 0..1000 {
+            let s = voice.process(&params, 44100.0);
+            assert!(s.is_finite(), "sample {i}: non-finite output: {s}");
+        }
+    }
+
+    #[test]
+    fn ring_mod_off_is_deterministic() {
+        // Two voices with identical params (ring_mod = Off) must produce
+        // bit-identical output — guards against any stochastic side effects.
+        let mut params_a = SynthParams::default();
+        params_a.osc2.osc2_mix = 0.5;
+        params_a.osc2.waveform = Waveform::Sawtooth;
+        params_a.osc2.detune = 7.0;
+        params_a.osc2.ring_mod = RingModMode::Off;
+
+        let params_b = params_a.clone();
+
+        let mut voice_a = Voice::new();
+        voice_a.note_on(MidiNote::A4, &params_a, 44100.0);
+        let mut voice_b = Voice::new();
+        voice_b.note_on(MidiNote::A4, &params_b, 44100.0);
+
+        for i in 0..200 {
+            let a = voice_a.process(&params_a, 44100.0);
+            let b = voice_b.process(&params_b, 44100.0);
+            assert!(
+                a.to_bits() == b.to_bits(),
+                "sample {i}: Off mode is non-deterministic: {a} != {b}"
+            );
         }
     }
 }

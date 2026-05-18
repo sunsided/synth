@@ -100,6 +100,14 @@ impl Oscillator {
         self.just_wrapped
     }
 
+    /// Returns +1.0 if phase is in the first half of the period (phase < 0.5), else -1.0.
+    /// Phase == 0.5 yields -1.0 (the >= branch). Equivalent to the SID accumulator MSB
+    /// used as a ring-mod carrier signal.
+    #[must_use]
+    pub fn phase_sign(&self) -> f32 {
+        if self.phase < 0.5 { 1.0 } else { -1.0 }
+    }
+
     /// Advance the 32-bit Galois LFSR by one step and return a sample in -1..1.
     ///
     /// Feedback polynomial: 0xB4BCD35C.  The LFSR is clocked once per oscillator
@@ -337,5 +345,33 @@ mod tests {
             cycle2, cycle3,
             "S&H must produce different values each cycle"
         );
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)] // phase_sign returns exact ±1.0 by construction
+    fn phase_sign_matches_phase() {
+        let mut osc = Oscillator::default();
+        // freq=1 Hz, sample_rate=100 Hz → phase increments 0.01 per sample.
+        // After 25 samples: phase ≈ 0.25 (< 0.5) → sign must be +1.0.
+        for _ in 0..25 {
+            osc.next_sample(1.0, 100.0, Waveform::Sawtooth, 0.5, 0.0);
+        }
+        assert_eq!(osc.phase_sign(), 1.0, "phase ~0.25 should give +1.0");
+
+        // After 50 more samples: phase ≈ 0.75 (>= 0.5) → sign must be -1.0.
+        for _ in 0..50 {
+            osc.next_sample(1.0, 100.0, Waveform::Sawtooth, 0.5, 0.0);
+        }
+        assert_eq!(osc.phase_sign(), -1.0, "phase ~0.75 should give -1.0");
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn phase_sign_boundary_at_half_period() {
+        let mut osc = Oscillator::default();
+        // freq=1 Hz, sample_rate=2 Hz → increment = 0.5 exactly (0.5 is representable in f32).
+        // After one sample, phase == 0.5 precisely; the >= branch must yield -1.0.
+        osc.next_sample(1.0, 2.0, Waveform::Sawtooth, 0.5, 0.0);
+        assert_eq!(osc.phase_sign(), -1.0, "phase == 0.5 should give -1.0");
     }
 }
