@@ -100,8 +100,9 @@ impl Oscillator {
         self.just_wrapped
     }
 
-    /// Returns the sign of the phase accumulator MSB: +1.0 if phase < 0.5, else -1.0.
-    /// Used as the ring modulation carrier signal (matches SID accumulator MSB behaviour).
+    /// Returns +1.0 if phase is in the first half of the period (phase < 0.5), else -1.0.
+    /// Phase == 0.5 yields -1.0 (the >= branch). Equivalent to the SID accumulator MSB
+    /// used as a ring-mod carrier signal.
     #[must_use]
     pub fn phase_sign(&self) -> f32 {
         if self.phase < 0.5 { 1.0 } else { -1.0 }
@@ -362,5 +363,15 @@ mod tests {
             osc.next_sample(1.0, 100.0, Waveform::Sawtooth, 0.5, 0.0);
         }
         assert_eq!(osc.phase_sign(), -1.0, "phase ~0.75 should give -1.0");
+    }
+
+    #[test]
+    #[allow(clippy::float_cmp)]
+    fn phase_sign_boundary_at_half_period() {
+        let mut osc = Oscillator::default();
+        // freq=1 Hz, sample_rate=2 Hz → increment = 0.5 exactly (0.5 is representable in f32).
+        // After one sample, phase == 0.5 precisely; the >= branch must yield -1.0.
+        osc.next_sample(1.0, 2.0, Waveform::Sawtooth, 0.5, 0.0);
+        assert_eq!(osc.phase_sign(), -1.0, "phase == 0.5 should give -1.0");
     }
 }
