@@ -186,6 +186,19 @@ impl<const N: usize> SynthProcessor<N> {
                         self.apply_reverb_params();
                     }
                 }
+                #[cfg(feature = "arp")]
+                AudioEvent::ArpSetNotes(ch, notes, count) => {
+                    if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
+                        channel.params.arp.notes = *notes;
+                        channel.params.arp.count = *count;
+                    }
+                }
+                #[cfg(feature = "arp")]
+                AudioEvent::ArpEnabled(ch, enabled) => {
+                    if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
+                        channel.params.arp.enabled = *enabled;
+                    }
+                }
             }
         }
     }

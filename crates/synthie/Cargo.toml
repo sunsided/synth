@@ -20,7 +20,7 @@ path = "src/lib.rs"
 
 [features]
 ## Enables `std`, `serde` support, and the `cpal`-based I/O layer by default.
-default = ["std", "serde", "io"]
+default = ["std", "serde", "io", "arp"]
 ## Selects native `std` f32 transcendentals (sin, exp, pow, etc.).
 ## When disabled, enable `libm` to provide the math backend instead.
 ## Note: full `no_std` support (removing `std` from the dependency graph) is
@@ -34,6 +34,9 @@ io      = ["std", "dep:anyhow", "dep:cpal", "dep:crossbeam-channel"]
 ## Use alongside `--no-default-features` when targeting platforms without `std` math.
 ## Has no effect when `std` is active (std backend takes precedence).
 libm    = ["dep:libm"]
+## Enables the built-in arpeggiator. Included in the default feature set.
+## Disable for targets where binary size is critical and arpeggios are unneeded.
+arp     = []
 
 [dependencies]
 anyhow            = { workspace = true, optional = true }

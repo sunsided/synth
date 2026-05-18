@@ -65,6 +65,56 @@ impl Waveform {
     }
 }
 
+/// Arpeggiator playback mode.
+#[cfg(feature = "arp")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum ArpMode {
+    /// Play notes in ascending order, then wrap to the lowest.
+    #[default]
+    Up,
+    /// Play notes in descending order, then wrap to the highest.
+    Down,
+    /// Ascend to the highest note, then descend to the lowest (no endpoint repeat).
+    UpDown,
+    /// Advance using a Galois LFSR, producing a pseudo-random non-repeating sequence.
+    Random,
+}
+
+/// Arpeggiator section parameters.
+#[cfg(feature = "arp")]
+#[derive(Debug, Clone)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct ArpParams {
+    /// Whether the arpeggiator is active on this channel.
+    pub enabled: bool,
+    /// Step rate in Hz (e.g. `10.0` = 10 notes per second).
+    pub rate: f32,
+    /// Gate length as a fraction of the step duration, `0.0..=1.0`.
+    /// At `0.0` the note is released immediately; at `1.0` it rings until the next step.
+    pub gate: f32,
+    /// Playback mode.
+    pub mode: ArpMode,
+    /// Fixed-size note list. Only entries `0..count` are active.
+    pub notes: [MidiNote; 4],
+    /// Number of active entries in `notes`, `0..=4`.
+    pub count: u8,
+}
+
+#[cfg(feature = "arp")]
+impl Default for ArpParams {
+    fn default() -> Self {
+        Self {
+            enabled: false,
+            rate: 10.0,
+            gate: 0.8,
+            mode: ArpMode::Up,
+            notes: [MidiNote::MIDDLE_C; 4],
+            count: 0,
+        }
+    }
+}
+
 /// State-variable filter topology selector.
 #[allow(clippy::enum_variant_names)] // LP/BP/HP suffix is standard audio industry terminology
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -509,6 +559,10 @@ pub struct SynthParams {
     /// Modulation envelope routed to oscillator pitch.
     #[cfg_attr(feature = "serde", serde(default))]
     pub pitch_env: ModEnvParams,
+    /// Arpeggiator parameters.
+    #[cfg(feature = "arp")]
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub arp: ArpParams,
     /// Global parameters.
     pub global: GlobalParams,
 }
@@ -554,6 +608,8 @@ impl Default for SynthParams {
             lfo2: LfoParams::default(),
             filter_env: ModEnvParams::default(),
             pitch_env: ModEnvParams::default(),
+            #[cfg(feature = "arp")]
+            arp: ArpParams::default(),
             global: GlobalParams {
                 volume: 0.7,
                 glide_time: 0.05,
@@ -714,6 +770,24 @@ mod tests {
         assert!((params.filter_env.depth).abs() < f32::EPSILON);
         assert!((params.pitch_env.depth).abs() < f32::EPSILON);
     }
+
+    #[cfg(feature = "arp")]
+    #[test]
+    fn synth_params_arp_defaults_when_missing_from_json() {
+        let json = r#"{
+            "osc":    {"waveform":"Sawtooth","pulse_width":0.5,"detune":0.0,"noise_mix":0.0},
+            "env":    {"attack":0.01,"decay":0.1,"sustain":0.8,"release":0.3,"env_reverse":false},
+            "filter": {"filter_mode":"LowPass","cutoff":4000.0,"resonance":0.3,"drive":0.0},
+            "lfo":    {"lfo_rate":3.0,"lfo_depth":0.0,"lfo_target":"Pitch"},
+            "fx":     {"reverb_mix":0.15,"reverb_size":0.5,"reverb_damping":0.5},
+            "global": {"volume":0.7,"glide_time":0.05}
+        }"#;
+        let params: SynthParams =
+            serde_json::from_str(json).expect("old JSON must deserialise without arp key");
+        assert!(!params.arp.enabled);
+        assert!((params.arp.rate - 10.0).abs() < f32::EPSILON);
+        assert_eq!(params.arp.count, 0);
+    }
 }
 
 /// Messages sent from the UI thread to the audio thread over the event channel.
@@ -736,4 +810,11 @@ pub enum AudioEvent {
     NoteOffChannel(ChannelNo, MidiNote),
     /// Replace the parameter set for the given channel with a new snapshot.
     LoadPatchChannel(ChannelNo, Box<SynthParams>),
+    /// Load an explicit note list into the arpeggiator on the given channel.
+    /// Only entries `0..count` of `notes` are used; `count` must be `<= 4`.
+    #[cfg(feature = "arp")]
+    ArpSetNotes(ChannelNo, [MidiNote; 4], u8),
+    /// Enable or disable the arpeggiator on the given channel at runtime.
+    #[cfg(feature = "arp")]
+    ArpEnabled(ChannelNo, bool),
 }
