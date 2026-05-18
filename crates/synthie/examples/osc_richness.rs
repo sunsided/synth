@@ -11,7 +11,7 @@ use synthie::audio::engine::setup_audio;
 use synthie::params::{
     AudioEvent, ChorusParams, CrusherParams, DelayParams, EnvParams, FilterMode, FilterParams,
     FxParams, GlobalParams, LfoParams, LfoShape, LfoTarget, MidiNote, ModEnvParams, Osc2Params,
-    OscParams, SynthParams, Waveform,
+    OscParams, RingModMode, SynthParams, Waveform,
 };
 
 const BPM: f32 = 108.0;
@@ -79,6 +79,7 @@ static PHASES: &[OscPhase] = &[
             detune: 0.0,
             osc2_mix: 0.0,
             hard_sync: false,
+            ring_mod: RingModMode::Off,
         },
     },
     OscPhase {
@@ -90,6 +91,7 @@ static PHASES: &[OscPhase] = &[
             detune: 0.0,
             osc2_mix: 0.0,
             hard_sync: false,
+            ring_mod: RingModMode::Off,
         },
     },
     OscPhase {
@@ -101,6 +103,7 @@ static PHASES: &[OscPhase] = &[
             detune: 7.0,
             osc2_mix: 0.5,
             hard_sync: false,
+            ring_mod: RingModMode::Off,
         },
     },
     OscPhase {
@@ -112,6 +115,7 @@ static PHASES: &[OscPhase] = &[
             detune: 18.0,
             osc2_mix: 0.6,
             hard_sync: false,
+            ring_mod: RingModMode::Off,
         },
     },
     OscPhase {
@@ -123,6 +127,7 @@ static PHASES: &[OscPhase] = &[
             detune: 700.0,
             osc2_mix: 0.7,
             hard_sync: true,
+            ring_mod: RingModMode::Off,
         },
     },
     OscPhase {
@@ -134,6 +139,7 @@ static PHASES: &[OscPhase] = &[
             detune: 7.0,
             osc2_mix: 0.5,
             hard_sync: false,
+            ring_mod: RingModMode::Off,
         },
     },
 ];

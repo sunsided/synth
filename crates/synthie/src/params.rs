@@ -180,6 +180,9 @@ pub struct Osc2Params {
     pub osc2_mix: f32,
     /// When true, OSC1 period boundary resets OSC2 phase (hard sync).
     pub hard_sync: bool,
+    /// Ring modulation mode applied to the OSC2 contribution.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub ring_mod: RingModMode,
 }
 
 impl Default for Osc2Params {
@@ -189,6 +192,7 @@ impl Default for Osc2Params {
             detune: 7.0,
             osc2_mix: 0.0,
             hard_sync: false,
+            ring_mod: RingModMode::Off,
         }
     }
 }
@@ -270,6 +274,57 @@ impl LfoShape {
     pub fn prev(self) -> Self {
         let idx = Self::ALL.iter().position(|&s| s == self).unwrap_or(0);
         Self::ALL[(idx + Self::ALL.len() - 1) % Self::ALL.len()]
+    }
+}
+
+/// Ring modulation mode between OSC1 and OSC2.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub enum RingModMode {
+    /// No ring modulation (bypass). Default.
+    #[default]
+    Off,
+    /// SID-style: OSC2 output multiplied by sign of OSC1 phase accumulator MSB.
+    Osc2ByOsc1Sign,
+    /// Symmetric: OSC1 output multiplied by sign of OSC2 phase accumulator MSB.
+    Osc1ByOsc2Sign,
+    /// True analog ring mod: OSC1 × OSC2, produces sum/difference frequencies.
+    Analog,
+}
+
+impl RingModMode {
+    /// Ordered slice of all variants, used for cycling.
+    pub const ALL: &'static [RingModMode] = &[
+        RingModMode::Off,
+        RingModMode::Osc2ByOsc1Sign,
+        RingModMode::Osc1ByOsc2Sign,
+        RingModMode::Analog,
+    ];
+
+    /// Short display name shown in the UI.
+    #[must_use]
+    pub fn name(self) -> &'static str {
+        match self {
+            RingModMode::Off => "Off",
+            RingModMode::Osc2ByOsc1Sign => "SID",
+            RingModMode::Osc1ByOsc2Sign => "Sym",
+            RingModMode::Analog => "Analog",
+        }
+    }
+
+    /// Return the next variant, wrapping around.
+    #[must_use]
+    pub fn next(self) -> Self {
+        let idx = Self::ALL.iter().position(|&m| m == self).unwrap_or(0);
+        Self::ALL[(idx + 1) % Self::ALL.len()]
+    }
+
+    /// Return the previous variant, wrapping around.
+    #[must_use]
+    pub fn prev(self) -> Self {
+        let idx = Self::ALL.iter().position(|&m| m == self).unwrap_or(0);
+        let len = Self::ALL.len();
+        Self::ALL[(idx + len - 1) % len]
     }
 }
 
@@ -636,6 +691,7 @@ mod tests {
         assert!((params.osc2.detune - def.detune).abs() < f32::EPSILON);
         assert!((params.osc2.osc2_mix - def.osc2_mix).abs() < f32::EPSILON);
         assert_eq!(params.osc2.hard_sync, def.hard_sync);
+        assert_eq!(params.osc2.ring_mod, RingModMode::Off);
     }
 
     #[test]
