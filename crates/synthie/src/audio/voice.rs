@@ -107,7 +107,7 @@ impl Voice {
         self.glide_coeff = if glide_time < 1e-4 {
             0.0
         } else {
-            (-1.0_f32 / (glide_time * sample_rate)).exp()
+            crate::math::expf(-1.0_f32 / (glide_time * sample_rate))
         };
     }
 
@@ -203,7 +203,7 @@ impl Voice {
         let freq = self.current_freq;
 
         // Pitch modulation (vibrato + pitch env)
-        let modded_freq = freq * 2.0_f32.powf(bus.pitch * 0.1);
+        let modded_freq = freq * crate::math::powf(2.0_f32, bus.pitch * 0.1);
         let final_freq = modded_freq;
 
         // Pulse width modulation
@@ -251,8 +251,8 @@ impl Voice {
         let vol_mod = (1.0 - bus.volume * 0.5).max(0.0);
 
         // Filter cutoff modulation
-        let cutoff_mod =
-            (params.filter.cutoff * 2.0_f32.powf(bus.cutoff * 2.0)).clamp(20.0, 18000.0);
+        let cutoff_mod = (params.filter.cutoff * crate::math::powf(2.0_f32, bus.cutoff * 2.0))
+            .clamp(20.0, 18000.0);
 
         // Filter
         let filtered = self.filter.process(

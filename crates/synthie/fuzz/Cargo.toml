@@ -18,8 +18,8 @@ path = ".."
 # during fuzz runs (no terminal/audio device available in the fuzzer sandbox).
 default-features = false
 
-# Re-enable the serde feature so fuzz_params_serde can use SynthParams' serde impls.
-features = ["serde"]
+# Re-enable std and serde; std is needed for the math shim, serde for fuzz_params_serde.
+features = ["std", "serde"]
 
 # Fuzz targets are compiled as separate binaries; keep them out of normal
 # workspace builds and disable doc/test targets to speed up fuzzer compilation.

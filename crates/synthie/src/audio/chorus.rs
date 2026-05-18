@@ -6,7 +6,7 @@
 //! Hot path uses sin/cos rotation (no `sin()` calls per sample) to stay within
 //! real-time audio budget at high LFO rates.
 
-use std::f32::consts::TAU;
+use core::f32::consts::TAU;
 
 use crate::params::ChorusParams;
 
@@ -41,7 +41,7 @@ impl Chorus {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let len = ((MAX_CHORUS_DELAY_MS / 1000.0) * sample_rate).ceil() as usize;
         let phases = [0.0_f32, TAU / 3.0, 2.0 * TAU / 3.0];
-        let lfo = phases.map(f32::sin_cos);
+        let lfo = phases.map(crate::math::sin_cos);
         Self {
             buf: vec![0.0; len.max(1)],
             write_idx: 0,
@@ -74,7 +74,7 @@ impl Chorus {
         #[allow(clippy::float_cmp)]
         if params.rate != self.cached_rate {
             let phase_inc = TAU * params.rate / self.sample_rate;
-            (self.sin_inc, self.cos_inc) = phase_inc.sin_cos();
+            (self.sin_inc, self.cos_inc) = crate::math::sin_cos(phase_inc);
             self.cached_rate = params.rate;
         }
 

@@ -4,7 +4,7 @@
 //! Trapezoidal Integration and Equivalent Circuits" (2013).
 
 use crate::params::FilterMode;
-use std::f32::consts::PI;
+use core::f32::consts::PI;
 
 /// Trapezoidal-integrated state-variable filter (Cytomic/Simper TPT SVF).
 ///
@@ -58,13 +58,13 @@ impl SvFilter {
             let gain = 1.0 + drive * 4.0;
             let x = input * gain;
             // Soft clip: x / sqrt(1 + x²)  (keeps odd harmonics, no hard edge)
-            let clipped = x / (1.0 + x * x).sqrt();
+            let clipped = x / crate::math::sqrtf(1.0 + x * x);
             // When gain·input overflows f32 to ±Inf, x²→Inf and we get Inf/Inf=NaN.
             // The analytic limit as |x|→∞ is ±1; recover with copysign.
             if clipped.is_finite() {
                 clipped
             } else {
-                std::hint::cold_path();
+                core::hint::cold_path();
                 1.0_f32.copysign(x)
             }
         } else {
@@ -82,7 +82,7 @@ impl SvFilter {
         let fc = cutoff.clamp(20.0, nyquist);
         // fc_norm ∈ (0, 0.499] ensures PI*fc_norm < PI/2, keeping tan finite.
         let fc_norm = (fc / sample_rate).min(0.499_f32);
-        let g = (PI * fc_norm).tan();
+        let g = crate::math::tanf(PI * fc_norm);
         // k = 2 - 2*resonance maps resonance 0→k=2 (Q=0.5) to 0.99→k=0.02 (Q≈50)
         let k = (2.0 - 1.98 * resonance.clamp(0.0, 0.999)).max(0.01);
 
@@ -116,7 +116,7 @@ impl SvFilter {
         if out.is_finite() {
             out
         } else {
-            std::hint::cold_path();
+            core::hint::cold_path();
             0.0
         }
     }
@@ -134,7 +134,7 @@ impl SvFilter {
 #[inline]
 fn clamp_denormal(x: f32) -> f32 {
     if !x.is_finite() || x.abs() < 1e-15 {
-        std::hint::cold_path();
+        core::hint::cold_path();
         0.0
     } else {
         x
@@ -152,11 +152,11 @@ fn fast_tanh(x: f32) -> f32 {
     // tanh(±4) ≈ ±0.9993; clamping here is within the stated ±0.5% accuracy
     // window and prevents intermediate overflow for any finite input.
     if x >= 4.0 {
-        std::hint::cold_path();
+        core::hint::cold_path();
         return 1.0;
     }
     if x <= -4.0 {
-        std::hint::cold_path();
+        core::hint::cold_path();
         return -1.0;
     }
     let x2 = x * x;
@@ -182,7 +182,7 @@ mod tests {
         let mut filt = SvFilter::default();
         let sr = 44100.0_f32;
         let tone: Vec<f32> = (0..4096)
-            .map(|i| (2.0 * std::f32::consts::PI * 1000.0 * i as f32 / sr).sin())
+            .map(|i| crate::math::sinf(2.0 * core::f32::consts::PI * 1000.0 * i as f32 / sr))
             .collect();
         let filtered: Vec<f32> = tone
             .iter()
@@ -199,7 +199,7 @@ mod tests {
         let mut filt = SvFilter::default();
         let sr = 44100.0_f32;
         let tone: Vec<f32> = (0..8192)
-            .map(|i| (2.0 * std::f32::consts::PI * 50.0 * i as f32 / sr).sin())
+            .map(|i| crate::math::sinf(2.0 * core::f32::consts::PI * 50.0 * i as f32 / sr))
             .collect();
         let filtered: Vec<f32> = tone
             .iter()

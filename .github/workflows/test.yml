@@ -37,3 +37,9 @@ jobs:
 
       - name: Run tests
         run: cargo test --all-targets --all-features
+
+      - name: Check DSP-only build (std, no io)
+        run: cargo check -p synthie --no-default-features --features std
+
+      - name: Check DSP-only build (libm, no std/io)
+        run: cargo check -p synthie --no-default-features --features libm
