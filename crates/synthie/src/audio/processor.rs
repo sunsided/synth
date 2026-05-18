@@ -197,10 +197,11 @@ impl<const N: usize> SynthProcessor<N> {
     ///
     /// # Panics
     ///
-    /// Panics if `hw_channels` is zero.
+    /// Panics if `hw_channels` is zero or if `buf.len()` is not a multiple of
+    /// `hw_channels`.
     pub fn process_block(&mut self, events: &[AudioEvent], buf: &mut [f32], hw_channels: usize) {
         assert!(hw_channels > 0, "hw_channels must be > 0");
-        debug_assert_eq!(
+        assert_eq!(
             buf.len() % hw_channels,
             0,
             "buf.len() must be a multiple of hw_channels"
@@ -234,5 +235,152 @@ impl<const N: usize> SynthProcessor<N> {
                 *ch = sample;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::params::DrumHit;
+
+    const SR: f32 = 44100.0;
+    const NOTE: MidiNote = MidiNote::MIDDLE_C;
+
+    fn make() -> SynthProcessor<NUM_CHANNELS> {
+        SynthProcessor::new(SR)
+    }
+
+    #[test]
+    fn renders_silence_with_no_events() {
+        let mut proc = make();
+        let mut buf = vec![1.0_f32; 256];
+        proc.process_block(&[], &mut buf, 2);
+        assert!(buf.iter().all(|s| s.is_finite()), "non-finite samples");
+        assert!(
+            buf.iter().all(|s| *s == 0.0),
+            "expected silence with no notes active"
+        );
+    }
+
+    #[test]
+    fn note_on_produces_non_zero_output() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 4096];
+        proc.process_block(&[AudioEvent::NoteOn(NOTE)], &mut buf, 1);
+        assert!(
+            buf.iter().any(|s| s.abs() > 1e-6),
+            "note_on produced no audible signal"
+        );
+    }
+
+    #[test]
+    fn note_off_after_note_on_does_not_panic() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 256];
+        proc.process_block(&[AudioEvent::NoteOn(NOTE)], &mut buf, 1);
+        proc.process_block(&[AudioEvent::NoteOff(NOTE)], &mut buf, 1);
+    }
+
+    #[test]
+    fn panic_event_clears_voice_state() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 8192];
+        let n2 = MidiNote::A4;
+        proc.process_block(
+            &[AudioEvent::NoteOn(NOTE), AudioEvent::NoteOn(n2)],
+            &mut buf,
+            1,
+        );
+        proc.process_block(&[AudioEvent::Panic], &mut buf, 1);
+        // After panic all voice slots are cleared; output may have a brief
+        // release tail, but must never go non-finite.
+        let mut after = vec![0.0_f32; 8192];
+        proc.process_block(&[], &mut after, 1);
+        assert!(
+            after.iter().all(|s| s.is_finite()),
+            "non-finite after panic"
+        );
+    }
+
+    #[test]
+    fn channel_specific_note_on() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 4096];
+        let ch = ChannelNo::from(1u8);
+        proc.process_block(&[AudioEvent::NoteOnChannel(ch, NOTE)], &mut buf, 1);
+        assert!(
+            buf.iter().any(|s| s.abs() > 1e-6),
+            "channel-specific note_on produced no signal"
+        );
+    }
+
+    #[test]
+    fn channel_specific_note_off_does_not_affect_other_channel() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 4096];
+        // Note on channel 0, note off on channel 1 — channel 0 should keep playing.
+        proc.process_block(&[AudioEvent::NoteOn(NOTE)], &mut buf, 1);
+        let ch1 = ChannelNo::from(1u8);
+        proc.process_block(&[AudioEvent::NoteOffChannel(ch1, NOTE)], &mut buf, 1);
+        assert!(
+            buf.iter().any(|s| s.abs() > 1e-6),
+            "wrong channel note_off silenced the wrong channel"
+        );
+    }
+
+    #[test]
+    fn load_patch_channel_0_does_not_panic() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 256];
+        let patch = Box::new(SynthParams::default());
+        proc.process_block(&[AudioEvent::LoadPatch(patch)], &mut buf, 1);
+    }
+
+    #[test]
+    fn load_patch_channel_n_does_not_panic() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 256];
+        let ch = ChannelNo::from(2u8);
+        let patch = Box::new(SynthParams::default());
+        proc.process_block(&[AudioEvent::LoadPatchChannel(ch, patch)], &mut buf, 1);
+    }
+
+    #[test]
+    fn drum_event_produces_signal() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 4096];
+        proc.process_block(&[AudioEvent::Drum(DrumHit::Kick)], &mut buf, 1);
+        assert!(
+            buf.iter().any(|s| s.abs() > 1e-6),
+            "drum kick produced no signal"
+        );
+    }
+
+    #[test]
+    fn stereo_frames_have_equal_left_right() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 512];
+        proc.process_block(&[AudioEvent::NoteOn(NOTE)], &mut buf, 2);
+        // Left and right channels carry the same mono sample — exact bit equality intended.
+        #[allow(clippy::float_cmp)]
+        for frame in buf.chunks(2) {
+            assert_eq!(frame[0], frame[1], "stereo channels differ within a frame");
+        }
+    }
+
+    #[test]
+    #[should_panic(expected = "hw_channels must be > 0")]
+    fn zero_hw_channels_panics() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 4];
+        proc.process_block(&[], &mut buf, 0);
+    }
+
+    #[test]
+    #[should_panic(expected = "buf.len() must be a multiple of hw_channels")]
+    fn misaligned_buf_panics() {
+        let mut proc = make();
+        let mut buf = vec![0.0_f32; 3];
+        proc.process_block(&[], &mut buf, 2);
     }
 }
