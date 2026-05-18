@@ -194,6 +194,13 @@ tasks:
     cmds:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example mod_depth -- {{.CLI_ARGS}}
 
+  example:ring-mod:
+    desc: Run the ring modulation demo (Off, SID, Rev, Analog across a C major arpeggio with sine+sine OSC2 at a fifth)
+    aliases:
+      - ring-mod
+    cmds:
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example ring_mod -- {{.CLI_ARGS}}
+
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
     preconditions:
