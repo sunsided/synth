@@ -208,6 +208,13 @@ tasks:
     cmds:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example arp -- {{.CLI_ARGS}}
 
+  example:showcase:
+    desc: "Run the full-feature showcase (OSC waveforms, OSC2, filter/mod, FX, arpeggiator in one piece)"
+    aliases:
+      - showcase
+    cmds:
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example showcase -- {{.CLI_ARGS}}
+
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
     preconditions:

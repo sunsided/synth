@@ -88,5 +88,10 @@ name = "arp"
 path = "examples/arp.rs"
 required-features = ["io", "arp"]
 
+[[example]]
+name = "showcase"
+path = "examples/showcase.rs"
+required-features = ["io", "arp"]
+
 [lints]
 workspace = true
