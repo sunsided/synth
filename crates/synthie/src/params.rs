@@ -83,7 +83,7 @@ pub enum ArpMode {
 
 /// Arpeggiator section parameters.
 #[cfg(feature = "arp")]
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ArpParams {
     /// Whether the arpeggiator is active on this channel.

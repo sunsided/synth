@@ -190,7 +190,7 @@ impl<const N: usize> SynthProcessor<N> {
                 AudioEvent::ArpSetNotes(ch, notes, count) => {
                     if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
                         channel.params.arp.notes = *notes;
-                        channel.params.arp.count = *count;
+                        channel.params.arp.count = (*count).min(4);
                     }
                 }
                 #[cfg(feature = "arp")]
