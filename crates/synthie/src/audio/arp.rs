@@ -325,4 +325,94 @@ mod tests {
         assert_eq!(e.off, Some(MidiNote(60)), "gate=1.0 NoteOff at boundary");
         assert_eq!(e.on, Some(MidiNote(64)));
     }
+
+    #[test]
+    fn down_mode_cycles_descending() {
+        let mut arp = Arpeggiator::new();
+        let mut params = up_params(&[60, 64, 67]);
+        params.mode = ArpMode::Down;
+
+        // Down starts at step 0 (lowest index), advances down.
+        // Tick 1: NoteOn notes[0]=60
+        let e = arp.tick(SR, &params);
+        assert_eq!(e.on, Some(MidiNote(60)));
+
+        // Tick 2: step wraps down -> (0 + 3 - 1) % 3 = 2 -> notes[2]=67
+        let e = arp.tick(SR, &params);
+        assert_eq!(e.off, Some(MidiNote(60)));
+        assert_eq!(e.on, Some(MidiNote(67)));
+
+        // Tick 3: step -> (2 + 3 - 1) % 3 = 1 -> notes[1]=64
+        let e = arp.tick(SR, &params);
+        assert_eq!(e.off, Some(MidiNote(67)));
+        assert_eq!(e.on, Some(MidiNote(64)));
+
+        // Tick 4: step -> (1 + 3 - 1) % 3 = 0 -> notes[0]=60
+        let e = arp.tick(SR, &params);
+        assert_eq!(e.off, Some(MidiNote(64)));
+        assert_eq!(e.on, Some(MidiNote(60)));
+    }
+
+    #[test]
+    fn updown_mode_bounces_at_ends() {
+        let mut arp = Arpeggiator::new();
+        let mut params = up_params(&[60, 64, 67]);
+        params.mode = ArpMode::UpDown;
+
+        // Expected sequence: 0(60), 1(64), 2(67), 1(64), 0(60), 1(64), 2(67), ...
+        let expected_notes = [60u8, 64, 67, 64, 60, 64, 67, 64, 60];
+        let mut prev_on: Option<MidiNote> = None;
+        for (i, &n) in expected_notes.iter().enumerate() {
+            let e = arp.tick(SR, &params);
+            assert_eq!(
+                e.on,
+                Some(MidiNote(n)),
+                "tick {} expected NoteOn({})",
+                i + 1,
+                n
+            );
+            if i > 0 {
+                assert_eq!(
+                    e.off,
+                    prev_on,
+                    "tick {} expected NoteOff({:?})",
+                    i + 1,
+                    prev_on
+                );
+            }
+            prev_on = e.on;
+        }
+    }
+
+    #[test]
+    fn random_mode_stays_in_bounds() {
+        let mut arp = Arpeggiator::new();
+        let mut params = up_params(&[60, 64, 67, 69]); // 4 notes
+        params.mode = ArpMode::Random;
+
+        // Run 1000 ticks; every triggered note must be one of the four.
+        for _ in 0..1000 {
+            let e = arp.tick(SR, &params);
+            if let Some(note) = e.on {
+                assert!(
+                    params.notes[..params.count as usize].contains(&note),
+                    "random arp emitted note {note:?} not in list"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn random_mode_single_note_always_returns_same_note() {
+        let mut arp = Arpeggiator::new();
+        let mut params = up_params(&[60]);
+        params.mode = ArpMode::Random;
+
+        for _ in 0..20 {
+            let e = arp.tick(SR, &params);
+            if let Some(note) = e.on {
+                assert_eq!(note, MidiNote(60));
+            }
+        }
+    }
 }
