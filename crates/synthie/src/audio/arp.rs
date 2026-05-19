@@ -415,4 +415,116 @@ mod tests {
             }
         }
     }
+
+    #[test]
+    fn add_note_appends_to_list() {
+        let mut arp = Arpeggiator::new();
+        let mut params = ArpParams::default();
+        arp.add_note(&mut params, MidiNote(60));
+        assert_eq!(params.count, 1);
+        assert_eq!(params.notes[0], MidiNote(60));
+    }
+
+    #[test]
+    fn add_note_ignores_duplicate() {
+        let mut arp = Arpeggiator::new();
+        let mut params = ArpParams::default();
+        arp.add_note(&mut params, MidiNote(60));
+        arp.add_note(&mut params, MidiNote(60));
+        assert_eq!(params.count, 1);
+    }
+
+    #[test]
+    fn add_note_caps_at_four() {
+        let mut arp = Arpeggiator::new();
+        let mut params = ArpParams::default();
+        for n in [60u8, 62, 64, 65, 67] {
+            arp.add_note(&mut params, MidiNote(n));
+        }
+        assert_eq!(params.count, 4, "list must not exceed 4");
+        assert_eq!(params.notes[3], MidiNote(65), "5th note must be rejected");
+    }
+
+    #[test]
+    fn remove_note_shifts_remaining_down() {
+        let mut arp = Arpeggiator::new();
+        let mut params = ArpParams::default();
+        for n in [60u8, 64, 67] {
+            arp.add_note(&mut params, MidiNote(n));
+        }
+        arp.remove_note(&mut params, MidiNote(64));
+        assert_eq!(params.count, 2);
+        assert_eq!(params.notes[0], MidiNote(60));
+        assert_eq!(params.notes[1], MidiNote(67));
+    }
+
+    #[test]
+    fn remove_note_missing_note_is_no_op() {
+        let mut arp = Arpeggiator::new();
+        let mut params = ArpParams::default();
+        arp.add_note(&mut params, MidiNote(60));
+        arp.remove_note(&mut params, MidiNote(99));
+        assert_eq!(params.count, 1);
+    }
+
+    #[test]
+    fn remove_note_clamps_step_when_list_shrinks() {
+        let mut arp = Arpeggiator::new();
+        let mut params = ArpParams::default();
+        for n in [60u8, 64, 67] {
+            arp.add_note(&mut params, MidiNote(n));
+        }
+        // Advance to step 2 by ticking (rate = SR -> 1 step per tick)
+        params.enabled = true;
+        params.rate = SR;
+        arp.tick(SR, &params); // step 0
+        arp.tick(SR, &params); // step 1 (with advance)
+        arp.tick(SR, &params); // step 2 (with advance)
+        // step is now 2; remove the last note so count drops to 2
+        arp.remove_note(&mut params, MidiNote(67));
+        assert!(arp.step < params.count, "step must be < new count");
+    }
+
+    #[test]
+    fn set_notes_replaces_list_and_resets_state() {
+        let mut arp = Arpeggiator::new();
+        let mut params = up_params(&[60, 64, 67]);
+        // Tick a few times to build up state
+        params.rate = SR;
+        arp.tick(SR, &params);
+        arp.tick(SR, &params);
+
+        let new_notes = [MidiNote(72), MidiNote(76)];
+        arp.set_notes(&mut params, &new_notes);
+        assert_eq!(params.count, 2);
+        assert_eq!(params.notes[0], MidiNote(72));
+        assert_eq!(params.notes[1], MidiNote(76));
+        assert_eq!(arp.step, 0);
+        assert_eq!(arp.sounding, None);
+
+        // First tick after set_notes must fire NoteOn for the first new note
+        params.enabled = true;
+        params.rate = SR;
+        let e = arp.tick(SR, &params);
+        assert_eq!(e.on, Some(MidiNote(72)));
+    }
+
+    #[test]
+    fn panic_clears_all_state() {
+        let mut arp = Arpeggiator::new();
+        let mut params = up_params(&[60, 64, 67]);
+        params.rate = SR;
+        arp.tick(SR, &params);
+        arp.tick(SR, &params);
+
+        arp.panic(&mut params);
+        assert_eq!(params.count, 0);
+        assert_eq!(arp.sounding, None);
+        assert_eq!(arp.step, 0);
+
+        // After panic, tick must produce nothing (count == 0)
+        let e = arp.tick(SR, &params);
+        assert_eq!(e.on, None);
+        assert_eq!(e.off, None);
+    }
 }
