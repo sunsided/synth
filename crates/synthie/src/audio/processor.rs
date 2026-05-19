@@ -439,18 +439,28 @@ mod tests {
     #[test]
     fn arp_set_notes_and_enable_produces_signal() {
         let mut proc = make();
-        // Enable arp on channel 0 with one note at 10 Hz rate
-        let notes = [MidiNote::MIDDLE_C; 4];
-        let events = vec![
-            AudioEvent::ArpSetNotes(ChannelNo::DEFAULT, notes, 1),
-            AudioEvent::ArpEnabled(ChannelNo::DEFAULT, true),
-        ];
-        // 44100 samples at 10 Hz = 4410 samples per step, well within 8192
-        let mut buf = vec![0.0_f32; 8192];
-        proc.process_block(&events, &mut buf, 1);
+        // Phase 1: arp enabled but no notes loaded (count=0) -> silence
+        let mut buf = vec![0.0_f32; 4096];
+        proc.process_block(
+            &[AudioEvent::ArpEnabled(ChannelNo::DEFAULT, true)],
+            &mut buf,
+            1,
+        );
         assert!(
-            buf.iter().any(|s| s.abs() > 1e-6),
-            "arp with enabled=true and 1 note produced no signal"
+            buf.iter().all(|s| s.abs() < 1e-6),
+            "arp with count=0 should be silent"
+        );
+        // Phase 2: set 1 note via ArpSetNotes -> arp now has count=1 -> produces signal
+        let notes = [MidiNote::MIDDLE_C; 4];
+        let mut buf2 = vec![0.0_f32; 8192];
+        proc.process_block(
+            &[AudioEvent::ArpSetNotes(ChannelNo::DEFAULT, notes, 1)],
+            &mut buf2,
+            1,
+        );
+        assert!(
+            buf2.iter().any(|s| s.abs() > 1e-6),
+            "arp with 1 note loaded should produce signal"
         );
     }
 
@@ -459,20 +469,33 @@ mod tests {
     fn arp_disabled_after_enable_allows_direct_notes() {
         let mut proc = make();
         let notes = [MidiNote::MIDDLE_C; 4];
-        // Enable arp, then disable it
+        // Phase 1: enable arp with 1 note - arp drives audio without any NoteOn event
         let setup = vec![
-            AudioEvent::ArpSetNotes(ChannelNo::DEFAULT, notes, 1),
             AudioEvent::ArpEnabled(ChannelNo::DEFAULT, true),
-            AudioEvent::ArpEnabled(ChannelNo::DEFAULT, false),
+            AudioEvent::ArpSetNotes(ChannelNo::DEFAULT, notes, 1),
         ];
-        let mut buf = vec![0.0_f32; 256];
+        let mut buf = vec![0.0_f32; 8192];
         proc.process_block(&setup, &mut buf, 1);
-        // Now send a direct NoteOn — arp is off, should play directly
+        assert!(
+            buf.iter().any(|s| s.abs() > 1e-6),
+            "arp-driven audio should appear without a direct NoteOn"
+        );
+        // Phase 2: disable arp and panic to clear any ringing voices
+        let mut silence_buf = vec![0.0_f32; 256];
+        proc.process_block(
+            &[
+                AudioEvent::ArpEnabled(ChannelNo::DEFAULT, false),
+                AudioEvent::Panic,
+            ],
+            &mut silence_buf,
+            1,
+        );
+        // Phase 3: direct NoteOn now works
         let mut buf2 = vec![0.0_f32; 4096];
         proc.process_block(&[AudioEvent::NoteOn(MidiNote::MIDDLE_C)], &mut buf2, 1);
         assert!(
             buf2.iter().any(|s| s.abs() > 1e-6),
-            "direct note_on after arp disable produced no signal"
+            "direct NoteOn after arp disable should produce signal"
         );
     }
 
