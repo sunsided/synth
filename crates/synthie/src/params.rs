@@ -77,7 +77,7 @@ pub enum ArpMode {
     Down,
     /// Ascend to the highest note, then descend to the lowest (no endpoint repeat).
     UpDown,
-    /// Advance using a Galois LFSR, producing a pseudo-random non-repeating sequence.
+    /// Advance using a Galois LFSR, producing a pseudo-random sequence with a long period.
     Random,
 }
 

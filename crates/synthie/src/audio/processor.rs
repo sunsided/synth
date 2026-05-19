@@ -82,6 +82,13 @@ impl AudioChannel {
         #[cfg(feature = "arp")]
         if self.params.arp.enabled {
             self.arp.remove_note(&mut self.params.arp, midi);
+            // If the last note was removed, release any voice the arp was holding
+            // so it doesn't sustain indefinitely (arp won't tick while count == 0).
+            if self.params.arp.count == 0
+                && let Some(stuck) = self.arp.sounding.take()
+            {
+                self.voice_note_off(stuck);
+            }
             return;
         }
         self.voice_note_off(midi);

@@ -64,11 +64,14 @@ impl Arpeggiator {
     /// Call once per sample from inside the audio render loop.
     /// When both `off` and `on` are `Some`, apply `off` first.
     ///
-    /// Precondition: `params.rate < sample_rate` is assumed. If the ratio
-    /// exceeds 1.0 the phase clamp below prevents out-of-range values, but
-    /// multiple steps per sample are not supported.
+    /// The increment `params.rate / sample_rate` is clamped to `[0, 1]`, so
+    /// phase always stays in `[0, 1)` after each call. Rates >= `sample_rate`
+    /// are treated as one step per sample.
     pub fn tick(&mut self, sample_rate: f32, params: &ArpParams) -> ArpEvents {
-        if params.count == 0 {
+        // Clamp count defensively: params.count could exceed 4 if set from
+        // deserialized data without going through add_note / set_notes.
+        let count = params.count.min(4);
+        if count == 0 {
             return ArpEvents::default();
         }
 
@@ -81,13 +84,11 @@ impl Arpeggiator {
             self.gate_fired = true;
         }
 
-        self.phase += params.rate / sample_rate;
+        // Clamp increment to [0, 1] so phase stays in [0, 2) before wrapping,
+        // making a single subtraction always sufficient.
+        self.phase += (params.rate / sample_rate).clamp(0.0, 1.0);
 
         if self.phase >= 1.0 {
-            // Clamp phase back into [0, 1). Using `.max(0.0)` handles any
-            // floating-point edge case where the subtraction goes slightly
-            // negative; it also keeps the semantics correct when rate ≥
-            // sample_rate (phase stays at 0 rather than wrapping further).
             self.phase = (self.phase - 1.0).max(0.0);
             let pre_gate_fired = self.gate_fired;
             self.gate_fired = false;
@@ -97,14 +98,14 @@ impl Arpeggiator {
                 if !pre_gate_fired {
                     result.off = Some(note);
                 }
-                self.advance_step(params);
+                self.advance_step(count, params);
             }
             // If sounding was None this is the very first step boundary; don't advance.
         }
 
         // Start a new note whenever the arp is not currently sounding one.
-        if self.sounding.is_none() && params.count > 0 {
-            let note = params.notes[self.step as usize];
+        if self.sounding.is_none() {
+            let note = params.notes[self.step as usize % 4];
             self.sounding = Some(note);
             result.on = Some(note);
         }
@@ -112,24 +113,16 @@ impl Arpeggiator {
         result
     }
 
-    fn advance_step(&mut self, params: &ArpParams) {
-        let count = params.count;
-        if count == 0 {
-            return;
-        }
+    fn advance_step(&mut self, count: u8, params: &ArpParams) {
+        // count is already clamped to 1..=4 by tick().
+        debug_assert!(count > 0 && count <= 4);
         match params.mode {
-            ArpMode::Up => {
-                self.step = (self.step + 1) % count;
-            }
-            ArpMode::Down => {
-                self.step = (self.step + count - 1) % count;
-            }
-            ArpMode::UpDown => {
-                self.advance_step_updown(count);
-            }
+            ArpMode::Up => self.step = (self.step + 1) % count,
+            ArpMode::Down => self.step = (self.step + count - 1) % count,
+            ArpMode::UpDown => self.advance_step_updown(count),
             ArpMode::Random => {
                 self.tick_lfsr();
-                // Safe: result is always < count, which is <= 4, fitting in u8.
+                // Safe: result is always < count (<=4), fits in u8.
                 #[allow(clippy::cast_possible_truncation)]
                 {
                     self.step = (self.lfsr % u32::from(count)) as u8;
@@ -180,6 +173,11 @@ impl Arpeggiator {
     }
 
     /// Remove `note` from the arp list, shifting the remaining entries down.
+    ///
+    /// When the last note is removed (`count` drops to 0) the playback state
+    /// is reset so a subsequent `add_note` starts from a clean position.
+    /// The caller (`AudioChannel::note_off`) is responsible for releasing any
+    /// voice that was sounding at that moment.
     pub fn remove_note(&mut self, params: &mut ArpParams, note: MidiNote) {
         let count = params.count as usize;
         if let Some(pos) = params.notes[..count].iter().position(|&n| n == note) {
@@ -187,7 +185,13 @@ impl Arpeggiator {
                 params.notes[i] = params.notes[i + 1];
             }
             params.count -= 1;
-            if params.count > 0 && self.step >= params.count {
+            if params.count == 0 {
+                self.step = 0;
+                self.direction = 0;
+                self.phase = 0.0;
+                self.gate_fired = false;
+                // sounding is left for the caller to handle (voice release)
+            } else if self.step >= params.count {
                 self.step = params.count - 1;
             }
         }
