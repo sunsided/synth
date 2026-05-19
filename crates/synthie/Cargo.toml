@@ -83,5 +83,10 @@ name = "mod_depth"
 path = "examples/mod_depth.rs"
 required-features = ["io"]
 
+[[example]]
+name = "arp"
+path = "examples/arp.rs"
+required-features = ["io", "arp"]
+
 [lints]
 workspace = true

@@ -144,6 +144,8 @@ fn base_patch() -> SynthParams {
             volume: 0.7,
             glide_time: 0.0,
         },
+        #[cfg(feature = "arp")]
+        arp: synthie::params::ArpParams::default(),
     }
 }
 
