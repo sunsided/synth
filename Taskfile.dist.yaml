@@ -201,6 +201,13 @@ tasks:
     cmds:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example ring_mod -- {{.CLI_ARGS}}
 
+  example:arp:
+    desc: "Run the arpeggiator demo (four modes: Up, Down, UpDown, Random across an A-minor progression)"
+    aliases:
+      - arp
+    cmds:
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example arp -- {{.CLI_ARGS}}
+
   fuzz:build:
     desc: Build all fuzz targets (compile check only, no execution)
     preconditions:

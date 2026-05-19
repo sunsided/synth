@@ -1,5 +1,7 @@
 //! Audio DSP modules and (when the `io` feature is enabled) the CPAL stream setup.
 
+#[cfg(feature = "arp")]
+pub mod arp;
 pub mod chorus;
 pub mod crusher;
 pub mod delay;

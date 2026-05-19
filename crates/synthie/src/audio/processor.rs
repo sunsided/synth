@@ -34,6 +34,8 @@ struct AudioChannel {
     voices: [Voice; POLYPHONY],
     slots: [VoiceSlot; POLYPHONY],
     age_counter: u64,
+    #[cfg(feature = "arp")]
+    arp: crate::audio::arp::Arpeggiator,
 }
 
 impl AudioChannel {
@@ -43,6 +45,8 @@ impl AudioChannel {
             voices: std::array::from_fn(|_| Voice::new()),
             slots: std::array::from_fn(|_| VoiceSlot::default()),
             age_counter: 0,
+            #[cfg(feature = "arp")]
+            arp: crate::audio::arp::Arpeggiator::new(),
         }
     }
 
@@ -66,6 +70,31 @@ impl AudioChannel {
     }
 
     fn note_on(&mut self, midi: MidiNote, sample_rate: f32) {
+        #[cfg(feature = "arp")]
+        if self.params.arp.enabled {
+            self.arp.add_note(&mut self.params.arp, midi);
+            return;
+        }
+        self.voice_note_on(midi, sample_rate);
+    }
+
+    fn note_off(&mut self, midi: MidiNote) {
+        #[cfg(feature = "arp")]
+        if self.params.arp.enabled {
+            self.arp.remove_note(&mut self.params.arp, midi);
+            // If the last note was removed, release any voice the arp was holding
+            // so it doesn't sustain indefinitely (arp won't tick while count == 0).
+            if self.params.arp.count == 0
+                && let Some(stuck) = self.arp.sounding.take()
+            {
+                self.voice_note_off(stuck);
+            }
+            return;
+        }
+        self.voice_note_off(midi);
+    }
+
+    fn voice_note_on(&mut self, midi: MidiNote, sample_rate: f32) {
         let idx = self.allocate_voice_index(midi);
         self.age_counter = self.age_counter.saturating_add(1);
         self.slots[idx].note = Some(midi);
@@ -73,7 +102,7 @@ impl AudioChannel {
         self.voices[idx].note_on(midi, &self.params, sample_rate);
     }
 
-    fn note_off(&mut self, midi: MidiNote) {
+    fn voice_note_off(&mut self, midi: MidiNote) {
         if let Some(idx) = self.slots.iter().position(|s| s.note == Some(midi)) {
             self.voices[idx].note_off();
             self.slots[idx].note = None;
@@ -81,6 +110,9 @@ impl AudioChannel {
     }
 
     fn panic(&mut self) {
+        #[cfg(feature = "arp")]
+        self.arp.panic(&mut self.params.arp);
+
         for voice in &mut self.voices {
             voice.panic();
         }
@@ -91,6 +123,17 @@ impl AudioChannel {
     }
 
     fn process(&mut self, sample_rate: f32) -> f32 {
+        #[cfg(feature = "arp")]
+        if self.params.arp.enabled && self.params.arp.count > 0 {
+            let events = self.arp.tick(sample_rate, &self.params.arp);
+            if let Some(note) = events.off {
+                self.voice_note_off(note);
+            }
+            if let Some(note) = events.on {
+                self.voice_note_on(note, sample_rate);
+            }
+        }
+
         self.voices
             .iter_mut()
             .map(|v| v.process(&self.params, sample_rate))
@@ -184,6 +227,20 @@ impl<const N: usize> SynthProcessor<N> {
                     }
                     if *ch == ChannelNo::DEFAULT {
                         self.apply_reverb_params();
+                    }
+                }
+                #[cfg(feature = "arp")]
+                AudioEvent::ArpSetNotes(ch, notes, count) => {
+                    if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
+                        channel
+                            .arp
+                            .set_notes(&mut channel.params.arp, &notes[..(*count as usize).min(4)]);
+                    }
+                }
+                #[cfg(feature = "arp")]
+                AudioEvent::ArpEnabled(ch, enabled) => {
+                    if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
+                        channel.params.arp.enabled = *enabled;
                     }
                 }
             }
@@ -383,5 +440,89 @@ mod tests {
         let mut proc = make();
         let mut buf = vec![0.0_f32; 3];
         proc.process_block(&[], &mut buf, 2);
+    }
+
+    #[cfg(feature = "arp")]
+    #[test]
+    fn arp_set_notes_and_enable_produces_signal() {
+        let mut proc = make();
+        // Phase 1: arp enabled but no notes loaded (count=0) -> silence
+        let mut buf = vec![0.0_f32; 4096];
+        proc.process_block(
+            &[AudioEvent::ArpEnabled(ChannelNo::DEFAULT, true)],
+            &mut buf,
+            1,
+        );
+        assert!(
+            buf.iter().all(|s| s.abs() < 1e-6),
+            "arp with count=0 should be silent"
+        );
+        // Phase 2: set 1 note via ArpSetNotes -> arp now has count=1 -> produces signal
+        let notes = [MidiNote::MIDDLE_C; 4];
+        let mut buf2 = vec![0.0_f32; 8192];
+        proc.process_block(
+            &[AudioEvent::ArpSetNotes(ChannelNo::DEFAULT, notes, 1)],
+            &mut buf2,
+            1,
+        );
+        assert!(
+            buf2.iter().any(|s| s.abs() > 1e-6),
+            "arp with 1 note loaded should produce signal"
+        );
+    }
+
+    #[cfg(feature = "arp")]
+    #[test]
+    fn arp_disabled_after_enable_allows_direct_notes() {
+        let mut proc = make();
+        let notes = [MidiNote::MIDDLE_C; 4];
+        // Phase 1: enable arp with 1 note - arp drives audio without any NoteOn event
+        let setup = vec![
+            AudioEvent::ArpEnabled(ChannelNo::DEFAULT, true),
+            AudioEvent::ArpSetNotes(ChannelNo::DEFAULT, notes, 1),
+        ];
+        let mut buf = vec![0.0_f32; 8192];
+        proc.process_block(&setup, &mut buf, 1);
+        assert!(
+            buf.iter().any(|s| s.abs() > 1e-6),
+            "arp-driven audio should appear without a direct NoteOn"
+        );
+        // Phase 2: disable arp and panic to clear any ringing voices
+        let mut silence_buf = vec![0.0_f32; 256];
+        proc.process_block(
+            &[
+                AudioEvent::ArpEnabled(ChannelNo::DEFAULT, false),
+                AudioEvent::Panic,
+            ],
+            &mut silence_buf,
+            1,
+        );
+        // Phase 3: direct NoteOn now works
+        let mut buf2 = vec![0.0_f32; 4096];
+        proc.process_block(&[AudioEvent::NoteOn(MidiNote::MIDDLE_C)], &mut buf2, 1);
+        assert!(
+            buf2.iter().any(|s| s.abs() > 1e-6),
+            "direct NoteOn after arp disable should produce signal"
+        );
+    }
+
+    #[cfg(feature = "arp")]
+    #[test]
+    fn arp_panic_leaves_processor_in_finite_state() {
+        let mut proc = make();
+        let notes = [MidiNote::MIDDLE_C; 4];
+        let setup = vec![
+            AudioEvent::ArpSetNotes(ChannelNo::DEFAULT, notes, 1),
+            AudioEvent::ArpEnabled(ChannelNo::DEFAULT, true),
+        ];
+        let mut buf = vec![0.0_f32; 4096];
+        proc.process_block(&setup, &mut buf, 1);
+        proc.process_block(&[AudioEvent::Panic], &mut buf, 1);
+        let mut after = vec![0.0_f32; 4096];
+        proc.process_block(&[], &mut after, 1);
+        assert!(
+            after.iter().all(|s| s.is_finite()),
+            "non-finite output after arp panic"
+        );
     }
 }

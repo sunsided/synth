@@ -4,6 +4,8 @@
 //! The inline sound-design notes next to each preset describe the intent so
 //! the parameter choices remain legible without running the synth.
 
+#[cfg(feature = "arp")]
+use crate::params::ArpParams;
 use crate::params::{
     ChorusParams, CrusherParams, DelayParams, EnvParams, FilterMode, FilterParams, FxParams,
     GlobalParams, LfoParams, LfoShape, LfoTarget, ModEnvParams, Osc2Params, OscParams, Patch,
@@ -56,6 +58,8 @@ pub fn default_patches() -> Vec<Patch> {
                 lfo2: LfoParams::default(),
                 filter_env: ModEnvParams::default(),
                 pitch_env: ModEnvParams::default(),
+                #[cfg(feature = "arp")]
+                arp: ArpParams::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.0,
@@ -103,6 +107,8 @@ pub fn default_patches() -> Vec<Patch> {
                 lfo2: LfoParams::default(),
                 filter_env: ModEnvParams::default(),
                 pitch_env: ModEnvParams::default(),
+                #[cfg(feature = "arp")]
+                arp: ArpParams::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.0,
@@ -150,6 +156,8 @@ pub fn default_patches() -> Vec<Patch> {
                 lfo2: LfoParams::default(),
                 filter_env: ModEnvParams::default(),
                 pitch_env: ModEnvParams::default(),
+                #[cfg(feature = "arp")]
+                arp: ArpParams::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.0,
@@ -197,6 +205,8 @@ pub fn default_patches() -> Vec<Patch> {
                 lfo2: LfoParams::default(),
                 filter_env: ModEnvParams::default(),
                 pitch_env: ModEnvParams::default(),
+                #[cfg(feature = "arp")]
+                arp: ArpParams::default(),
                 global: GlobalParams {
                     volume: 0.7,
                     glide_time: 0.03,
@@ -244,6 +254,8 @@ pub fn default_patches() -> Vec<Patch> {
                 lfo2: LfoParams::default(),
                 filter_env: ModEnvParams::default(),
                 pitch_env: ModEnvParams::default(),
+                #[cfg(feature = "arp")]
+                arp: ArpParams::default(),
                 global: GlobalParams {
                     volume: 0.65,
                     glide_time: 0.0,
@@ -291,6 +303,8 @@ pub fn default_patches() -> Vec<Patch> {
                 lfo2: LfoParams::default(),
                 filter_env: ModEnvParams::default(),
                 pitch_env: ModEnvParams::default(),
+                #[cfg(feature = "arp")]
+                arp: ArpParams::default(),
                 global: GlobalParams {
                     volume: 0.8,
                     glide_time: 0.0,
@@ -338,6 +352,8 @@ pub fn default_patches() -> Vec<Patch> {
                 lfo2: LfoParams::default(),
                 filter_env: ModEnvParams::default(),
                 pitch_env: ModEnvParams::default(),
+                #[cfg(feature = "arp")]
+                arp: ArpParams::default(),
                 global: GlobalParams {
                     volume: 0.75,
                     glide_time: 0.12,
@@ -385,6 +401,8 @@ pub fn default_patches() -> Vec<Patch> {
                 lfo2: LfoParams::default(),
                 filter_env: ModEnvParams::default(),
                 pitch_env: ModEnvParams::default(),
+                #[cfg(feature = "arp")]
+                arp: ArpParams::default(),
                 global: GlobalParams {
                     volume: 0.65,
                     glide_time: 0.0,

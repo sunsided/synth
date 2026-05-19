@@ -9,6 +9,8 @@ use std::time::{Duration, Instant};
 
 use anyhow::Result;
 use synthie::audio::engine::setup_audio;
+#[cfg(feature = "arp")]
+use synthie::params::ArpParams;
 use synthie::params::{
     AudioEvent, ChorusParams, CrusherParams, DelayParams, EnvParams, FilterMode, FilterParams,
     FxParams, GlobalParams, LfoParams, LfoShape, LfoTarget, MidiNote, ModEnvParams, Osc2Params,
@@ -89,6 +91,8 @@ fn base_patch() -> SynthParams {
         lfo2: LfoParams::default(),
         filter_env: ModEnvParams::default(),
         pitch_env: ModEnvParams::default(),
+        #[cfg(feature = "arp")]
+        arp: ArpParams::default(),
         fx: FxParams {
             reverb_mix: 0.12,
             reverb_size: 0.4,
