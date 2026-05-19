@@ -63,15 +63,20 @@ impl Arpeggiator {
     ///
     /// Call once per sample from inside the audio render loop.
     /// When both `off` and `on` are `Some`, apply `off` first.
+    ///
+    /// Precondition: `params.rate < sample_rate` is assumed. If the ratio
+    /// exceeds 1.0 the phase clamp below prevents out-of-range values, but
+    /// multiple steps per sample are not supported.
     pub fn tick(&mut self, sample_rate: f32, params: &ArpParams) -> ArpEvents {
         if params.count == 0 {
             return ArpEvents::default();
         }
 
+        let gate = params.gate.clamp(0.0, 1.0);
         let mut result = ArpEvents::default();
 
         // Gate expiry: NoteOff fires when phase crosses the gate threshold mid-step.
-        if self.sounding.is_some() && !self.gate_fired && self.phase >= params.gate {
+        if self.sounding.is_some() && !self.gate_fired && self.phase >= gate {
             result.off = self.sounding;
             self.gate_fired = true;
         }
@@ -79,7 +84,11 @@ impl Arpeggiator {
         self.phase += params.rate / sample_rate;
 
         if self.phase >= 1.0 {
-            self.phase -= 1.0;
+            // Clamp phase back into [0, 1). Using `.max(0.0)` handles any
+            // floating-point edge case where the subtraction goes slightly
+            // negative; it also keeps the semantics correct when rate ≥
+            // sample_rate (phase stays at 0 rather than wrapping further).
+            self.phase = (self.phase - 1.0).max(0.0);
             let pre_gate_fired = self.gate_fired;
             self.gate_fired = false;
 
