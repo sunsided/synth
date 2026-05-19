@@ -34,6 +34,8 @@ struct AudioChannel {
     voices: [Voice; POLYPHONY],
     slots: [VoiceSlot; POLYPHONY],
     age_counter: u64,
+    #[cfg(feature = "arp")]
+    arp: crate::audio::arp::Arpeggiator,
 }
 
 impl AudioChannel {
@@ -43,6 +45,8 @@ impl AudioChannel {
             voices: std::array::from_fn(|_| Voice::new()),
             slots: std::array::from_fn(|_| VoiceSlot::default()),
             age_counter: 0,
+            #[cfg(feature = "arp")]
+            arp: crate::audio::arp::Arpeggiator::new(),
         }
     }
 
@@ -66,6 +70,24 @@ impl AudioChannel {
     }
 
     fn note_on(&mut self, midi: MidiNote, sample_rate: f32) {
+        #[cfg(feature = "arp")]
+        if self.params.arp.enabled {
+            self.arp.add_note(&mut self.params.arp, midi);
+            return;
+        }
+        self.voice_note_on(midi, sample_rate);
+    }
+
+    fn note_off(&mut self, midi: MidiNote) {
+        #[cfg(feature = "arp")]
+        if self.params.arp.enabled {
+            self.arp.remove_note(&mut self.params.arp, midi);
+            return;
+        }
+        self.voice_note_off(midi);
+    }
+
+    fn voice_note_on(&mut self, midi: MidiNote, sample_rate: f32) {
         let idx = self.allocate_voice_index(midi);
         self.age_counter = self.age_counter.saturating_add(1);
         self.slots[idx].note = Some(midi);
@@ -73,7 +95,7 @@ impl AudioChannel {
         self.voices[idx].note_on(midi, &self.params, sample_rate);
     }
 
-    fn note_off(&mut self, midi: MidiNote) {
+    fn voice_note_off(&mut self, midi: MidiNote) {
         if let Some(idx) = self.slots.iter().position(|s| s.note == Some(midi)) {
             self.voices[idx].note_off();
             self.slots[idx].note = None;
@@ -81,6 +103,9 @@ impl AudioChannel {
     }
 
     fn panic(&mut self) {
+        #[cfg(feature = "arp")]
+        self.arp.panic(&mut self.params.arp);
+
         for voice in &mut self.voices {
             voice.panic();
         }
@@ -91,6 +116,17 @@ impl AudioChannel {
     }
 
     fn process(&mut self, sample_rate: f32) -> f32 {
+        #[cfg(feature = "arp")]
+        if self.params.arp.enabled && self.params.arp.count > 0 {
+            let events = self.arp.tick(sample_rate, &self.params.arp);
+            if let Some(note) = events.off {
+                self.voice_note_off(note);
+            }
+            if let Some(note) = events.on {
+                self.voice_note_on(note, sample_rate);
+            }
+        }
+
         self.voices
             .iter_mut()
             .map(|v| v.process(&self.params, sample_rate))
