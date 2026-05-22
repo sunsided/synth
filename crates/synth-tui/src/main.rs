@@ -11,7 +11,7 @@ mod preset_store;
 mod viz;
 
 use app::{input, state::AppState, ui};
-use synthie::audio::engine::setup_audio;
+use synthie::audio::engine::setup_audio_silenced;
 use viz::scope::ScopeBuf;
 
 use anyhow::Result;
@@ -50,7 +50,7 @@ fn run_tui() -> Result<()> {
         original_hook(info);
     }));
 
-    let (stream, event_tx, scope_rx) = setup_audio()?;
+    let (stream, event_tx, scope_rx) = setup_audio_silenced()?;
     // Keep stream alive for the duration of the program.
     let _stream = stream;
 

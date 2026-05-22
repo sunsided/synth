@@ -1,0 +1,24 @@
+[package]
+name              = "synthie-tracker"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description       = "Step-sequencer tracker TUI for the synthie engine"
+repository.workspace = true
+license.workspace = true
+publish           = false
+
+[[bin]]
+name = "synthie-tracker"
+path = "src/main.rs"
+
+[dependencies]
+anyhow            = { workspace = true }
+cpal              = { workspace = true }
+crossbeam-channel = { workspace = true }
+crossterm         = { workspace = true }
+ratatui           = { workspace = true }
+synthie           = { path = "../synthie" }
+
+[lints]
+workspace = true
