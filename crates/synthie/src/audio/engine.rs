@@ -165,14 +165,15 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
 
 /// Initialise CPAL audio output for TUI applications.
 ///
-/// Like [`setup_audio`] but requests a larger buffer (~93 ms at 44.1 kHz) to
-/// reduce underruns, and silences stream-error messages so they do not corrupt
-/// the alternate screen.
+/// Like [`setup_audio`] but uses `Fixed(512)` (~12 ms at 44.1 kHz) so that
+/// note events queued from a sequencer thread are picked up within one callback
+/// period, keeping step timing tight.  Stream-error messages are silenced so
+/// they do not corrupt the alternate screen.
 ///
 /// # Errors
 ///
 /// Returns an error if no default audio output device is available or if the
 /// stream configuration cannot be determined or opened.
 pub fn setup_audio_silenced() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
-    setup_audio_n_with_error_handler::<NUM_CHANNELS, _>(cpal::BufferSize::Fixed(4096), |_| {})
+    setup_audio_n_with_error_handler::<NUM_CHANNELS, _>(cpal::BufferSize::Fixed(512), |_| {})
 }
