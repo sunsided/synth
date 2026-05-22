@@ -11,7 +11,7 @@ use synthie::params::{AudioEvent, ChannelNo, MidiNote, Patch};
 use synthie::presets::sid::default_patches;
 
 use crate::tracker::player::Player;
-use crate::tracker::{DrumStep, Song, DRUM_TRACK, STEPS, SYNTH_TRACKS, TOTAL_TRACKS};
+use crate::tracker::{DRUM_TRACK, DrumStep, STEPS, SYNTH_TRACKS, Song, TOTAL_TRACKS};
 
 // ─── DrumKind ────────────────────────────────────────────────────────────────
 

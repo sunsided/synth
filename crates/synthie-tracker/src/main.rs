@@ -10,7 +10,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
-use synthie::audio::engine::setup_audio;
+use synthie::audio::engine::setup_audio_silenced;
 
 mod app;
 mod tracker;
@@ -26,7 +26,7 @@ fn main() -> Result<()> {
     }));
 
     // ── Start the audio engine ───────────────────────────────────────────────
-    let (_stream, event_tx, _scope_rx) = setup_audio()?;
+    let (_stream, event_tx, _scope_rx) = setup_audio_silenced()?;
 
     // ── Set up the ratatui terminal ──────────────────────────────────────────
     enable_raw_mode()?;
@@ -34,8 +34,8 @@ fn main() -> Result<()> {
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
     // Request full keyboard protocol where supported (e.g. kitty terminals).
-    let keyboard_flags =
-        KeyboardEnhancementFlags::REPORT_EVENT_TYPES | KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
+    let keyboard_flags = KeyboardEnhancementFlags::REPORT_EVENT_TYPES
+        | KeyboardEnhancementFlags::DISAMBIGUATE_ESCAPE_CODES;
     execute!(stdout, PushKeyboardEnhancementFlags(keyboard_flags)).ok();
 
     let backend = CrosstermBackend::new(stdout);

@@ -12,6 +12,7 @@ A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as i
 |---|---|---|
 | [`synthie`](crates/synthie/) | library | DSP engine: oscillators, envelopes, filter, LFO, reverb, preset system |
 | [`synth-tui`](crates/synth-tui/) | binary | Terminal synthesizer — interactive demo of the engine |
+| [`synthie-tracker`](crates/synthie-tracker/) | binary | **Step-sequencer tracker TUI** — 4-channel pattern editor with drum track |
 
 ## Library
 
@@ -59,7 +60,34 @@ Run any example with `cargo run -p synth --example <name> --release`.
 | `lazy_jones` | Lazy Jones (David Whittaker, 1984) — the C64 hook that became Kernkraft 400 |
 | `kernkraft` | Kernkraft 400 (Zombie Nation, 1999) — full song structure, two channels |
 
-## TUI Demo
+## Synthie Tracker
+
+A 16-step sequencer with 4 independent synth channels and a drum track (kick, closed/open hi-hat), powered by the same `synthie` DSP engine.
+
+```sh
+task tracker          # or: cargo run -p synthie-tracker --release
+```
+
+### Controls
+
+| Key | Action |
+|---|---|
+| `Space` | Play / Stop |
+| `Esc` | Panic (silence all voices) |
+| `↑` / `↓` / `←` / `→` | Move cursor |
+| `Tab` / `Shift+Tab` | Next / previous preset on current track |
+| `Z`–`M`, `Q`–`U` | Enter note (lower / upper octave row, same layout as synth-tui) |
+| `Del` / `Bksp` | Clear step |
+| `k` / `h` / `o` | Toggle kick / closed hi-hat / open hi-hat (drum track) |
+| `+` / `-` | BPM up / down |
+| `[` / `]` | Octave down / up |
+| `PgUp` / `PgDn` | Extend / shorten pattern |
+| `F1` | Toggle key-reference overlay |
+| `Ctrl+C` / `Ctrl+Q` | Quit |
+
+> **Terminal compatibility:** Note-off on note entry requires keyboard enhancement support (kitty protocol, WezTerm). In terminals without it, each note entry is still correctly gated per step.
+
+## TUI Demo (synth-tui)
 
 ![Screenshot](docs/screenshot.png)
 

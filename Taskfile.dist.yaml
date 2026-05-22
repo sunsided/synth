@@ -140,9 +140,16 @@ tasks:
       - cargo update
 
   run:
-    desc: Run the application
+    desc: Run the synthesizer TUI (synth-tui)
     cmds:
       - cargo run -p synth-tui {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
+
+  run:tracker:
+    desc: Run the Synthie Tracker (step-sequencer TUI)
+    aliases:
+      - tracker
+    cmds:
+      - cargo run -p synthie-tracker {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
 
   example:tune:
     desc: Run the tune example (chord progression + melody, SID-style)

@@ -89,14 +89,20 @@ fn draw_main(frame: &mut Frame, state: &TrackerState) {
 // ─── Header ──────────────────────────────────────────────────────────────────
 
 fn draw_header(frame: &mut Frame, area: Rect, state: &TrackerState) {
-    let play_icon = if state.is_playing() { "● PLAYING" } else { "■ STOPPED" };
+    let play_icon = if state.is_playing() {
+        "● PLAYING"
+    } else {
+        "■ STOPPED"
+    };
     let play_color = if state.is_playing() { FG_NOTE } else { FG_DIM };
 
     let text = Line::from(vec![
         Span::styled(" ♩ ", Style::default().fg(FG_DIM)),
         Span::styled(
             format!("{:.0} BPM", state.song.bpm),
-            Style::default().fg(FG_HIGHLIGHT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(FG_HIGHLIGHT)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::styled("  │  ", Style::default().fg(FG_DIM)),
         Span::styled(
@@ -104,7 +110,10 @@ fn draw_header(frame: &mut Frame, area: Rect, state: &TrackerState) {
             Style::default().fg(FG),
         ),
         Span::styled("  │  ", Style::default().fg(FG_DIM)),
-        Span::styled(play_icon, Style::default().fg(play_color).add_modifier(Modifier::BOLD)),
+        Span::styled(
+            play_icon,
+            Style::default().fg(play_color).add_modifier(Modifier::BOLD),
+        ),
         Span::styled("  │  Oct: ", Style::default().fg(FG_DIM)),
         Span::styled(
             format!("{}", state.octave),
@@ -115,16 +124,16 @@ fn draw_header(frame: &mut Frame, area: Rect, state: &TrackerState) {
     let block = Block::default()
         .title(Span::styled(
             " SYNTHIE TRACKER ",
-            Style::default().fg(FG_HIGHLIGHT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(FG_HIGHLIGHT)
+                .add_modifier(Modifier::BOLD),
         ))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
         .border_style(Style::default().fg(BORDER_ACTIVE))
         .style(Style::default().bg(BG));
 
-    let paragraph = Paragraph::new(text)
-        .block(block)
-        .alignment(Alignment::Left);
+    let paragraph = Paragraph::new(text).block(block).alignment(Alignment::Left);
 
     frame.render_widget(paragraph, area);
 }
@@ -169,9 +178,10 @@ fn draw_grid(frame: &mut Frame, area: Rect, state: &TrackerState) {
 fn draw_column_headers(frame: &mut Frame, cols: &[Rect], state: &TrackerState) {
     // Row number header cell
     if let Some(&cell) = cols.first() {
-        let header = Paragraph::new(Line::from(vec![
-            Span::styled(" ROW", Style::default().fg(FG_DIM)),
-        ]));
+        let header = Paragraph::new(Line::from(vec![Span::styled(
+            " ROW",
+            Style::default().fg(FG_DIM),
+        )]));
         let col_area = Rect {
             y: cell.y,
             height: 2,
@@ -185,13 +195,12 @@ fn draw_column_headers(frame: &mut Frame, cols: &[Rect], state: &TrackerState) {
         if let Some(&cell) = cols.get(track + 1) {
             let is_active = state.cursor_track == track;
             let patch_idx = state.song.track_patches[track];
-            let patch_name = state
-                .presets
-                .get(patch_idx)
-                .map_or("", |p| p.name.as_str());
+            let patch_name = state.presets.get(patch_idx).map_or("", |p| p.name.as_str());
 
             let header_style = if is_active {
-                Style::default().fg(FG_HIGHLIGHT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(FG_HIGHLIGHT)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default().fg(FG_DIM)
             };
@@ -216,7 +225,9 @@ fn draw_column_headers(frame: &mut Frame, cols: &[Rect], state: &TrackerState) {
     if let Some(&cell) = cols.get(DRUM_TRACK + 1) {
         let is_active = state.cursor_track == DRUM_TRACK;
         let header_style = if is_active {
-            Style::default().fg(FG_HIGHLIGHT).add_modifier(Modifier::BOLD)
+            Style::default()
+                .fg(FG_HIGHLIGHT)
+                .add_modifier(Modifier::BOLD)
         } else {
             Style::default().fg(FG_DIM)
         };
@@ -236,6 +247,7 @@ fn draw_column_headers(frame: &mut Frame, cols: &[Rect], state: &TrackerState) {
     }
 }
 
+#[allow(clippy::too_many_lines)]
 fn draw_step_rows(frame: &mut Frame, cols: &[Rect], state: &TrackerState, visible_rows: usize) {
     let pattern_len = state.song.pattern.len;
     let cursor_row = state.cursor_row;
@@ -263,7 +275,9 @@ fn draw_step_rows(frame: &mut Frame, cols: &[Rect], state: &TrackerState, visibl
         if let Some(&cell) = cols.first() {
             let marker = if is_playing { "►" } else { " " };
             let row_style = if is_playing {
-                Style::default().fg(FG_HIGHLIGHT).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .fg(FG_HIGHLIGHT)
+                    .add_modifier(Modifier::BOLD)
             } else if is_cursor {
                 Style::default().fg(FG_HIGHLIGHT)
             } else {
@@ -275,10 +289,7 @@ fn draw_step_rows(frame: &mut Frame, cols: &[Rect], state: &TrackerState, visibl
                 height: 1,
                 ..cell
             };
-            frame.render_widget(
-                Paragraph::new(Span::styled(text, row_style)),
-                row_cell,
-            );
+            frame.render_widget(Paragraph::new(Span::styled(text, row_style)), row_cell);
         }
 
         // ── Synth track cells ─────────────────────────────────────────────────
@@ -290,12 +301,13 @@ fn draw_step_rows(frame: &mut Frame, cols: &[Rect], state: &TrackerState, visibl
                 let (text, text_style) = match step_data.note {
                     Some(note) => (
                         format!(" {}", note_name(note)),
-                        Style::default().fg(if is_cursor_cell { FG_HIGHLIGHT } else { FG_NOTE }),
+                        Style::default().fg(if is_cursor_cell {
+                            FG_HIGHLIGHT
+                        } else {
+                            FG_NOTE
+                        }),
                     ),
-                    None => (
-                        " ---".to_string(),
-                        Style::default().fg(FG_DIM),
-                    ),
+                    None => (" ---".to_string(), Style::default().fg(FG_DIM)),
                 };
 
                 let cell_style = if is_cursor_cell {
@@ -331,13 +343,19 @@ fn draw_step_rows(frame: &mut Frame, cols: &[Rect], state: &TrackerState, visibl
             let text = format!(" {k} {h} {o}");
 
             let text_style = if drum.kick || drum.hihat_closed || drum.hihat_open {
-                Style::default().fg(if is_cursor_cell { FG_HIGHLIGHT } else { FG_DRUM })
+                Style::default().fg(if is_cursor_cell {
+                    FG_HIGHLIGHT
+                } else {
+                    FG_DRUM
+                })
             } else {
                 Style::default().fg(FG_DIM)
             };
 
             let cell_style = if is_cursor_cell {
-                Style::default().bg(Color::DarkGray).add_modifier(Modifier::BOLD)
+                Style::default()
+                    .bg(Color::DarkGray)
+                    .add_modifier(Modifier::BOLD)
             } else {
                 Style::default()
             };
@@ -358,24 +376,22 @@ fn draw_step_rows(frame: &mut Frame, cols: &[Rect], state: &TrackerState, visibl
 // ─── Status bar ──────────────────────────────────────────────────────────────
 
 fn draw_status(frame: &mut Frame, area: Rect) {
-    let lines = vec![
-        Line::from(vec![
-            Span::styled(" Space", Style::default().fg(FG_HIGHLIGHT)),
-            Span::styled(":Play/Stop  ", Style::default().fg(FG_DIM)),
-            Span::styled("Esc", Style::default().fg(FG_HIGHLIGHT)),
-            Span::styled(":Panic  ", Style::default().fg(FG_DIM)),
-            Span::styled("Del", Style::default().fg(FG_HIGHLIGHT)),
-            Span::styled(":Clear  ", Style::default().fg(FG_DIM)),
-            Span::styled("↑↓", Style::default().fg(FG_HIGHLIGHT)),
-            Span::styled(":Row  ", Style::default().fg(FG_DIM)),
-            Span::styled("←→", Style::default().fg(FG_HIGHLIGHT)),
-            Span::styled(":Track  ", Style::default().fg(FG_DIM)),
-            Span::styled("Tab", Style::default().fg(FG_HIGHLIGHT)),
-            Span::styled(":Patch  ", Style::default().fg(FG_DIM)),
-            Span::styled("F1", Style::default().fg(FG_HIGHLIGHT)),
-            Span::styled(":Help", Style::default().fg(FG_DIM)),
-        ]),
-    ];
+    let lines = vec![Line::from(vec![
+        Span::styled(" Space", Style::default().fg(FG_HIGHLIGHT)),
+        Span::styled(":Play/Stop  ", Style::default().fg(FG_DIM)),
+        Span::styled("Esc", Style::default().fg(FG_HIGHLIGHT)),
+        Span::styled(":Panic  ", Style::default().fg(FG_DIM)),
+        Span::styled("Del", Style::default().fg(FG_HIGHLIGHT)),
+        Span::styled(":Clear  ", Style::default().fg(FG_DIM)),
+        Span::styled("↑↓", Style::default().fg(FG_HIGHLIGHT)),
+        Span::styled(":Row  ", Style::default().fg(FG_DIM)),
+        Span::styled("←→", Style::default().fg(FG_HIGHLIGHT)),
+        Span::styled(":Track  ", Style::default().fg(FG_DIM)),
+        Span::styled("Tab", Style::default().fg(FG_HIGHLIGHT)),
+        Span::styled(":Patch  ", Style::default().fg(FG_DIM)),
+        Span::styled("F1", Style::default().fg(FG_HIGHLIGHT)),
+        Span::styled(":Help", Style::default().fg(FG_DIM)),
+    ])];
 
     let block = Block::default()
         .borders(Borders::ALL)
@@ -387,6 +403,7 @@ fn draw_status(frame: &mut Frame, area: Rect) {
 
 // ─── Help overlay ────────────────────────────────────────────────────────────
 
+#[allow(clippy::too_many_lines)]
 fn draw_help(frame: &mut Frame) {
     let area = frame.area();
 
@@ -395,7 +412,12 @@ fn draw_help(frame: &mut Frame) {
     let h = 24_u16.min(area.height);
     let x = area.x + (area.width.saturating_sub(w)) / 2;
     let y = area.y + (area.height.saturating_sub(h)) / 2;
-    let popup = Rect { x, y, width: w, height: h };
+    let popup = Rect {
+        x,
+        y,
+        width: w,
+        height: h,
+    };
 
     // Blank the popup area.
     frame.render_widget(Clear, popup);
@@ -403,10 +425,15 @@ fn draw_help(frame: &mut Frame) {
     let text = vec![
         Line::from(Span::styled(
             "  SYNTHIE TRACKER – KEY REFERENCE",
-            Style::default().fg(FG_HIGHLIGHT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(FG_HIGHLIGHT)
+                .add_modifier(Modifier::BOLD),
         )),
         Line::from(""),
-        Line::from(Span::styled("  TRANSPORT", Style::default().fg(FG).add_modifier(Modifier::UNDERLINED))),
+        Line::from(Span::styled(
+            "  TRANSPORT",
+            Style::default().fg(FG).add_modifier(Modifier::UNDERLINED),
+        )),
         Line::from(vec![
             Span::styled("  Space       ", Style::default().fg(FG_HIGHLIGHT)),
             Span::styled("Play / Stop", Style::default().fg(FG)),
@@ -424,7 +451,10 @@ fn draw_help(frame: &mut Frame) {
             Span::styled("Extend / shorten pattern", Style::default().fg(FG)),
         ]),
         Line::from(""),
-        Line::from(Span::styled("  NAVIGATION", Style::default().fg(FG).add_modifier(Modifier::UNDERLINED))),
+        Line::from(Span::styled(
+            "  NAVIGATION",
+            Style::default().fg(FG).add_modifier(Modifier::UNDERLINED),
+        )),
         Line::from(vec![
             Span::styled("  ↑ ↓ ← →     ", Style::default().fg(FG_HIGHLIGHT)),
             Span::styled("Move cursor", Style::default().fg(FG)),
@@ -442,27 +472,47 @@ fn draw_help(frame: &mut Frame) {
             Span::styled("Octave down / up", Style::default().fg(FG)),
         ]),
         Line::from(""),
-        Line::from(Span::styled("  NOTE ENTRY  (synth tracks)", Style::default().fg(FG).add_modifier(Modifier::UNDERLINED))),
-        Line::from(Span::styled("  Z S X D C V G B H N J M   lower octave  (C…B)", Style::default().fg(FG_NOTE))),
-        Line::from(Span::styled("  Q 2 W 3 E R 5 T 6 Y 7 U   upper octave  (C…B)", Style::default().fg(FG_NOTE))),
+        Line::from(Span::styled(
+            "  NOTE ENTRY  (synth tracks)",
+            Style::default().fg(FG).add_modifier(Modifier::UNDERLINED),
+        )),
+        Line::from(Span::styled(
+            "  Z S X D C V G B H N J M   lower octave  (C…B)",
+            Style::default().fg(FG_NOTE),
+        )),
+        Line::from(Span::styled(
+            "  Q 2 W 3 E R 5 T 6 Y 7 U   upper octave  (C…B)",
+            Style::default().fg(FG_NOTE),
+        )),
         Line::from(vec![
             Span::styled("  Del / Bksp  ", Style::default().fg(FG_HIGHLIGHT)),
             Span::styled("Clear step", Style::default().fg(FG)),
         ]),
         Line::from(""),
-        Line::from(Span::styled("  DRUM ENTRY  (drum track)", Style::default().fg(FG).add_modifier(Modifier::UNDERLINED))),
+        Line::from(Span::styled(
+            "  DRUM ENTRY  (drum track)",
+            Style::default().fg(FG).add_modifier(Modifier::UNDERLINED),
+        )),
         Line::from(vec![
             Span::styled("  k / h / o   ", Style::default().fg(FG_HIGHLIGHT)),
-            Span::styled("Toggle Kick / closed Hi-hat / Open hi-hat", Style::default().fg(FG_DRUM)),
+            Span::styled(
+                "Toggle Kick / closed Hi-hat / Open hi-hat",
+                Style::default().fg(FG_DRUM),
+            ),
         ]),
         Line::from(""),
-        Line::from(Span::styled("  Press any key to close", Style::default().fg(FG_DIM))),
+        Line::from(Span::styled(
+            "  Press any key to close",
+            Style::default().fg(FG_DIM),
+        )),
     ];
 
     let block = Block::default()
         .title(Span::styled(
             " Help ",
-            Style::default().fg(FG_HIGHLIGHT).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(FG_HIGHLIGHT)
+                .add_modifier(Modifier::BOLD),
         ))
         .title_alignment(Alignment::Center)
         .borders(Borders::ALL)
@@ -470,7 +520,10 @@ fn draw_help(frame: &mut Frame) {
         .padding(Padding::horizontal(1))
         .style(Style::default().bg(BG));
 
-    frame.render_widget(Paragraph::new(text).block(block).wrap(Wrap { trim: false }), popup);
+    frame.render_widget(
+        Paragraph::new(text).block(block).wrap(Wrap { trim: false }),
+        popup,
+    );
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────

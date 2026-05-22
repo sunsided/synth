@@ -15,7 +15,7 @@ use std::time::{Duration, Instant};
 use crossbeam_channel::{Receiver, RecvTimeoutError, Sender, bounded};
 use synthie::params::{AudioEvent, ChannelNo, DrumHit, MidiNote, Patch};
 
-use super::{Song, SYNTH_TRACKS};
+use super::{SYNTH_TRACKS, Song};
 
 // ─── Control messages ────────────────────────────────────────────────────────
 
@@ -172,7 +172,10 @@ fn load_patches(audio_tx: &Sender<AudioEvent>, song: &Song, patches: &[Patch]) {
     }
 }
 
-fn note_off_all(audio_tx: &Sender<AudioEvent>, active_notes: &mut [Option<MidiNote>; SYNTH_TRACKS]) {
+fn note_off_all(
+    audio_tx: &Sender<AudioEvent>,
+    active_notes: &mut [Option<MidiNote>; SYNTH_TRACKS],
+) {
     for (ch_idx, note) in active_notes.iter_mut().enumerate() {
         if let Some(n) = note.take() {
             #[allow(clippy::cast_possible_truncation)] // ch_idx < SYNTH_TRACKS ≤ 255

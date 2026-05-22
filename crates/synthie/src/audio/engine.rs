@@ -1,9 +1,13 @@
 //! CPAL audio stream setup — thin I/O wrapper around [`SynthProcessor`].
 //!
-//! `setup_audio` / `setup_audio_n` open the default output device and wire a
+//! [`setup_audio`] / [`setup_audio_n`] open the default output device and wire a
 //! crossbeam event channel into the real-time callback, which drives
 //! [`SynthProcessor::process_block`]. Scope samples are decimated and forwarded
 //! to the UI thread via a second channel.
+//!
+//! TUI applications should prefer [`setup_audio_silenced`], which uses a larger
+//! buffer to reduce underruns and suppresses stream-error output that would
+//! otherwise corrupt the alternate screen.
 
 use anyhow::{Context, Result};
 use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -29,11 +33,20 @@ const SCOPE_DECIMATION: usize = 4;
 /// Number of decimated samples accumulated before flushing to the scope channel.
 const SCOPE_BATCH: usize = 128;
 
-/// Initialise CPAL audio output with a configurable number of synthesis channels.
+/// Initialise CPAL audio output with a configurable channel count, buffer size,
+/// and stream-error handler.
 ///
 /// `N` controls how many independent voice pools are allocated.  Use
 /// [`ChannelNo`] values `0..N` with the channel-specific [`AudioEvent`] variants
 /// to address individual channels.  `N = 0` is rejected at compile time.
+///
+/// `buffer_size` is passed directly to CPAL; use [`cpal::BufferSize::Default`]
+/// for driver-chosen sizing or [`cpal::BufferSize::Fixed`] to request a specific
+/// frame count.  Larger buffers reduce underruns at the cost of latency.
+///
+/// `on_error` is called from the audio thread when CPAL reports a stream error.
+/// In TUI applications pass `|_| {}` to prevent messages from corrupting the
+/// alternate screen; see also [`setup_audio_silenced`].
 ///
 /// Returns:
 /// * `cpal::Stream` – keep alive for the duration of the program.
@@ -46,8 +59,13 @@ const SCOPE_BATCH: usize = 128;
 ///
 /// Returns an error if no default audio output device is available or if the
 /// stream configuration cannot be determined or opened.
-pub fn setup_audio_n<const N: usize>()
--> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
+pub fn setup_audio_n_with_error_handler<const N: usize, F>(
+    buffer_size: cpal::BufferSize,
+    on_error: F,
+) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
+where
+    F: Fn(cpal::StreamError) + Send + 'static,
+{
     let (event_tx, event_rx) = bounded::<AudioEvent>(EVENT_CHANNEL_CAPACITY);
     let (scope_tx, scope_rx) = bounded::<Vec<f32>>(SCOPE_CHANNEL_CAPACITY);
 
@@ -65,7 +83,11 @@ pub fn setup_audio_n<const N: usize>()
     let sample_rate = config.sample_rate() as f32;
     let hw_channels = config.channels() as usize;
 
-    let stream_config: cpal::StreamConfig = config.into();
+    let stream_config = cpal::StreamConfig {
+        channels: config.channels(),
+        sample_rate: config.sample_rate(),
+        buffer_size,
+    };
 
     let mut processor = SynthProcessor::<N>::new(sample_rate);
     let mut events_buf: Vec<AudioEvent> = Vec::with_capacity(EVENT_CHANNEL_CAPACITY);
@@ -101,7 +123,7 @@ pub fn setup_audio_n<const N: usize>()
                     }
                 }
             },
-            |err| eprintln!("audio stream error: {err}"),
+            on_error,
             None,
         )
         .context("failed to build output stream")?;
@@ -109,6 +131,23 @@ pub fn setup_audio_n<const N: usize>()
     stream.play().context("failed to start audio stream")?;
 
     Ok((stream, event_tx, scope_rx))
+}
+
+/// Initialise CPAL audio output with a configurable number of synthesis channels.
+///
+/// Convenience wrapper around [`setup_audio_n_with_error_handler`] that uses the
+/// driver-default buffer size and prints stream errors to stderr.  For a custom
+/// channel count call `setup_audio_n::<N>()` directly.
+///
+/// # Errors
+///
+/// Returns an error if no default audio output device is available or if the
+/// stream configuration cannot be determined or opened.
+pub fn setup_audio_n<const N: usize>()
+-> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
+    setup_audio_n_with_error_handler::<N, _>(cpal::BufferSize::Default, |err| {
+        eprintln!("audio stream error: {err}");
+    })
 }
 
 /// Initialise CPAL audio output with [`NUM_CHANNELS`] synthesis channels.
@@ -122,4 +161,18 @@ pub fn setup_audio_n<const N: usize>()
 /// stream configuration cannot be determined or opened.
 pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
     setup_audio_n::<NUM_CHANNELS>()
+}
+
+/// Initialise CPAL audio output for TUI applications.
+///
+/// Like [`setup_audio`] but requests a larger buffer (~93 ms at 44.1 kHz) to
+/// reduce underruns, and silences stream-error messages so they do not corrupt
+/// the alternate screen.
+///
+/// # Errors
+///
+/// Returns an error if no default audio output device is available or if the
+/// stream configuration cannot be determined or opened.
+pub fn setup_audio_silenced() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
+    setup_audio_n_with_error_handler::<NUM_CHANNELS, _>(cpal::BufferSize::Fixed(4096), |_| {})
 }
