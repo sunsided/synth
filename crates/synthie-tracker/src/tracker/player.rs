@@ -132,7 +132,7 @@ fn run(
                 playing = false;
                 is_playing.store(false, Ordering::Relaxed);
                 note_off_all(&audio_tx, &mut active_notes);
-                let _ = audio_tx.send(AudioEvent::Panic);
+                let _ = audio_tx.try_send(AudioEvent::Panic);
             }
 
             Ok(PlayerCtrl::Update(new_song)) => {
@@ -141,9 +141,9 @@ fn run(
             }
 
             Err(RecvTimeoutError::Timeout) if playing => {
-                // Advance the sequencer, catching up if we fell behind.
-                let dur = step_duration(song.bpm);
-                while Instant::now() >= step_deadline {
+                // Advance one step; accept drift rather than burst-firing catch-up steps.
+                if Instant::now() >= step_deadline {
+                    let dur = step_duration(song.bpm);
                     fire_step(&audio_tx, &song, step_idx, &mut active_notes);
                     current_step.store(step_idx, Ordering::Relaxed);
                     step_deadline += dur;
@@ -164,7 +164,7 @@ fn load_patches(audio_tx: &Sender<AudioEvent>, song: &Song, patches: &[Patch]) {
         if let Some(patch) = patches.get(patch_idx) {
             #[allow(clippy::cast_possible_truncation)] // ch_idx < SYNTH_TRACKS ≤ 255
             let ch = ChannelNo(ch_idx as u8);
-            let _ = audio_tx.send(AudioEvent::LoadPatchChannel(
+            let _ = audio_tx.try_send(AudioEvent::LoadPatchChannel(
                 ch,
                 Box::new(patch.params.clone()),
             ));
@@ -180,7 +180,7 @@ fn note_off_all(
         if let Some(n) = note.take() {
             #[allow(clippy::cast_possible_truncation)] // ch_idx < SYNTH_TRACKS ≤ 255
             let ch = ChannelNo(ch_idx as u8);
-            let _ = audio_tx.send(AudioEvent::NoteOffChannel(ch, n));
+            let _ = audio_tx.try_send(AudioEvent::NoteOffChannel(ch, n));
         }
     }
 }
@@ -199,7 +199,7 @@ fn fire_step(
         if let Some(note) = track_steps[step].note {
             #[allow(clippy::cast_possible_truncation)] // track_idx < SYNTH_TRACKS ≤ 255
             let ch = ChannelNo(track_idx as u8);
-            let _ = audio_tx.send(AudioEvent::NoteOnChannel(ch, note));
+            let _ = audio_tx.try_send(AudioEvent::NoteOnChannel(ch, note));
             active_notes[track_idx] = Some(note);
         }
     }
@@ -207,12 +207,12 @@ fn fire_step(
     // Trigger drum hits.
     let drum = &song.pattern.drums[step];
     if drum.kick {
-        let _ = audio_tx.send(AudioEvent::Drum(DrumHit::Kick));
+        let _ = audio_tx.try_send(AudioEvent::Drum(DrumHit::Kick));
     }
     if drum.hihat_closed {
-        let _ = audio_tx.send(AudioEvent::Drum(DrumHit::HiHatClosed));
+        let _ = audio_tx.try_send(AudioEvent::Drum(DrumHit::HiHatClosed));
     }
     if drum.hihat_open {
-        let _ = audio_tx.send(AudioEvent::Drum(DrumHit::HiHatOpen));
+        let _ = audio_tx.try_send(AudioEvent::Drum(DrumHit::HiHatOpen));
     }
 }

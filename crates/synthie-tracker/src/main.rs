@@ -68,6 +68,11 @@ fn run(
     loop {
         terminal.draw(|f| draw(f, state))?;
 
+        // Stop playback if the audio stream has died.
+        if !state.audio_ok() && state.is_playing() {
+            state.stop();
+        }
+
         // Poll for a key event (16 ms ≈ 60 fps).  Between polls the playing-step
         // indicator updates via atomic reads, so the grid refreshes smoothly.
         if event::poll(Duration::from_millis(16))?
