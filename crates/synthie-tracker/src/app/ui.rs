@@ -39,6 +39,8 @@ const FG_HIGHLIGHT: Color = Color::Yellow;
 const FG_NOTE: Color = Color::Green;
 /// Drum hit colour.
 const FG_DRUM: Color = Color::Magenta;
+/// Error indicator colour.
+const FG_ERROR: Color = Color::Red;
 /// Background.
 const BG: Color = Color::Black;
 /// Active border colour.
@@ -90,7 +92,7 @@ fn draw_main(frame: &mut Frame, state: &TrackerState) {
 
 fn draw_header(frame: &mut Frame, area: Rect, state: &TrackerState) {
     let (play_icon, play_color) = if !state.audio_ok() {
-        ("✗ AUDIO ERR", Color::Red)
+        ("✗ AUDIO ERR", FG_ERROR)
     } else if state.is_playing() {
         ("● PLAYING", FG_NOTE)
     } else {

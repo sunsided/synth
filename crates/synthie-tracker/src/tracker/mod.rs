@@ -174,7 +174,7 @@ pub fn demo_song() -> Song {
 #[must_use]
 pub fn note_name(note: MidiNote) -> String {
     let n = note.as_u8();
-    let octave = n / 12;
+    let octave = (n / 12).cast_signed() - 1_i8;
     let semitone = n % 12;
     let name = match semitone {
         0 => "C-",
