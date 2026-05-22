@@ -553,7 +553,3 @@ fn truncate(s: &str, max_chars: usize) -> &str {
         None => s,
     }
 }
-
-// Silence unused-import warnings for widgets imported above.
-#[allow(unused_imports)]
-use ratatui::widgets::Widget as _;

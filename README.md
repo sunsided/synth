@@ -83,7 +83,7 @@ task tracker          # or: cargo run -p synthie-tracker --release
 | `[` / `]` | Octave down / up |
 | `PgUp` / `PgDn` | Extend / shorten pattern |
 | `F1` | Toggle key-reference overlay |
-| `Ctrl+C` / `Ctrl+Q` | Quit |
+| `Ctrl+C` / `Ctrl+Q` / `F12` | Quit |
 
 > **Terminal compatibility:** Note-off on note entry requires keyboard enhancement support (kitty protocol, WezTerm). In terminals without it, each note entry is still correctly gated per step.
 

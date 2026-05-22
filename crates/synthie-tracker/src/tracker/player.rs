@@ -137,6 +137,10 @@ fn run(
 
             Ok(PlayerCtrl::Update(new_song)) => {
                 // BPM change takes effect from the next step deadline onwards.
+                // Clamp step_idx so a pattern-length reduction can't fire an out-of-range step.
+                if step_idx >= new_song.pattern.len {
+                    step_idx = 0;
+                }
                 song = new_song;
             }
 

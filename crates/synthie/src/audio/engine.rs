@@ -137,7 +137,7 @@ where
 ///
 /// Convenience wrapper around [`setup_audio_n_with_error_handler`] that uses the
 /// driver-default buffer size and prints stream errors to stderr.  For a custom
-/// channel count call `setup_audio_n::<N>()` directly.
+/// buffer size or error handler, call [`setup_audio_n_with_error_handler`] directly.
 ///
 /// # Errors
 ///

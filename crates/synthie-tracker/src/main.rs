@@ -88,12 +88,11 @@ fn run(
 
 /// Restore the terminal to its original state.
 fn restore_terminal() -> Result<()> {
-    execute!(
-        std::io::stdout(),
-        PopKeyboardEnhancementFlags,
-        DisableMouseCapture,
-        LeaveAlternateScreen,
-    )?;
+    let mut stdout = std::io::stdout();
+    // Pop keyboard enhancement separately and ignore errors: the terminal may not
+    // support the protocol, and a failure here must not abort the rest of cleanup.
+    execute!(stdout, PopKeyboardEnhancementFlags).ok();
+    execute!(stdout, DisableMouseCapture, LeaveAlternateScreen)?;
     disable_raw_mode()?;
     Ok(())
 }
