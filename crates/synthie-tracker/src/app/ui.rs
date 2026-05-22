@@ -89,12 +89,13 @@ fn draw_main(frame: &mut Frame, state: &TrackerState) {
 // ─── Header ──────────────────────────────────────────────────────────────────
 
 fn draw_header(frame: &mut Frame, area: Rect, state: &TrackerState) {
-    let play_icon = if state.is_playing() {
-        "● PLAYING"
+    let (play_icon, play_color) = if !state.audio_ok() {
+        ("✗ AUDIO ERR", Color::Red)
+    } else if state.is_playing() {
+        ("● PLAYING", FG_NOTE)
     } else {
-        "■ STOPPED"
+        ("■ STOPPED", FG_DIM)
     };
-    let play_color = if state.is_playing() { FG_NOTE } else { FG_DIM };
 
     let text = Line::from(vec![
         Span::styled(" ♩ ", Style::default().fg(FG_DIM)),

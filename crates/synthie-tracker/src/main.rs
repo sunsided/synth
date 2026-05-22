@@ -1,3 +1,5 @@
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
 use anyhow::Result;
@@ -10,7 +12,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
-use synthie::audio::engine::setup_audio_silenced;
+use synthie::audio::engine::setup_audio_silenced_with_error_handler;
 
 mod app;
 mod tracker;
@@ -26,7 +28,11 @@ fn main() -> Result<()> {
     }));
 
     // ── Start the audio engine ───────────────────────────────────────────────
-    let (_stream, event_tx, _scope_rx) = setup_audio_silenced()?;
+    let audio_ok = Arc::new(AtomicBool::new(true));
+    let audio_ok_cb = Arc::clone(&audio_ok);
+    let (_stream, event_tx, _scope_rx) = setup_audio_silenced_with_error_handler(move |_| {
+        audio_ok_cb.store(false, Ordering::Relaxed);
+    })?;
 
     // ── Set up the ratatui terminal ──────────────────────────────────────────
     enable_raw_mode()?;
@@ -42,7 +48,7 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // ── Build application state ───────────────────────────────────────────────
-    let mut state = TrackerState::new(event_tx);
+    let mut state = TrackerState::new(event_tx, audio_ok);
 
     // ── Main event loop ───────────────────────────────────────────────────────
     let result = run(&mut terminal, &mut state);

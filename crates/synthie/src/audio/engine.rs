@@ -165,15 +165,38 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
 
 /// Initialise CPAL audio output for TUI applications.
 ///
-/// Like [`setup_audio`] but uses `Fixed(512)` (~12 ms at 44.1 kHz) so that
+/// Like [`setup_audio`] but uses `Fixed(1024)` (~23 ms at 44.1 kHz) so that
 /// note events queued from a sequencer thread are picked up within one callback
 /// period, keeping step timing tight.  Stream-error messages are silenced so
 /// they do not corrupt the alternate screen.
+///
+/// For error visibility (e.g. to detect when the stream stops), use
+/// [`setup_audio_silenced_with_error_handler`] instead.
 ///
 /// # Errors
 ///
 /// Returns an error if no default audio output device is available or if the
 /// stream configuration cannot be determined or opened.
 pub fn setup_audio_silenced() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
-    setup_audio_n_with_error_handler::<NUM_CHANNELS, _>(cpal::BufferSize::Fixed(512), |_| {})
+    setup_audio_silenced_with_error_handler(|_| {})
+}
+
+/// Like [`setup_audio_silenced`] but calls `on_error` when CPAL reports a
+/// fatal stream error.
+///
+/// Use this in applications that need to detect and surface audio stream
+/// failure — for example, by setting an `AtomicBool` that the UI thread
+/// polls to show an error indicator.
+///
+/// # Errors
+///
+/// Returns an error if no default audio output device is available or if the
+/// stream configuration cannot be determined or opened.
+pub fn setup_audio_silenced_with_error_handler<F>(
+    on_error: F,
+) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
+where
+    F: Fn(cpal::StreamError) + Send + 'static,
+{
+    setup_audio_n_with_error_handler::<NUM_CHANNELS, _>(cpal::BufferSize::Fixed(1024), on_error)
 }

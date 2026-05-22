@@ -4,7 +4,8 @@
 //! [`Player`] handle.  All user actions go through mutation methods here;
 //! the UI and input modules read from and call into this struct.
 
-use std::sync::atomic::Ordering;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossbeam_channel::Sender;
 use synthie::params::{AudioEvent, ChannelNo, MidiNote, Patch};
@@ -42,6 +43,9 @@ pub struct TrackerState {
     /// `true` → show the help overlay.
     pub show_help: bool,
 
+    /// `false` once the CPAL stream reports a fatal error.
+    audio_ok: Arc<AtomicBool>,
+
     /// Background playback thread.
     player: Player,
     /// Channel for direct audio events (patch loads, panics).
@@ -50,7 +54,7 @@ pub struct TrackerState {
 
 impl TrackerState {
     /// Construct initial state and pre-load presets onto the audio engine.
-    pub fn new(event_tx: Sender<AudioEvent>) -> Self {
+    pub fn new(event_tx: Sender<AudioEvent>, audio_ok: Arc<AtomicBool>) -> Self {
         let presets = default_patches();
         let player = Player::spawn(event_tx.clone());
 
@@ -71,9 +75,18 @@ impl TrackerState {
             cursor_track: 0,
             octave: 4,
             show_help: false,
+            audio_ok,
             player,
             event_tx,
         }
+    }
+
+    // ─── Audio health ─────────────────────────────────────────────────────────
+
+    /// `true` while the CPAL stream is healthy; `false` after a fatal error.
+    #[must_use]
+    pub fn audio_ok(&self) -> bool {
+        self.audio_ok.load(Ordering::Relaxed)
     }
 
     // ─── Playback ────────────────────────────────────────────────────────────
