@@ -198,5 +198,10 @@ pub fn setup_audio_silenced_with_error_handler<F>(
 where
     F: Fn(cpal::StreamError) + Send + 'static,
 {
-    setup_audio_n_with_error_handler::<NUM_CHANNELS, _>(cpal::BufferSize::Fixed(1024), on_error)
+    // Fixed(4096) (~93 ms at 44.1 kHz) gives the DSP enough headroom to avoid
+    // xruns.  Smaller values (512/1024) cause buffer underruns on typical desktop
+    // audio stacks; Default lets the driver pick its own quantum which can be
+    // even smaller.  At 140 BPM the step period (107 ms) exceeds the buffer
+    // period so note events still land in separate callbacks without bunching.
+    setup_audio_n_with_error_handler::<NUM_CHANNELS, _>(cpal::BufferSize::Fixed(4096), on_error)
 }
