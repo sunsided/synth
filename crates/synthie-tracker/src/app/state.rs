@@ -11,7 +11,7 @@ use synthie::params::{AudioEvent, ChannelNo, MidiNote, Patch};
 use synthie::presets::sid::default_patches;
 
 use crate::tracker::player::Player;
-use crate::tracker::{DRUM_TRACK, DrumStep, STEPS, SYNTH_TRACKS, Song, TOTAL_TRACKS};
+use crate::tracker::{DRUM_TRACK, DrumStep, STEPS, SYNTH_TRACKS, Song, TOTAL_TRACKS, demo_song};
 
 // ─── DrumKind ────────────────────────────────────────────────────────────────
 
@@ -65,7 +65,7 @@ impl TrackerState {
         }
 
         Self {
-            song: Song::default(),
+            song: demo_song(),
             presets,
             cursor_row: 0,
             cursor_track: 0,
