@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["SCOPE_CAPACITY"],"fn":["main","restore_terminal_raw","run_loop","run_tui"],"mod":["app","preset_store","viz"]};

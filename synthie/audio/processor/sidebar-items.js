@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["MASTER_GAIN","NUM_CHANNELS","POLYPHONY","POLYPHONY_F32"],"struct":["AudioChannel","SynthProcessor","VoiceSlot"]};

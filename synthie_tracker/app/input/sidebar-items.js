@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["handle_drum_key","handle_key","handle_note_key","handle_synth_key","key_to_semitone","make_midi"]};

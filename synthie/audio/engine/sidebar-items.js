@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["EVENT_CHANNEL_CAPACITY","SCOPE_BATCH","SCOPE_CHANNEL_CAPACITY","SCOPE_DECIMATION"],"fn":["setup_audio","setup_audio_n","setup_audio_n_with_error_handler","setup_audio_silenced","setup_audio_silenced_with_error_handler"]};

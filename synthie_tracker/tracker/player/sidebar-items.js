@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["PlayerCtrl"],"fn":["fire_step","load_patches","note_off_all","run","step_duration"],"struct":["Player"]};

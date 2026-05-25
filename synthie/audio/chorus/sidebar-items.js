@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["CENTER_DELAY_MS","MAX_CHORUS_DELAY_MS","NUM_TAPS"],"struct":["Chorus"]};

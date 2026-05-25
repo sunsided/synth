@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["DRUM_TRACK","STEPS","SYNTH_TRACKS","TOTAL_TRACKS"],"fn":["demo_song","note_name"],"mod":["player"],"struct":["DrumStep","Pattern","Song","Step"]};

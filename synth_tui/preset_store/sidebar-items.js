@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"fn":["load_patches","save_patches","user_presets_path"]};

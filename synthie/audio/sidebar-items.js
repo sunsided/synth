@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"mod":["arp","chorus","crusher","delay","drums","engine","env","filter","fx","osc","processor","voice"]};

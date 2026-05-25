@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"enum":["ArpMode","AudioEvent","DrumHit","FilterMode","LfoShape","LfoTarget","RingModMode","Waveform"],"struct":["ArpParams","ChannelNo","ChorusParams","CrusherParams","DelayParams","EnvParams","FilterParams","FxParams","GlobalParams","LfoParams","MidiNote","ModEnvParams","Osc2Params","OscParams","Patch","SynthParams"]};

@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BG","BORDER_ACTIVE","BORDER_INACTIVE","COL_DRUM_W","COL_ROW_W","COL_SYNTH_W","FG","FG_DIM","FG_DRUM","FG_ERROR","FG_HIGHLIGHT","FG_NOTE"],"fn":["draw","draw_column_headers","draw_grid","draw_header","draw_help","draw_main","draw_status","draw_step_rows","scroll_offset","truncate"]};

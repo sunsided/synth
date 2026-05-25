@@ -1,0 +1,1 @@
+window.SIDEBAR_ITEMS = {"constant":["BG","BORDER_ACTIVE","BORDER_INACTIVE","FG","FG_DIM","FG_HIGHLIGHT","FG_VALUE"],"fn":["centred_rect","draw","draw_help","draw_presets","draw_scope","draw_section","draw_status","draw_title"]};
