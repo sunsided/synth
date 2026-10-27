@@ -2111,7 +2111,9 @@ dependencies = [
 name = "synthie-wasm"
 version = "0.5.1"
 dependencies = [
+ "js-sys",
  "proptest",
+ "serde",
  "serde_json",
  "synthie",
  "wasm-bindgen",

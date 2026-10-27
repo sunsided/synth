@@ -294,3 +294,104 @@ describe("untrusted patches", () => {
     assertSameSamples(assert, render(synth), render(fresh), "after panic and a sane preset");
   });
 });
+
+describe("patch parameters", () => {
+  test("presetPatch is the object form of presetParams", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    for (let i = 0; i < synth.presetNames().length; i++) {
+      assert.deepEqual(synth.presetPatch(i), JSON.parse(synth.presetParams(i)));
+    }
+    assert.throws(() => synth.presetPatch(99), /no preset 99/);
+  });
+
+  test("paramInfo matches the patch object field by field", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    const patch = synth.params(0);
+    for (const info of synth.paramInfo()) {
+      const [section, field] = info.path.split(".");
+      const value = patch[section][field];
+      assert.deepEqual(value, info.default, `${info.path} default`);
+      if (info.kind === "float") assert.ok(info.min <= value && value <= info.max, info.path);
+      if (info.kind === "choice") assert.ok(info.choices.includes(value), info.path);
+      if (info.kind === "toggle") assert.equal(typeof value, "boolean", info.path);
+    }
+  });
+
+  test("the TypeScript declarations list every parameter", async () => {
+    const { readFile } = await import("node:fs/promises");
+    const { resolve } = await import("node:path");
+    const { PKG } = await import("./helpers.mjs");
+    const dts = await readFile(resolve(PKG, "node/synthie.d.ts"), "utf8");
+    assert.match(dts, /export interface SynthParams \{/);
+    for (const { path } of new Synth(SAMPLE_RATE).paramInfo()) {
+      assert.ok(dts.includes(`| "${path}"`), `ParamPath lacks ${path}`);
+    }
+    assert.match(dts, /setParam\(path: ParamPath, value: number \| string \| boolean/);
+    assert.match(dts, /loadParams\(params: SynthParams \| string/);
+  });
+
+  test("setParam takes numbers, choice names and booleans, and clamps", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    synth.loadPreset(1, 2);
+    synth.setParam("filter.cutoff", 1e9, 2);
+    synth.setParam("osc.waveform", "Triangle", 2);
+    synth.setParam("lfo.lfo_shape", 3, 2);
+    synth.setParam("osc2.hard_sync", true, 2);
+    synth.setParam("env.attack", -5, 2);
+    render(synth, 1);
+    const p = synth.params(2);
+    assert.equal(p.filter.cutoff, 18000);
+    assert.equal(p.osc.waveform, "Triangle");
+    assert.equal(p.lfo.lfo_shape, "SampleHold");
+    assert.equal(p.osc2.hard_sync, true);
+    assert.equal(p.env.attack, 0.001);
+    assert.deepEqual(p.env.release, synth.presetPatch(1).env.release, "untouched fields stay");
+    assert.deepEqual(synth.params(0), new Synth(SAMPLE_RATE).params(0), "other channels stay");
+  });
+
+  test("setParam is scheduled like any other event", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    synth.setParam("global.volume", 0.3, 0, 1000);
+    render(synth, 1000); // frames 0..=999
+    assert.equal(synth.params(0).global.volume, 0.7);
+    render(synth, 1); // frame 1000
+
+    assert.equal(synth.params(0).global.volume, 0.3);
+  });
+
+  for (const [path, value, channel, message] of [
+    ["filter.cutof", 1, 0, /unknown parameter: filter.cutof/],
+    ["filter.cutoff", NaN, 0, /filter.cutoff must be a finite number/],
+    ["filter.cutoff", "high", 0, /filter.cutoff must be a finite number/],
+    ["osc.waveform", "Kazoo", 0, /osc.waveform must be one of "Pulse"/],
+    ["env.env_reverse", "yes", 0, /env.env_reverse must be true or false/],
+    ["fx.reverb_mix", 0.5, 3, /shared FX chain: set it on channel 0/],
+    ["filter.cutoff", 1000, 9, /channel must be 0..4/],
+  ]) {
+    test(`setParam rejects ${path} = ${String(value)} on channel ${channel}`, () => {
+      const synth = new Synth(SAMPLE_RATE);
+      assert.throws(() => synth.setParam(path, value, channel), message);
+      assert.equal(synth.pendingEvents, 0);
+    });
+  }
+
+  test("loadParams takes a patch object or JSON text, and rejects junk", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    const patch = synth.presetPatch(3);
+    synth.loadParams(patch, 1);
+    synth.loadParams(JSON.stringify(patch), 2);
+    render(synth, 1);
+    assert.deepEqual(synth.params(1), patch);
+    assert.deepEqual(synth.params(2), patch);
+    assert.throws(() => synth.loadParams({ osc: 1 }));
+    assert.throws(() => synth.loadParams(undefined));
+  });
+
+  test("params reflects only what has been rendered", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    synth.loadPreset(1);
+    assert.deepEqual(synth.params(0), new Synth(SAMPLE_RATE).params(0), "not rendered yet");
+    render(synth, 1);
+    assert.deepEqual(synth.params(0), synth.presetPatch(1));
+  });
+});

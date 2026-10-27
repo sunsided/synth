@@ -7,6 +7,8 @@
 #[cfg(feature = "serde")]
 use serde::{Deserialize, Serialize};
 
+use crate::param::Param;
+
 /// Oscillator waveform shape.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -35,6 +37,10 @@ impl Waveform {
         Waveform::PulseSaw,
         Waveform::Sine,
     ];
+
+    /// Names of [`Self::ALL`], as they appear in patch JSON.
+    pub const NAMES: &'static [&'static str] =
+        &["Pulse", "Sawtooth", "Triangle", "Noise", "PulseSaw", "Sine"];
 
     /// Short display name shown in the UI.
     #[must_use]
@@ -79,6 +85,16 @@ pub enum ArpMode {
     UpDown,
     /// Advance using a Galois LFSR, producing a pseudo-random sequence with a long period.
     Random,
+}
+
+#[cfg(feature = "arp")]
+impl ArpMode {
+    /// Ordered slice of all variants.
+    pub const ALL: &'static [ArpMode] =
+        &[ArpMode::Up, ArpMode::Down, ArpMode::UpDown, ArpMode::Random];
+
+    /// Names of [`Self::ALL`], as they appear in patch JSON.
+    pub const NAMES: &'static [&'static str] = &["Up", "Down", "UpDown", "Random"];
 }
 
 /// Arpeggiator section parameters.
@@ -136,6 +152,9 @@ impl FilterMode {
         FilterMode::HighPass,
     ];
 
+    /// Names of [`Self::ALL`], as they appear in patch JSON.
+    pub const NAMES: &'static [&'static str] = &["LowPass", "BandPass", "HighPass"];
+
     /// Short display name shown in the UI.
     #[must_use]
     pub fn name(self) -> &'static str {
@@ -176,6 +195,9 @@ impl LfoTarget {
         LfoTarget::Cutoff,
         LfoTarget::Volume,
     ];
+
+    /// Names of [`Self::ALL`], as they appear in patch JSON.
+    pub const NAMES: &'static [&'static str] = &["Pitch", "PulseWidth", "Cutoff", "Volume"];
 
     /// Short display name shown in the UI.
     #[must_use]
@@ -241,6 +263,10 @@ impl RingModMode {
         RingModMode::Osc1ByOsc2Sign,
         RingModMode::Analog,
     ];
+
+    /// Names of [`Self::ALL`], as they appear in patch JSON.
+    pub const NAMES: &'static [&'static str] =
+        &["Off", "Osc2ByOsc1Sign", "Osc1ByOsc2Sign", "Analog"];
 
     /// Short display name shown in the UI.
     #[must_use]
@@ -351,6 +377,9 @@ impl LfoShape {
         LfoShape::Sawtooth,
         LfoShape::SampleHold,
     ];
+
+    /// Names of [`Self::ALL`], as they appear in patch JSON.
+    pub const NAMES: &'static [&'static str] = &["Sine", "Square", "Sawtooth", "SampleHold"];
 
     /// Short display name shown in the UI.
     #[must_use]
@@ -618,32 +647,6 @@ impl Default for SynthParams {
     }
 }
 
-/// Clamp `v` into `lo..=hi`; a non-finite `v` becomes `fallback`.
-fn fit(v: &mut f32, lo: f32, hi: f32, fallback: f32) {
-    *v = if v.is_finite() {
-        v.clamp(lo, hi)
-    } else {
-        fallback
-    };
-}
-
-impl ModEnvParams {
-    fn sanitize(&mut self, d: &Self) {
-        fit(&mut self.attack, 0.001, 10.0, d.attack);
-        fit(&mut self.decay, 0.001, 10.0, d.decay);
-        fit(&mut self.sustain, 0.0, 1.0, d.sustain);
-        fit(&mut self.release, 0.001, 20.0, d.release);
-        fit(&mut self.depth, -1.0, 1.0, d.depth);
-    }
-}
-
-impl LfoParams {
-    fn sanitize(&mut self, d: &Self) {
-        fit(&mut self.lfo_rate, 0.0, 50.0, d.lfo_rate);
-        fit(&mut self.lfo_depth, 0.0, 1.0, d.lfo_depth);
-    }
-}
-
 impl SynthParams {
     /// Bring every parameter into its documented range, in place.
     ///
@@ -654,55 +657,23 @@ impl SynthParams {
     /// in range, including every built-in preset, are left untouched, and a
     /// non-finite value falls back to the field's default.
     pub fn sanitize(&mut self) {
-        let d = Self::default();
-        fit(&mut self.osc.pulse_width, 0.05, 0.95, d.osc.pulse_width);
-        fit(&mut self.osc.detune, -100.0, 100.0, d.osc.detune);
-        fit(&mut self.osc.noise_mix, 0.0, 1.0, d.osc.noise_mix);
-
-        fit(&mut self.osc2.detune, -100.0, 100.0, d.osc2.detune);
-        fit(&mut self.osc2.osc2_mix, 0.0, 1.0, d.osc2.osc2_mix);
-
-        fit(&mut self.env.attack, 0.001, 10.0, d.env.attack);
-        fit(&mut self.env.decay, 0.001, 10.0, d.env.decay);
-        fit(&mut self.env.sustain, 0.0, 1.0, d.env.sustain);
-        fit(&mut self.env.release, 0.001, 20.0, d.env.release);
-
-        fit(&mut self.filter.cutoff, 20.0, 18_000.0, d.filter.cutoff);
-        fit(&mut self.filter.resonance, 0.0, 0.99, d.filter.resonance);
-        fit(&mut self.filter.drive, 0.0, 1.0, d.filter.drive);
-
-        self.lfo.sanitize(&d.lfo);
-        self.lfo2.sanitize(&d.lfo2);
-        self.filter_env.sanitize(&d.filter_env);
-        self.pitch_env.sanitize(&d.pitch_env);
-
-        fit(&mut self.fx.reverb_mix, 0.0, 1.0, d.fx.reverb_mix);
-        fit(&mut self.fx.reverb_size, 0.0, 1.0, d.fx.reverb_size);
-        fit(&mut self.fx.reverb_damping, 0.0, 1.0, d.fx.reverb_damping);
-
-        fit(&mut self.crusher.bits, 1.0, 16.0, d.crusher.bits);
-        fit(&mut self.crusher.rate, 1.0, 16.0, d.crusher.rate);
-
-        fit(&mut self.delay.time_ms, 1.0, 2_000.0, d.delay.time_ms);
-        fit(&mut self.delay.feedback, 0.0, 0.95, d.delay.feedback);
-        fit(&mut self.delay.mix, 0.0, 1.0, d.delay.mix);
-
-        fit(&mut self.chorus.rate, 0.1, 5.0, d.chorus.rate);
-        fit(&mut self.chorus.depth_ms, 0.0, 10.0, d.chorus.depth_ms);
-        fit(&mut self.chorus.mix, 0.0, 1.0, d.chorus.mix);
-
+        let default = Self::default();
+        for &param in Param::ALL {
+            let value = param.get(self);
+            let value = if value.is_finite() {
+                value
+            } else {
+                param.get(&default)
+            };
+            param.set(self, value);
+        }
         #[cfg(feature = "arp")]
         {
-            fit(&mut self.arp.rate, 0.0, 50.0, d.arp.rate);
-            fit(&mut self.arp.gate, 0.0, 1.0, d.arp.gate);
             self.arp.count = self.arp.count.min(4);
             for note in &mut self.arp.notes {
                 *note = MidiNote::new_clamped(note.0);
             }
         }
-
-        fit(&mut self.global.volume, 0.0, 1.0, d.global.volume);
-        fit(&mut self.global.glide_time, 0.0, 10.0, d.global.glide_time);
     }
 }
 
@@ -898,6 +869,10 @@ pub enum AudioEvent {
     NoteOffChannel(ChannelNo, MidiNote),
     /// Replace the parameter set for the given channel with a new snapshot.
     LoadPatchChannel(ChannelNo, Box<SynthParams>),
+    /// Change one parameter of the given channel's patch, brought into range
+    /// like a loaded patch (see [`Param::set`]). Leaves the rest of the patch,
+    /// including the arpeggiator's held notes, untouched.
+    SetParam(ChannelNo, Param, f32),
     /// Load an explicit note list into the arpeggiator on the given channel.
     /// Only entries `0..count` of `notes` are used; `count` must be `<= 4`.
     #[cfg(feature = "arp")]

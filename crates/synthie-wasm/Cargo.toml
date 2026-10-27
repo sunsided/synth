@@ -12,6 +12,8 @@ publish           = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
+js-sys       = "0.3"
+serde        = { workspace = true }
 serde_json   = { workspace = true }
 # No `io`: the host (AudioWorklet, Node) pulls samples via `render`.
 synthie      = { path = "../synthie", default-features = false, features = ["std", "serde", "arp"] }

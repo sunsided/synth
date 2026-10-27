@@ -14,6 +14,7 @@
 
 pub mod audio;
 mod math;
+pub mod param;
 pub mod params;
 pub mod presets;
 

@@ -9,7 +9,9 @@
 
 use std::collections::VecDeque;
 
+use serde_json::{Value, json};
 use synthie::audio::processor::{NUM_CHANNELS, SynthProcessor, VoiceNormalization};
+use synthie::param::{Param, ParamKind};
 use synthie::params::{AudioEvent, ChannelNo, DrumHit, MidiNote, Patch, SynthParams};
 use synthie::presets::sid::default_patches;
 use wasm_bindgen::prelude::*;
@@ -28,6 +30,34 @@ const DEFAULT_SILENCE_HOLD_SECONDS: f64 = 2.5;
 
 /// Block size of `renderUntilSilent`, matching a worklet's render quantum.
 const SILENCE_BLOCK: usize = 128;
+
+// TypeScript for the patch object and the parameter registry, generated from
+// `synthie::param` by this crate's tests (see `typescript_declarations`).
+#[wasm_bindgen(typescript_custom_section)]
+const TYPES: &str = include_str!("../npm/types.d.ts");
+
+#[wasm_bindgen]
+extern "C" {
+    /// A patch object (`SynthParams` in the TypeScript declarations).
+    #[wasm_bindgen(typescript_type = "SynthParams")]
+    pub type PatchObject;
+
+    /// A patch object or its JSON text.
+    #[wasm_bindgen(typescript_type = "SynthParams | string")]
+    pub type PatchInput;
+
+    /// A parameter path such as `"filter.cutoff"`.
+    #[wasm_bindgen(typescript_type = "ParamPath")]
+    pub type ParamPathInput;
+
+    /// A parameter value: a number, a choice's name, or a toggle's boolean.
+    #[wasm_bindgen(typescript_type = "number | string | boolean")]
+    pub type ParamValueInput;
+
+    /// The parameter registry (`ParamInfo[]`).
+    #[wasm_bindgen(typescript_type = "ParamInfo[]")]
+    pub type ParamInfoList;
+}
 
 /// An event waiting for its frame.
 struct Scheduled {
@@ -316,38 +346,111 @@ impl Synth {
         self.load(params, channel, at)
     }
 
-    /// Parameters of built-in preset `index` as JSON, as a starting point
-    /// for [`Synth::load_params`].
+    /// Parameters of built-in preset `index` as JSON text, as a starting
+    /// point for [`Synth::load_params`]. See also `presetPatch`.
     ///
     /// # Errors
     ///
     /// Fails for an unknown preset.
     #[wasm_bindgen(js_name = presetParams)]
     pub fn preset_params(&self, index: usize) -> Result<String, JsError> {
-        let preset = self
-            .presets
-            .get(index)
-            .ok_or_else(|| JsError::new(&format!("no preset {index}")))?;
-        Ok(serde_json::to_string(&preset.params)?)
+        Ok(serde_json::to_string(self.preset(index)?)?)
     }
 
-    /// Load a full parameter set (JSON, see [`Synth::preset_params`]) onto
-    /// `channel` (default 0), at frame `at` (default: the start of the next
-    /// `render`).
+    /// Parameters of built-in preset `index` as a patch object.
     ///
     /// # Errors
     ///
-    /// Fails for invalid JSON, an out-of-range channel or frame, or when
-    /// 4096 events are already pending.
+    /// Fails for an unknown preset.
+    #[wasm_bindgen(js_name = presetPatch)]
+    pub fn preset_patch(&self, index: usize) -> Result<PatchObject, JsError> {
+        Ok(to_js(self.preset(index)?)?.unchecked_into())
+    }
+
+    /// The patch `channel` (default 0) is playing right now. Changes that
+    /// are still pending (scheduled or not yet rendered) are not included.
+    ///
+    /// # Errors
+    ///
+    /// Fails for an out-of-range channel.
+    pub fn params(&self, channel: Option<u32>) -> Result<PatchObject, JsError> {
+        let params = self
+            .processor
+            .params(channel_no(channel)?)
+            .ok_or_else(|| JsError::new("no such channel"))?;
+        Ok(to_js(params)?.unchecked_into())
+    }
+
+    /// Load a full patch onto `channel` (default 0), at frame `at` (default:
+    /// the start of the next `render`). Takes a patch object or its JSON
+    /// text; values outside a parameter's range are clamped.
+    ///
+    /// # Errors
+    ///
+    /// Fails for an invalid patch, an out-of-range channel or frame, or
+    /// when 4096 events are already pending.
     #[wasm_bindgen(js_name = loadParams)]
     pub fn load_params(
         &mut self,
-        json: &str,
+        params: &PatchInput,
         channel: Option<u32>,
         at: Option<f64>,
     ) -> Result<(), JsError> {
-        let params: SynthParams = serde_json::from_str(json)?;
-        self.load(params, channel, at)
+        let json = match params.as_string() {
+            Some(json) => json,
+            None => js_sys::JSON::stringify(params)
+                .ok()
+                .and_then(|s| s.as_string())
+                .ok_or_else(|| JsError::new("params must be a patch object or JSON text"))?,
+        };
+        self.load_json(&json, channel, at)
+    }
+
+    /// Change one parameter of `channel`'s patch (default 0) at frame `at`
+    /// (default: the start of the next `render`), leaving the rest of the
+    /// patch, held arpeggiator notes included, as it is.
+    ///
+    /// `value` is a number for numeric parameters, a choice's name (or its
+    /// index) for choices, and a boolean (or 0/1) for toggles; numbers are
+    /// clamped to the parameter's range.  See `paramInfo()`.
+    ///
+    /// # Errors
+    ///
+    /// Fails for an unknown path, a value of the wrong type, a shared FX
+    /// parameter on a channel other than 0, an out-of-range channel or
+    /// frame, or when 4096 events are already pending.
+    #[wasm_bindgen(js_name = setParam)]
+    pub fn set_param(
+        &mut self,
+        path: &ParamPathInput,
+        value: &ParamValueInput,
+        channel: Option<u32>,
+        at: Option<f64>,
+    ) -> Result<(), JsError> {
+        let path = path.as_string().unwrap_or_default();
+        let value = if let Some(n) = value.as_f64() {
+            ParamValue::Number(n)
+        } else if let Some(b) = value.as_bool() {
+            ParamValue::Bool(b)
+        } else if let Some(s) = value.as_string() {
+            ParamValue::Text(s)
+        } else {
+            ParamValue::Other
+        };
+        let event =
+            set_param_event(channel_no(channel)?, &path, &value).map_err(|e| JsError::new(&e))?;
+        self.schedule(event, at)
+    }
+
+    /// Every settable parameter: its path, kind, range or choices, default,
+    /// and whether it belongs to the shared FX chain.
+    ///
+    /// # Errors
+    ///
+    /// Never in practice: the registry always serializes.
+    #[wasm_bindgen(js_name = paramInfo)]
+    pub fn param_info(&self) -> Result<ParamInfoList, JsError> {
+        Ok(to_js(&param_info())?.unchecked_into())
     }
 
     /// Render `output.length / outputChannels` frames into `output`.  Each
@@ -395,6 +498,23 @@ impl Synth {
 }
 
 impl Synth {
+    fn preset(&self, index: usize) -> Result<&SynthParams, JsError> {
+        self.presets
+            .get(index)
+            .map(|p| &p.params)
+            .ok_or_else(|| JsError::new(&format!("no preset {index}")))
+    }
+
+    fn load_json(
+        &mut self,
+        json: &str,
+        channel: Option<u32>,
+        at: Option<f64>,
+    ) -> Result<(), JsError> {
+        let params: SynthParams = serde_json::from_str(json)?;
+        self.load(params, channel, at)
+    }
+
     fn load(
         &mut self,
         params: SynthParams,
@@ -482,6 +602,124 @@ impl Synth {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // checked above
         Ok((seconds * f64::from(self.sample_rate)).round() as usize)
     }
+}
+
+/// `value` as a JS object, via JSON text. Serializing straight to text keeps
+/// `f32` fields in their shortest form (`0.003`); going through a
+/// `serde_json::Value` would widen them to `f64` (`0.003000000026077032`).
+/// Only called on wasm targets, where `JSON.parse` exists.
+fn to_js<T: serde::Serialize + ?Sized>(value: &T) -> Result<JsValue, JsError> {
+    let json = serde_json::to_string(value)?;
+    js_sys::JSON::parse(&json).map_err(|_| JsError::new("JSON.parse rejected serde_json output"))
+}
+
+/// A `setParam` value, as it arrived from JS.
+enum ParamValue {
+    Number(f64),
+    Bool(bool),
+    Text(String),
+    Other,
+}
+
+/// The event for `setParam`, or why the call is invalid.
+fn set_param_event(
+    channel: ChannelNo,
+    path: &str,
+    value: &ParamValue,
+) -> Result<AudioEvent, String> {
+    let param = Param::from_path(path).ok_or_else(|| format!("unknown parameter: {path}"))?;
+    if param.is_shared() && channel != ChannelNo::DEFAULT {
+        return Err(format!(
+            "{path} belongs to the shared FX chain: set it on channel 0"
+        ));
+    }
+    let value = match (param.kind(), value) {
+        (_, ParamValue::Number(n)) if n.is_finite() => {
+            #[allow(clippy::cast_possible_truncation)] // clamped into f32 range first
+            let n = n.clamp(f64::from(f32::MIN), f64::from(f32::MAX)) as f32;
+            n
+        }
+        (ParamKind::Toggle, ParamValue::Bool(b)) => {
+            if *b {
+                1.0
+            } else {
+                0.0
+            }
+        }
+        (ParamKind::Choice(names), ParamValue::Text(name)) => {
+            let idx = names
+                .iter()
+                .position(|n| n == name)
+                .ok_or_else(|| format!("{path} must be one of {}", quoted(names)))?;
+            #[allow(clippy::cast_precision_loss)] // a handful of choices
+            let idx = idx as f32;
+            idx
+        }
+        (kind, _) => {
+            return Err(match kind {
+                ParamKind::Float { .. } => format!("{path} must be a finite number"),
+                ParamKind::Choice(names) => format!("{path} must be one of {}", quoted(names)),
+                ParamKind::Toggle => format!("{path} must be true or false"),
+            });
+        }
+    };
+    Ok(AudioEvent::SetParam(channel, param, value))
+}
+
+fn quoted(names: &[&str]) -> String {
+    names
+        .iter()
+        .map(|n| format!("\"{n}\""))
+        .collect::<Vec<_>>()
+        .join(", ")
+}
+
+/// An `f32` as a JSON number with the same shortest decimal form that
+/// patch JSON uses (`0.01`, not `0.009999999776482582`).
+fn num(value: f32) -> Value {
+    json!(
+        value
+            .to_string()
+            .parse::<f64>()
+            .expect("f32 Display parses as f64")
+    )
+}
+
+/// A parameter's value as patch JSON shows it.
+fn json_value(param: Param, value: f32) -> Value {
+    match param.kind() {
+        ParamKind::Float { .. } => num(value),
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        ParamKind::Choice(names) => json!(names[value as usize]),
+        ParamKind::Toggle => json!(value >= 0.5),
+    }
+}
+
+/// The parameter registry as `ParamInfo[]`.
+fn param_info() -> Value {
+    Param::ALL
+        .iter()
+        .map(|&param| {
+            let mut info = json!({
+                "path": param.path(),
+                "default": json_value(param, param.default_value()),
+                "shared": param.is_shared(),
+            });
+            match param.kind() {
+                ParamKind::Float { min, max } => {
+                    info["kind"] = json!("float");
+                    info["min"] = num(min);
+                    info["max"] = num(max);
+                }
+                ParamKind::Choice(names) => {
+                    info["kind"] = json!("choice");
+                    info["choices"] = json!(names);
+                }
+                ParamKind::Toggle => info["kind"] = json!("toggle"),
+            }
+            info
+        })
+        .collect()
 }
 
 /// A frame position on the synth's timeline, from a JS number.
@@ -586,7 +824,7 @@ mod tests {
         params["arp"]["rate"] = 8.0.into();
         params["arp"]["mode"] = "Up".into();
         params["fx"]["reverb_mix"] = 0.0.into();
-        synth.load_params(&params.to_string(), None, None).unwrap();
+        synth.load_json(&params.to_string(), None, None).unwrap();
         for note in [60, 64, 67] {
             synth.note_on(note, None, None).unwrap(); // C4 E4 G4, held
         }
@@ -612,7 +850,7 @@ mod tests {
         let mut synth = Synth::new(44_100.0).unwrap();
         assert_eq!(synth.preset_names().len(), default_patches().len());
         let json = synth.preset_params(0).unwrap();
-        synth.load_params(&json, Some(3), None).unwrap();
+        synth.load_json(&json, Some(3), None).unwrap();
     }
 
     // --- Scheduling ---------------------------------------------------------
@@ -881,5 +1119,237 @@ mod tests {
         synth.note_on(60, None, Some(100_000.0)).unwrap();
         synth.render(&mut buf, 1).unwrap();
         assert_eq!(synth.silent_frames().to_bits(), 0.0_f64.to_bits());
+    }
+
+    // --- Patch parameters ---------------------------------------------------
+
+    #[allow(clippy::needless_pass_by_value)] // call sites read better with owned values
+    fn event(channel: u8, path: &str, value: ParamValue) -> Result<AudioEvent, String> {
+        set_param_event(ChannelNo(channel), path, &value)
+    }
+
+    #[test]
+    fn set_param_accepts_each_kind_of_value() {
+        let ok = |path, value| match event(1, path, value).unwrap() {
+            AudioEvent::SetParam(ChannelNo(1), param, v) => (param, v),
+            other => panic!("unexpected {other:?}"),
+        };
+        assert_eq!(
+            ok("filter.cutoff", ParamValue::Number(1200.0)),
+            (Param::FilterCutoff, 1200.0)
+        );
+        assert_eq!(
+            ok("osc.waveform", ParamValue::Text("Triangle".into())),
+            (Param::OscWaveform, 2.0)
+        );
+        assert_eq!(
+            ok("osc.waveform", ParamValue::Number(2.0)),
+            (Param::OscWaveform, 2.0)
+        );
+        assert_eq!(
+            ok("osc2.hard_sync", ParamValue::Bool(true)),
+            (Param::Osc2HardSync, 1.0)
+        );
+        assert_eq!(
+            ok("osc2.hard_sync", ParamValue::Number(0.0)),
+            (Param::Osc2HardSync, 0.0)
+        );
+        // Huge numbers saturate into f32 range; the engine clamps further.
+        assert_eq!(
+            ok("filter.cutoff", ParamValue::Number(1e300)),
+            (Param::FilterCutoff, f32::MAX)
+        );
+    }
+
+    #[test]
+    fn set_param_explains_what_is_wrong() {
+        let err = |channel, path, value| event(channel, path, value).unwrap_err();
+        assert_eq!(
+            err(0, "filter.cutof", ParamValue::Number(1.0)),
+            "unknown parameter: filter.cutof"
+        );
+        assert_eq!(
+            err(0, "filter.cutoff", ParamValue::Number(f64::NAN)),
+            "filter.cutoff must be a finite number"
+        );
+        assert_eq!(
+            err(0, "filter.cutoff", ParamValue::Text("loud".into())),
+            "filter.cutoff must be a finite number"
+        );
+        assert_eq!(
+            err(0, "env.env_reverse", ParamValue::Text("yes".into())),
+            "env.env_reverse must be true or false"
+        );
+        assert_eq!(
+            err(0, "filter.filter_mode", ParamValue::Text("Notch".into())),
+            r#"filter.filter_mode must be one of "LowPass", "BandPass", "HighPass""#
+        );
+        assert_eq!(
+            err(0, "osc.detune", ParamValue::Other),
+            "osc.detune must be a finite number"
+        );
+        assert_eq!(
+            err(2, "fx.reverb_mix", ParamValue::Number(0.5)),
+            "fx.reverb_mix belongs to the shared FX chain: set it on channel 0"
+        );
+        assert!(event(0, "fx.reverb_mix", ParamValue::Number(0.5)).is_ok());
+    }
+
+    #[test]
+    fn set_param_sounds_like_loading_the_edited_patch() {
+        // Tweaking a playing patch must match loading the tweaked patch.
+        let mut tweaked = Synth::new(SR).unwrap();
+        tweaked.load_preset(1, None, None).unwrap();
+        for (path, value) in [
+            ("filter.cutoff", ParamValue::Number(900.0)),
+            ("osc.waveform", ParamValue::Text("Sawtooth".into())),
+            ("env.release", ParamValue::Number(0.5)),
+        ] {
+            let ev = set_param_event(ChannelNo(0), path, &value).unwrap();
+            tweaked.enqueue(ev, None).unwrap();
+        }
+        tweaked.note_on(60, None, None).unwrap();
+
+        let mut patch = default_patches()[1].params.clone();
+        patch.filter.cutoff = 900.0;
+        patch.osc.waveform = synthie::params::Waveform::Sawtooth;
+        patch.env.release = 0.5;
+        let mut loaded = Synth::new(SR).unwrap();
+        loaded.load(patch, None, None).unwrap();
+        loaded.note_on(60, None, None).unwrap();
+
+        assert_eq!(
+            bits(&render_chunked(&mut tweaked, 8_192, &[128])),
+            bits(&render_chunked(&mut loaded, 8_192, &[128]))
+        );
+    }
+
+    #[test]
+    fn param_info_describes_every_parameter() {
+        let info = param_info();
+        let info = info.as_array().unwrap();
+        assert_eq!(info.len(), Param::ALL.len());
+        let cutoff = info.iter().find(|i| i["path"] == "filter.cutoff").unwrap();
+        assert_eq!(
+            cutoff,
+            &json!({"path": "filter.cutoff", "kind": "float", "min": 20.0, "max": 18000.0, "default": 4000.0, "shared": false})
+        );
+        let wave = info.iter().find(|i| i["path"] == "osc.waveform").unwrap();
+        assert_eq!(wave["kind"], "choice");
+        assert_eq!(wave["default"], "Pulse");
+        assert_eq!(wave["choices"][5], "Sine");
+        let sync = info.iter().find(|i| i["path"] == "osc2.hard_sync").unwrap();
+        assert_eq!(
+            (sync["kind"].as_str(), &sync["default"]),
+            (Some("toggle"), &json!(false))
+        );
+        assert!(info.iter().filter(|i| i["shared"] == true).all(|i| {
+            let p = i["path"].as_str().unwrap();
+            p.starts_with("fx.") || p.starts_with("chorus.") || p.starts_with("delay.")
+        }));
+    }
+
+    // --- TypeScript declarations --------------------------------------------
+
+    /// TypeScript for `SynthParams`, `ParamPath` and `ParamInfo`, derived from
+    /// the parameter registry so the types cannot drift from the engine.
+    fn typescript_declarations() -> String {
+        use std::fmt::Write;
+
+        let mut sections: Vec<(&str, Vec<Param>)> = Vec::new();
+        for &param in Param::ALL {
+            let section = param.path().split_once('.').unwrap().0;
+            match sections.iter_mut().find(|(s, _)| *s == section) {
+                Some((_, params)) => params.push(param),
+                None => sections.push((section, vec![param])),
+            }
+        }
+
+        let mut ts = String::from(
+            "// Generated from synthie's parameter registry by `cargo test -p synthie-wasm`;\n\
+             // rerun it with SYNTHIE_UPDATE_TYPES=1 to update. Do not edit by hand.\n\n\
+             /**\n * A complete patch, as returned by `presetPatch` and `params` and accepted by\n \
+             * `loadParams`. Values outside a parameter's range are clamped on load.\n */\n\
+             export interface SynthParams {\n",
+        );
+        for (section, params) in &sections {
+            writeln!(ts, "  {section}: {{").unwrap();
+            for &param in params {
+                let field = param.path().split_once('.').unwrap().1;
+                let default = json_value(param, param.default_value());
+                let (doc, ty) = match param.kind() {
+                    ParamKind::Float { min, max } => {
+                        (format!("{min} to {max}"), "number".to_string())
+                    }
+                    ParamKind::Choice(names) => (
+                        "Choice".to_string(),
+                        names
+                            .iter()
+                            .map(|n| format!("\"{n}\""))
+                            .collect::<Vec<_>>()
+                            .join(" | "),
+                    ),
+                    ParamKind::Toggle => ("On or off".to_string(), "boolean".to_string()),
+                };
+                let shared = if param.is_shared() {
+                    " Shared FX: only channel 0's value is used."
+                } else {
+                    ""
+                };
+                writeln!(
+                    ts,
+                    "    /** `{}`: {doc}. Default {default}.{shared} */",
+                    param.path()
+                )
+                .unwrap();
+                writeln!(ts, "    {field}: {ty};").unwrap();
+            }
+            if *section == "arp" {
+                ts.push_str("    /** Held notes (runtime state, MIDI numbers); only the first `count` are used. */\n");
+                ts.push_str("    notes: [number, number, number, number];\n");
+                ts.push_str(
+                    "    /** Number of held notes in `notes`, 0 to 4 (runtime state). */\n",
+                );
+                ts.push_str("    count: number;\n");
+            }
+            ts.push_str("  };\n");
+        }
+        ts.push_str(
+            "}\n\n/** Path of a settable parameter, for `setParam`. */\nexport type ParamPath =\n",
+        );
+        for &param in Param::ALL {
+            writeln!(ts, "  | \"{}\"", param.path()).unwrap();
+        }
+        ts.pop();
+        ts.push_str(";\n\n");
+        ts.push_str(
+            "/** One parameter, as described by `paramInfo()`. */\n\
+             export interface ParamInfo {\n  \
+             path: ParamPath;\n  \
+             kind: \"float\" | \"choice\" | \"toggle\";\n  \
+             /** Smallest value (floats only). */\n  min?: number;\n  \
+             /** Largest value (floats only). */\n  max?: number;\n  \
+             /** The options, in index order (choices only). */\n  choices?: string[];\n  \
+             /** Value in the default patch. */\n  default: number | string | boolean;\n  \
+             /** Part of the shared FX chain: only channel 0's value is used. */\n  shared: boolean;\n\
+             }\n",
+        );
+        ts
+    }
+
+    #[test]
+    fn typescript_declarations_are_up_to_date() {
+        let path = concat!(env!("CARGO_MANIFEST_DIR"), "/npm/types.d.ts");
+        let fresh = typescript_declarations();
+        if std::env::var_os("SYNTHIE_UPDATE_TYPES").is_some()
+            || !std::path::Path::new(path).exists()
+        {
+            std::fs::write(path, &fresh).unwrap();
+        }
+        let committed = std::fs::read_to_string(path).unwrap();
+        assert!(
+            committed == fresh,
+            "npm/types.d.ts is stale; run `SYNTHIE_UPDATE_TYPES=1 cargo test -p synthie-wasm`"
+        );
     }
 }
