@@ -7,7 +7,7 @@
 //! and friends apply at the start of the next `render` call, so render in
 //! small blocks (a worklet's 128 frames) for tight timing.
 
-use synthie::audio::processor::{NUM_CHANNELS, SynthProcessor};
+use synthie::audio::processor::{NUM_CHANNELS, SynthProcessor, VoiceNormalization};
 use synthie::params::{AudioEvent, ChannelNo, DrumHit, MidiNote, Patch, SynthParams};
 use synthie::presets::sid::default_patches;
 use wasm_bindgen::prelude::*;
@@ -70,6 +70,46 @@ impl Synth {
         {
             NUM_CHANNELS as u8
         }
+    }
+
+    /// Output gain applied after the FX chain (default 0.5).  The mix is
+    /// still clamped to `-1..=1`, so higher values trade headroom for level.
+    #[wasm_bindgen(getter, js_name = masterGain)]
+    #[must_use]
+    pub fn master_gain(&self) -> f32 {
+        self.processor.master_gain()
+    }
+
+    /// Set the output gain applied after the FX chain.
+    ///
+    /// # Errors
+    ///
+    /// Fails if `gain` is not a finite number.
+    #[wasm_bindgen(setter, js_name = masterGain)]
+    pub fn set_master_gain(&mut self, gain: f32) -> Result<(), JsError> {
+        if !gain.is_finite() {
+            return Err(JsError::new("masterGain must be a finite number"));
+        }
+        self.processor.set_master_gain(gain);
+        Ok(())
+    }
+
+    /// Whether each channel divides its voice sum by its polyphony (default
+    /// `true`).  Turn off for louder single notes, e.g. sound effects.
+    #[wasm_bindgen(getter, js_name = normalizeVoices)]
+    #[must_use]
+    pub fn normalize_voices(&self) -> bool {
+        self.processor.voice_normalization() == VoiceNormalization::Polyphony
+    }
+
+    /// Enable or disable per-channel voice normalisation.
+    #[wasm_bindgen(setter, js_name = normalizeVoices)]
+    pub fn set_normalize_voices(&mut self, enabled: bool) {
+        self.processor.set_voice_normalization(if enabled {
+            VoiceNormalization::Polyphony
+        } else {
+            VoiceNormalization::Off
+        });
     }
 
     /// Start a note (MIDI number `0..=127`) on `channel` (default 0).
@@ -228,6 +268,29 @@ mod tests {
         synth.render(&mut buf, 2).unwrap();
         assert!(peak(&buf) > 0.01);
         assert!(buf.chunks(2).all(|f| f[0].to_bits() == f[1].to_bits())); // copied verbatim
+    }
+
+    #[test]
+    fn master_gain_and_voice_normalization_raise_a_lone_note() {
+        let render = |configure: &dyn Fn(&mut Synth)| {
+            let mut synth = Synth::new(48_000.0).unwrap();
+            configure(&mut synth);
+            synth.load_preset(1, None).unwrap();
+            synth.note_on(69, None).unwrap();
+            let mut buf = vec![0.0_f32; 4_800];
+            synth.render(&mut buf, 1).unwrap();
+            peak(&buf)
+        };
+        let base = render(&|_| {});
+        let louder = render(&|s| {
+            s.set_master_gain(1.0).unwrap();
+            s.set_normalize_voices(false);
+        });
+        assert!(louder > base * 2.0, "{louder} vs {base}");
+
+        let synth = Synth::new(48_000.0).unwrap();
+        assert!((synth.master_gain() - 0.5).abs() < f32::EPSILON);
+        assert!(synth.normalize_voices());
     }
 
     /// Dominant pitch of `window` as the nearest MIDI note, by autocorrelation.

@@ -17,11 +17,44 @@ const POLYPHONY: usize = 4;
 /// Polyphony as `f32` for normalising the summed voice mix.
 const POLYPHONY_F32: f32 = 4.0;
 
+/// How each synthesis channel scales the sum of its voices.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum VoiceNormalization {
+    /// Divide each channel's voice sum by its polyphony (4).
+    ///
+    /// Keeps headroom constant when every voice sounds at once, at the cost
+    /// of a lone note playing at a quarter of a voice's level.
+    #[default]
+    Polyphony,
+    /// Pass the voice sum through unscaled.
+    ///
+    /// A lone note plays at full level, which suits one-shot sound effects
+    /// and monophonic use; chords can clip at the final clamp unless the
+    /// master gain is lowered.
+    Off,
+}
+
+impl VoiceNormalization {
+    fn scale(self) -> f32 {
+        match self {
+            Self::Polyphony => 1.0 / POLYPHONY_F32,
+            Self::Off => 1.0,
+        }
+    }
+}
+
 /// Default number of independent synthesis channels in [`SynthProcessor`].
 pub const NUM_CHANNELS: usize = 4;
 
-/// Master output gain applied after summing all synthesis channels.
-const MASTER_GAIN: f32 = 0.5;
+/// Default master output gain of a new [`SynthProcessor`].
+///
+/// Applied after the FX chain and before the final clamp to `[-1.0, 1.0]`.
+/// With the default [`VoiceNormalization::Polyphony`] each channel's voice sum
+/// is additionally divided by its polyphony (4), so a single note peaks at
+/// roughly `DEFAULT_MASTER_GAIN / 4 × volume` of full scale. Use
+/// [`SynthProcessor::set_master_gain`] and
+/// [`SynthProcessor::set_voice_normalization`] to trade headroom for level.
+pub const DEFAULT_MASTER_GAIN: f32 = 0.5;
 
 #[derive(Clone, Copy, Default)]
 struct VoiceSlot {
@@ -138,7 +171,6 @@ impl AudioChannel {
             .iter_mut()
             .map(|v| v.process(&self.params, sample_rate))
             .sum::<f32>()
-            / POLYPHONY_F32
     }
 }
 
@@ -156,6 +188,8 @@ pub struct SynthProcessor<const N: usize> {
     delay: Delay,
     drums: DrumMachine,
     sample_rate: f32,
+    master_gain: f32,
+    voice_normalization: VoiceNormalization,
 }
 
 impl<const N: usize> SynthProcessor<N> {
@@ -181,7 +215,43 @@ impl<const N: usize> SynthProcessor<N> {
             delay: Delay::new(sample_rate),
             drums: DrumMachine::new(sample_rate),
             sample_rate,
+            master_gain: DEFAULT_MASTER_GAIN,
+            voice_normalization: VoiceNormalization::default(),
         }
+    }
+
+    /// Master output gain applied after the FX chain.
+    ///
+    /// Defaults to [`DEFAULT_MASTER_GAIN`].
+    #[must_use]
+    pub fn master_gain(&self) -> f32 {
+        self.master_gain
+    }
+
+    /// Set the master output gain applied after the FX chain.
+    ///
+    /// The output is still clamped to `[-1.0, 1.0]`, so gains above the
+    /// default reduce headroom and can clip when many voices sound at once.
+    /// Non-finite values are ignored.
+    pub fn set_master_gain(&mut self, gain: f32) {
+        if gain.is_finite() {
+            self.master_gain = gain;
+        }
+    }
+
+    /// How each synthesis channel scales the sum of its voices.
+    ///
+    /// Defaults to [`VoiceNormalization::Polyphony`].
+    #[must_use]
+    pub fn voice_normalization(&self) -> VoiceNormalization {
+        self.voice_normalization
+    }
+
+    /// Set how each synthesis channel scales the sum of its voices.
+    ///
+    /// Drums are not affected.
+    pub fn set_voice_normalization(&mut self, normalization: VoiceNormalization) {
+        self.voice_normalization = normalization;
     }
 
     fn apply_reverb_params(&mut self) {
@@ -267,6 +337,8 @@ impl<const N: usize> SynthProcessor<N> {
         self.apply_events(events);
 
         let sample_rate = self.sample_rate;
+        let master_gain = self.master_gain;
+        let voice_scale = self.voice_normalization.scale();
         let reverb_mix = self.channels[0].params.fx.reverb_mix;
         let chorus_params = self.channels[0].params.chorus.clone();
         let delay_params = self.channels[0].params.delay.clone();
@@ -277,10 +349,11 @@ impl<const N: usize> SynthProcessor<N> {
                 .iter_mut()
                 .map(|ch| ch.process(sample_rate))
                 .sum::<f32>()
+                * voice_scale
                 + self.drums.process(sample_rate);
             let mix = self.chorus.process(mix, &chorus_params);
             let mix = self.delay.process(mix, &delay_params);
-            let sample = self.reverb.process(mix, reverb_mix) * MASTER_GAIN;
+            let sample = self.reverb.process(mix, reverb_mix) * master_gain;
 
             let sample = if sample.is_finite() {
                 sample.clamp(-1.0, 1.0)
@@ -423,6 +496,61 @@ mod tests {
         #[allow(clippy::float_cmp)]
         for frame in buf.chunks(2) {
             assert_eq!(frame[0], frame[1], "stereo channels differ within a frame");
+        }
+    }
+
+    #[test]
+    fn master_gain_defaults_and_ignores_non_finite() {
+        let mut proc = make();
+        assert!((proc.master_gain() - DEFAULT_MASTER_GAIN).abs() < f32::EPSILON);
+        proc.set_master_gain(1.5);
+        assert!((proc.master_gain() - 1.5).abs() < f32::EPSILON);
+        proc.set_master_gain(f32::NAN);
+        proc.set_master_gain(f32::INFINITY);
+        assert!((proc.master_gain() - 1.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn master_gain_scales_output() {
+        let render = |gain: f32| {
+            let mut proc = make();
+            proc.set_master_gain(gain);
+            let mut buf = vec![0.0_f32; 4096];
+            proc.process_block(&[AudioEvent::NoteOn(NOTE)], &mut buf, 1);
+            buf
+        };
+        let base = render(DEFAULT_MASTER_GAIN);
+        let doubled = render(DEFAULT_MASTER_GAIN * 2.0);
+        let silent = render(0.0);
+        assert!(silent.iter().all(|s| *s == 0.0), "zero gain must be silent");
+        for (b, d) in base.iter().zip(&doubled) {
+            assert!(
+                (d - (b * 2.0).clamp(-1.0, 1.0)).abs() < 1e-6,
+                "doubling the gain must double the (unclipped) output"
+            );
+        }
+    }
+
+    #[test]
+    fn voice_normalization_off_raises_a_lone_note_by_the_polyphony() {
+        let render = |normalization: VoiceNormalization| {
+            let mut proc = make();
+            proc.set_voice_normalization(normalization);
+            // Low gain keeps the unnormalised output clear of the clamp.
+            proc.set_master_gain(0.1);
+            let mut buf = vec![0.0_f32; 4096];
+            proc.process_block(&[AudioEvent::NoteOn(NOTE)], &mut buf, 1);
+            buf
+        };
+        assert_eq!(make().voice_normalization(), VoiceNormalization::Polyphony);
+        let normalized = render(VoiceNormalization::Polyphony);
+        let raw = render(VoiceNormalization::Off);
+        assert!(normalized.iter().any(|s| s.abs() > 1e-6));
+        for (n, r) in normalized.iter().zip(&raw) {
+            assert!(
+                (r - n * POLYPHONY_F32).abs() < 1e-5,
+                "disabling normalisation must scale the voice sum by the polyphony"
+            );
         }
     }
 

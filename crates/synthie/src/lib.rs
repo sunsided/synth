@@ -26,7 +26,9 @@ pub mod prelude {
     #[cfg(feature = "io")]
     pub use crate::audio::engine::{setup_audio, setup_audio_n};
     pub use crate::audio::osc::{detune_hz, midi_to_hz};
-    pub use crate::audio::processor::{NUM_CHANNELS, SynthProcessor};
+    pub use crate::audio::processor::{
+        DEFAULT_MASTER_GAIN, NUM_CHANNELS, SynthProcessor, VoiceNormalization,
+    };
     pub use crate::params::*;
     pub use crate::presets;
 }

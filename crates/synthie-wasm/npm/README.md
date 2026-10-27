@@ -42,7 +42,7 @@ synth.port.postMessage({ type: "noteOn", note: 69 });     // A4
 synth.port.postMessage({ type: "drum", hit: "kick" });
 ```
 
-Messages: `noteOn` / `noteOff` `{ note, channel? }`, `drum` `{ hit }`, `panic`, `loadPreset` `{ index, channel? }`, `loadParams` `{ json, channel? }`.
+Messages: `noteOn` / `noteOff` `{ note, channel? }`, `drum` `{ hit }`, `panic`, `loadPreset` `{ index, channel? }`, `loadParams` `{ json, channel? }`, `masterGain` `{ gain }`, `normalizeVoices` `{ enabled }`.
 
 To use the `Synth` class directly on the main thread instead, initialise the module first:
 
@@ -95,6 +95,8 @@ for (const note of [57, 60, 64]) synth.noteOn(note); // A minor, held
 | `loadPreset(index, channel = 0)` | Load a built-in preset onto a channel. |
 | `presetParams(index)` / `loadParams(json, channel = 0)` | A preset's parameters as JSON; load edited parameters. |
 | `render(output, outputChannels)` | Fill an interleaved `Float32Array`; the mono mix goes to every channel. |
+| `masterGain` | Output gain after the FX chain (default `0.5`); the mix is clamped to `-1..=1`. |
+| `normalizeVoices` | Divide each channel's voice sum by its polyphony (default `true`); turn off for louder single notes. |
 | `sampleRate`, `channels` | Read-only properties. |
 
 Events apply at the start of the next `render()` call, so render in small blocks (an AudioWorklet's 128 frames) for tight timing. Invalid arguments throw an `Error`.
