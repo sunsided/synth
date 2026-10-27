@@ -16,6 +16,7 @@ A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as i
 | [`synth-tui`](crates/synth-tui/) | binary | Terminal synthesizer — interactive demo of the engine |
 | [`synthie-tracker`](crates/synthie-tracker/) | binary | **Step-sequencer tracker TUI** — 4-channel pattern editor with drum track |
 | [`synthie-ui`](crates/synthie-ui/) | library | Shared neon look for both TUIs — palette, panels, meters, piano strip, scope |
+| [`synthie-wasm`](crates/synthie-wasm/) | npm package | WebAssembly bindings, published as [`@sunsided/synthie`](crates/synthie-wasm/npm/README.md) for browsers (AudioWorklet) and Node.js |
 
 ## Library
 
@@ -178,6 +179,10 @@ task serve:web        # build the site and serve it on http://127.0.0.1:8000
 ```
 
 The browser builds are always release builds: debug-built DSP is too slow for real-time audio in wasm. The `Deploy Pages` workflow publishes `target/site` on every push to `main`.
+
+### npm package
+
+`crates/synthie-wasm` wraps the engine for JavaScript; see its [package README](crates/synthie-wasm/npm/README.md) for usage. `task build:npm` (needs [wasm-pack](https://rustwasm.github.io/wasm-pack/)) builds it into `target/npm`, with one build for browsers and one for Node.js behind conditional exports. Pushing a `v*` tag publishes it to GitHub Packages.
 
 ### Pre-commit hooks
 

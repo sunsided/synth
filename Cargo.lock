@@ -1946,6 +1946,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "synthie-wasm"
+version = "0.5.0"
+dependencies = [
+ "serde_json",
+ "synthie",
+ "wasm-bindgen",
+]
+
+[[package]]
 name = "tap"
 version = "1.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"

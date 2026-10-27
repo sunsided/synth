@@ -1,0 +1,21 @@
+[package]
+name              = "synthie-wasm"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description       = "WebAssembly bindings for the synthie engine, published to npm as @sunsided/synthie"
+repository.workspace = true
+license.workspace = true
+publish           = false
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+serde_json   = { workspace = true }
+# No `io`: the host (AudioWorklet, Node) pulls samples via `render`.
+synthie      = { path = "../synthie", default-features = false, features = ["std", "serde", "arp"] }
+wasm-bindgen = "0.2"
+
+[lints]
+workspace = true
