@@ -231,6 +231,15 @@ tasks:
       # AudioWorklet entry point (+ TextDecoder/TextEncoder polyfill) next to the web glue.
       - cp {{.CRATE}}/npm/worklet.js {{.CRATE}}/npm/text-polyfill.js {{.OUT}}/web/
 
+  test:npm:
+    desc: Build the npm package and test it in Node.js (Synth API and AudioWorklet)
+    deps: [build:npm]
+    preconditions:
+      - sh: command -v node
+        msg: "node not found — needed to run the npm package tests"
+    cmds:
+      - node --test '{{.ROOT_DIR}}/crates/synthie-wasm/test/*.test.mjs'
+
   example:tune:
     desc: Run the tune example (chord progression + melody, SID-style)
     aliases:
