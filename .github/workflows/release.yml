@@ -1,26 +1,195 @@
 name: Release
 
+# Push a semver tag (v1.2.3, or v1.2.3-rc.1 for a prerelease) to create a GitHub release with
+# generated notes and the npm package attached, and to publish @sunsided/synthie to GitHub
+# Packages and npmjs.com. The tag must match the workspace version in Cargo.toml.
 on:
   push:
     tags:
-      - 'v*'
+      - 'v[0-9]+.[0-9]+.[0-9]+'
+      - 'v[0-9]+.[0-9]+.[0-9]+-*'
 
 permissions: {}
 
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
+  ci:
+    name: CI
+    uses: ./.github/workflows/test.yml # zizmor: ignore[self-repository]
+    permissions:
+      contents: read
+
+  build:
+    name: Build npm package
+    needs: ci
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install stable toolchain with wasm32 target
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      # No build cache on purpose: this workflow publishes what it builds.
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: wasm-pack
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          package-manager-cache: false
+
+      - name: Build package
+        run: task build:npm
+
+      - name: Check tag matches the package version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version="v$(node -p 'require("./target/npm/package.json").version')"
+          if [[ "$TAG" != "$version" ]]; then
+            echo "::error::Tag $TAG does not match package version $version (Cargo.toml)"
+            exit 1
+          fi
+
+      - name: Pack
+        run: |
+          npm pack ./target/npm --pack-destination . --ignore-scripts
+          mv sunsided-synthie-*.tgz package.tgz
+
+      - name: Upload package
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: npm-package
+          path: package.tgz
+          if-no-files-found: error
+          retention-days: 1
+
   release:
     name: Create GitHub release
+    needs: build
     runs-on: ubuntu-latest
+    # The only job with write access to the repository; it runs no project code.
     permissions:
       contents: write
     steps:
-      - name: Create release with generated notes
+      - name: Download package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-package
+
+      - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
           TAG: ${{ github.ref_name }}
         run: |
-          gh release create "$TAG" \
-            --repo "$GITHUB_REPOSITORY" \
-            --title "${TAG#v}" \
-            --generate-notes \
-            --verify-tag
+          mv package.tgz "sunsided-synthie-${TAG#v}.tgz"
+          # Titled with the bare version, like the releases before this workflow.
+          flags=(--verify-tag --generate-notes --title "${TAG#v}")
+          # A suffix like -rc.1 marks a prerelease.
+          if [[ "$TAG" == *-* ]]; then flags+=(--prerelease); fi
+          gh release create "$TAG" "${flags[@]}" "sunsided-synthie-${TAG#v}.tgz"
+
+  publish:
+    name: Publish to GitHub Packages
+    # After the GitHub release, so a failed release doesn't leave a published package behind.
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    # Publishes the tarball built above; runs no project code (lifecycle scripts are skipped).
+    permissions:
+      packages: write
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-package
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://npm.pkg.github.com
+          scope: '@sunsided'
+          package-manager-cache: false
+
+      # GitHub Packages authenticates with GITHUB_TOKEN; npm's trusted publishing is for npmjs.com.
+      - name: Publish
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+          TAG: ${{ github.ref_name }}
+        run: | # zizmor: ignore[use-trusted-publishing]
+          # Re-runs: a version can only be published once.
+          version="${TAG#v}"
+          if npm view "@sunsided/synthie@${version}" version >/dev/null 2>&1; then
+            echo "::notice::@sunsided/synthie@${version} is already published"
+            exit 0
+          fi
+          flags=(--ignore-scripts)
+          # Prereleases don't become `latest`.
+          if [[ "$TAG" == *-* ]]; then flags+=(--tag next); fi
+          npm publish package.tgz "${flags[@]}"
+
+  publish-npm:
+    name: Publish to npmjs.com
+    # After the GitHub release, so a failed release doesn't leave a published package behind.
+    needs: [build, release]
+    runs-on: ubuntu-latest
+    # Trusted publishing: npm exchanges the workflow's OIDC token, no secret needed. Configure it
+    # on npmjs.com under the package's settings (repository sunsided/synth, workflow
+    # release.yml). Publishes from the tarball built above; lifecycle scripts are skipped.
+    permissions:
+      id-token: write
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: npm-package
+
+      - name: Set up Node.js
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 24
+          registry-url: https://registry.npmjs.org
+          package-manager-cache: false
+
+      - name: Publish
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          # Trusted publishing needs npm 11.5.1 or newer.
+          npm_version="$(npm --version)"
+          if [[ "$(printf '%s\n' 11.5.1 "$npm_version" | sort -V | head -n1)" != 11.5.1 ]]; then
+            echo "::error::npm $npm_version is too old for trusted publishing (needs 11.5.1+)"
+            exit 1
+          fi
+          # Re-runs: a version can only be published once.
+          version="${TAG#v}"
+          if npm view "@sunsided/synthie@${version}" version >/dev/null 2>&1; then
+            echo "::notice::@sunsided/synthie@${version} is already on npmjs.com"
+            exit 0
+          fi
+          echo "npm $npm_version"
+          # Verbose logs show the OIDC token exchange (not the token), which is otherwise silent.
+          flags=(--ignore-scripts --access public --loglevel verbose)
+          # Prereleases don't become `latest`.
+          if [[ "$TAG" == *-* ]]; then flags+=(--tag next); fi
+          npm publish package.tgz "${flags[@]}"
