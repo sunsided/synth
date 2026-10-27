@@ -131,3 +131,139 @@ describe("normalizeVoices", () => {
     assertSameSamples(assert, note(false), on.map((s) => s * 4), "lone note");
   });
 });
+
+describe("scheduling", () => {
+  test("currentFrame advances with every render", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    assert.equal(synth.currentFrame, 0);
+    render(synth, 100);
+    synth.render(new Float32Array(256), 2);
+    assert.equal(synth.currentFrame, 228);
+  });
+
+  test("an event lands on its frame regardless of how renders are sliced", () => {
+    const performance = (synth) => {
+      synth.loadPreset(1, 0);
+      synth.noteOn(57, 0, 1_000);
+      synth.noteOn(64, 1, 1_000);
+      synth.drum("kick", 3_333);
+      synth.noteOff(57, 0, 9_000);
+    };
+    const whole = new Synth(SAMPLE_RATE);
+    performance(whole);
+    assert.equal(whole.pendingEvents, 5);
+    const reference = render(whole, 12_000);
+    assert.equal(whole.pendingEvents, 0);
+
+    for (const slice of [1, 7, 128, 1_000, 4_096]) {
+      const sliced = new Synth(SAMPLE_RATE);
+      performance(sliced);
+      const out = new Float32Array(12_000);
+      for (let pos = 0; pos < out.length; pos += slice) {
+        sliced.render(out.subarray(pos, Math.min(pos + slice, out.length)), 1);
+      }
+      assertSameSamples(assert, out, reference, `slices of ${slice}`);
+    }
+    assert.equal(reference.findIndex((s) => s !== 0) >= 1_000, true);
+  });
+
+  for (const bad of [-1, NaN, Infinity, "soon", {}, 2 ** 53]) {
+    test(`rejects at = ${String(bad)}`, () => {
+      const synth = new Synth(SAMPLE_RATE);
+      assert.throws(() => synth.noteOn(60, 0, bad), /at must be a frame position/);
+      assert.equal(synth.pendingEvents, 0);
+    });
+  }
+
+  test("the queue holds at most 4096 events, and says so", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    for (let i = 0; i < 4096; i++) synth.drum("kick", i * 10);
+    assert.throws(() => synth.drum("kick"), /too many pending events \(at most 4096\)/);
+    synth.cancelScheduled();
+    assert.equal(synth.pendingEvents, 0);
+    synth.drum("kick");
+  });
+});
+
+describe("silence", () => {
+  test("a fresh synth is idle", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    assert.equal(synth.isIdle, true);
+    assert.equal(synth.activeVoices, 0);
+    assert.equal(synth.renderUntilSilent(5).length, 0);
+  });
+
+  test("activeVoices follows notes through their release", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    synth.noteOn(60);
+    synth.noteOn(64, 1);
+    render(synth, 128);
+    assert.equal(synth.activeVoices, 2);
+    assert.equal(synth.isIdle, false);
+    synth.noteOff(60);
+    synth.noteOff(64, 1);
+    render(synth, 4 * SAMPLE_RATE);
+    assert.equal(synth.activeVoices, 0);
+  });
+
+  test("renderUntilSilent returns a one-shot sound effect, tail included, trimmed", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    synth.loadPreset(1);
+    synth.normalizeVoices = false;
+    synth.noteOn(69);
+    synth.noteOff(69, 0, 0.2 * SAMPLE_RATE);
+    synth.drum("hihat-open", 0.1 * SAMPLE_RATE);
+    const sfx = synth.renderUntilSilent(20);
+    assert.ok(sfx instanceof Float32Array);
+    assert.ok(sfx.length > 0.2 * SAMPLE_RATE, "outlasts the held note");
+    assert.ok(sfx.length < 20 * SAMPLE_RATE, "ends before the cap");
+    assert.ok(Math.abs(sfx.at(-1)) > synth.silenceThreshold, "no trailing silence");
+    assert.equal(synth.isIdle, true);
+    assert.ok(peak(render(synth, SAMPLE_RATE)) <= synth.silenceThreshold, "nothing was cut off");
+  });
+
+  test("renderUntilSilent honours the cap and the hold time", () => {
+    const held = new Synth(SAMPLE_RATE);
+    held.noteOn(60);
+    assert.equal(held.renderUntilSilent(0.5).length, 0.5 * SAMPLE_RATE);
+
+    // Rendering continues for the hold time past the point where the synth
+    // fell idle and silent; that overrun is trimmed off again.
+    const overrun = (hold) => {
+      const synth = new Synth(SAMPLE_RATE);
+      synth.drum("kick");
+      const sfx = synth.renderUntilSilent(10, hold);
+      return { frames: synth.currentFrame - sfx.length, length: sfx.length };
+    };
+    const short = overrun(0.01);
+    const long = overrun(3);
+    assert.equal(long.length, short.length, "the hold never changes the sound itself");
+    const extra = long.frames - short.frames;
+    assert.ok(Math.abs(extra - 2.99 * SAMPLE_RATE) <= 128, `3 s hold rendered ${extra} more frames`);
+  });
+
+  test("a louder threshold ends the sound sooner", () => {
+    const length = (threshold) => {
+      const synth = new Synth(SAMPLE_RATE);
+      synth.silenceThreshold = threshold;
+      synth.loadPreset(1);
+      synth.noteOn(69);
+      synth.noteOff(69, 0, 4_800);
+      return synth.renderUntilSilent(20, 0.5).length;
+    };
+    assert.ok(length(0.01) < length(1e-5));
+  });
+
+  for (const [what, call] of [
+    ["silenceThreshold", (s) => { s.silenceThreshold = -1; }],
+    ["silenceThreshold", (s) => { s.silenceThreshold = NaN; }],
+    ["maxSeconds", (s) => s.renderUntilSilent(-1)],
+    ["maxSeconds", (s) => s.renderUntilSilent(Infinity)],
+    ["holdSeconds", (s) => s.renderUntilSilent(1, NaN)],
+  ]) {
+    test(`rejects a bad ${what}`, () => {
+      assert.throws(() => call(new Synth(SAMPLE_RATE)), new RegExp(`${what} must be a finite number >= 0`));
+    });
+  }
+});
+

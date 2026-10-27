@@ -244,6 +244,12 @@ impl DrumMachine {
         (kick + hats) * DRUM_GAIN
     }
 
+    /// Whether any drum hit is still ringing.
+    #[must_use]
+    pub fn is_active(&self) -> bool {
+        self.kick.amp > 0.0 || self.hats.amp_closed > 0.0 || self.hats.amp_open > 0.0
+    }
+
     /// Immediately silence all active drum voices.
     pub fn panic(&mut self) {
         self.kick.panic();

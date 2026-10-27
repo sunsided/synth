@@ -83,6 +83,21 @@ impl AudioChannel {
         }
     }
 
+    fn active_voices(&self) -> usize {
+        self.voices
+            .iter()
+            .filter(|v| v.active || v.env.is_active())
+            .count()
+    }
+
+    fn is_idle(&self) -> bool {
+        #[cfg(feature = "arp")]
+        if self.params.arp.enabled && self.params.arp.count > 0 {
+            return false;
+        }
+        self.active_voices() == 0
+    }
+
     fn is_voice_idle(&self, idx: usize) -> bool {
         let voice = &self.voices[idx];
         !voice.active && !voice.env.is_active() && self.slots[idx].note.is_none()
@@ -237,6 +252,23 @@ impl<const N: usize> SynthProcessor<N> {
         if gain.is_finite() {
             self.master_gain = gain;
         }
+    }
+
+    /// Number of synth voices still sounding, held or releasing, across all
+    /// channels. Drum hits are not counted; see [`Self::is_idle`].
+    #[must_use]
+    pub fn active_voices(&self) -> usize {
+        self.channels.iter().map(AudioChannel::active_voices).sum()
+    }
+
+    /// Whether nothing will produce new sound: no synth voice is held or
+    /// releasing, no drum hit is ringing, and no arpeggiator is running.
+    ///
+    /// Reverb, delay and chorus tails can still be audible after the
+    /// processor becomes idle; check the rendered level to wait them out.
+    #[must_use]
+    pub fn is_idle(&self) -> bool {
+        self.channels.iter().all(AudioChannel::is_idle) && !self.drums.is_active()
     }
 
     /// How each synthesis channel scales the sum of its voices.
@@ -552,6 +584,113 @@ mod tests {
                 "disabling normalisation must scale the voice sum by the polyphony"
             );
         }
+    }
+
+    /// Render `frames` mono frames and return them.
+    fn run(
+        proc: &mut SynthProcessor<NUM_CHANNELS>,
+        events: &[AudioEvent],
+        frames: usize,
+    ) -> Vec<f32> {
+        let mut buf = vec![0.0_f32; frames];
+        proc.process_block(events, &mut buf, 1);
+        buf
+    }
+
+    /// Render in small blocks until `done` holds; return the frames it took.
+    fn frames_until(
+        proc: &mut SynthProcessor<NUM_CHANNELS>,
+        done: impl Fn(&SynthProcessor<NUM_CHANNELS>) -> bool,
+    ) -> usize {
+        let mut frames = 0;
+        while !done(proc) {
+            run(proc, &[], 64);
+            frames += 64;
+            assert!(frames < 10 * 44_100, "still not done after 10 s");
+        }
+        frames
+    }
+
+    #[test]
+    fn a_fresh_processor_is_idle() {
+        let proc = make();
+        assert!(proc.is_idle());
+        assert_eq!(proc.active_voices(), 0);
+    }
+
+    #[test]
+    fn voices_count_while_held_and_releasing() {
+        let mut proc = make();
+        let chord = [MidiNote(60), MidiNote(64), MidiNote(67)];
+        let on: Vec<_> = chord.iter().map(|&n| AudioEvent::NoteOn(n)).collect();
+        run(&mut proc, &on, 4096);
+        assert_eq!(proc.active_voices(), 3);
+        assert!(!proc.is_idle());
+
+        let off: Vec<_> = chord.iter().map(|&n| AudioEvent::NoteOff(n)).collect();
+        run(&mut proc, &off, 1);
+        assert_eq!(proc.active_voices(), 3, "released voices still sound");
+        let release = frames_until(&mut proc, SynthProcessor::is_idle);
+        assert!(release > 0, "the release should take time");
+        assert_eq!(proc.active_voices(), 0);
+    }
+
+    #[test]
+    fn voices_count_across_channels() {
+        let mut proc = make();
+        let events: Vec<_> = (0..4u8)
+            .map(|ch| AudioEvent::NoteOnChannel(ChannelNo(ch), NOTE))
+            .collect();
+        run(&mut proc, &events, 256);
+        assert_eq!(proc.active_voices(), 4);
+    }
+
+    #[test]
+    fn drums_keep_the_processor_busy_until_they_decay() {
+        for hit in [DrumHit::Kick, DrumHit::HiHatClosed, DrumHit::HiHatOpen] {
+            let mut proc = make();
+            run(&mut proc, &[AudioEvent::Drum(hit)], 64);
+            assert!(!proc.is_idle(), "{hit:?} should keep the processor busy");
+            assert_eq!(proc.active_voices(), 0, "drums are not synth voices");
+            frames_until(&mut proc, SynthProcessor::is_idle);
+        }
+    }
+
+    #[test]
+    fn panic_makes_the_processor_idle_at_once() {
+        let mut proc = make();
+        run(
+            &mut proc,
+            &[
+                AudioEvent::NoteOn(NOTE),
+                AudioEvent::Drum(DrumHit::HiHatOpen),
+            ],
+            256,
+        );
+        run(&mut proc, &[AudioEvent::Panic], 1);
+        assert!(proc.is_idle());
+    }
+
+    #[cfg(feature = "arp")]
+    #[test]
+    fn a_running_arpeggiator_is_never_idle() {
+        let mut proc = make();
+        let notes = [MidiNote::MIDDLE_C; 4];
+        run(
+            &mut proc,
+            &[
+                AudioEvent::ArpEnabled(ChannelNo::DEFAULT, true),
+                AudioEvent::ArpSetNotes(ChannelNo::DEFAULT, notes, 1),
+            ],
+            64,
+        );
+        // Between steps every voice may be silent, but more notes are coming.
+        for _ in 0..200 {
+            run(&mut proc, &[], 441);
+            assert!(!proc.is_idle());
+        }
+        run(&mut proc, &[AudioEvent::Panic], 1);
+        assert!(proc.is_idle());
     }
 
     #[test]
