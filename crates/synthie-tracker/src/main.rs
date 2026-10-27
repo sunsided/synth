@@ -13,11 +13,15 @@ use crossterm::{
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
 use synthie::audio::engine::setup_audio_silenced_with_error_handler;
+use synthie_ui::ScopeBuf;
 
 mod app;
 mod tracker;
 
 use app::{input::handle_key, state::TrackerState, ui::draw};
+
+/// Number of decimated samples held in the scope display buffer.
+const SCOPE_CAPACITY: usize = 512;
 
 fn main() -> Result<()> {
     // ── Set up panic hook so the terminal is always restored ─────────────────
@@ -30,7 +34,7 @@ fn main() -> Result<()> {
     // ── Start the audio engine ───────────────────────────────────────────────
     let audio_ok = Arc::new(AtomicBool::new(true));
     let audio_ok_cb = Arc::clone(&audio_ok);
-    let (_stream, event_tx, _scope_rx) = setup_audio_silenced_with_error_handler(move |err| {
+    let (_stream, event_tx, scope_rx) = setup_audio_silenced_with_error_handler(move |err| {
         // Only flag fatal device loss; xruns (BackendSpecific) are non-fatal and
         // self-recovering — latching false on every xrun would permanently show
         // AUDIO ERR after the first underrun even when audio continues.
@@ -54,9 +58,10 @@ fn main() -> Result<()> {
 
     // ── Build application state ───────────────────────────────────────────────
     let mut state = TrackerState::new(event_tx, audio_ok);
+    let mut scope = ScopeBuf::new(scope_rx, SCOPE_CAPACITY);
 
     // ── Main event loop ───────────────────────────────────────────────────────
-    let result = run(&mut terminal, &mut state);
+    let result = run(&mut terminal, &mut state, &mut scope);
 
     // ── Tear down terminal ────────────────────────────────────────────────────
     restore_terminal()?;
@@ -69,9 +74,14 @@ fn main() -> Result<()> {
 fn run(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     state: &mut TrackerState,
+    scope: &mut ScopeBuf,
 ) -> Result<()> {
     loop {
-        terminal.draw(|f| draw(f, state))?;
+        scope.update();
+        state.tick_meters();
+        let chart_data = scope.as_chart_data();
+        let level = scope.level();
+        terminal.draw(|f| draw(f, state, &chart_data, level))?;
 
         // Poll for a key event (16 ms ≈ 60 fps).  Between polls the playing-step
         // indicator updates via atomic reads, so the grid refreshes smoothly.

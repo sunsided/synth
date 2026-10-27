@@ -4,6 +4,7 @@
 use crossbeam_channel::Sender;
 use synthie::params::{AudioEvent, MidiNote, Patch, SynthParams};
 use synthie::presets::sid;
+use synthie_ui::Modal;
 
 /// Top-level UI section, each corresponding to one panel of controls.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -106,10 +107,15 @@ pub struct AppState {
     pub patches: Vec<Patch>,
     /// Index of the highlighted entry in the preset list.
     pub selected_preset: usize,
+    /// Section and param focused before jumping to the preset browser with
+    /// [`AppState::toggle_presets`], restored when jumping back.
+    return_focus: (Section, usize),
     /// When `true`, the event loop exits after the current frame.
     pub should_quit: bool,
     /// When `true`, the help overlay is drawn instead of the main UI.
     pub show_help: bool,
+    /// Quit confirmation / `:` command line, when open.
+    pub modal: Modal,
     /// Transient status message shown in the status bar (e.g. "Loaded: …").
     pub status_msg: String,
     /// Channel to send `AudioEvent` messages to the audio thread.
@@ -143,8 +149,10 @@ impl AppState {
             current_patch_name,
             patches,
             selected_preset: 0,
+            return_focus: (Section::Osc, 0),
             should_quit: false,
             show_help: false,
+            modal: Modal::None,
             status_msg: String::new(),
             audio_tx,
         }
@@ -224,6 +232,18 @@ impl AppState {
     pub fn prev_section(&mut self) {
         self.selected_section = self.selected_section.prev();
         self.selected_param = 0;
+    }
+
+    /// Jump straight to the preset browser, or back to the parameter that was
+    /// focused before the jump.
+    pub fn toggle_presets(&mut self) {
+        if self.selected_section == Section::Presets {
+            (self.selected_section, self.selected_param) = self.return_focus;
+        } else {
+            self.return_focus = (self.selected_section, self.selected_param);
+            self.selected_section = Section::Presets;
+            self.selected_param = 0;
+        }
     }
 
     /// Move the param cursor forward within the current section (wraps).
@@ -494,9 +514,10 @@ impl AppState {
         if n == 0 {
             return;
         }
-        if d > 0.0 && self.selected_preset + 1 < n {
+        // The list grows downward: Up (+1) moves towards the top.
+        if d < 0.0 && self.selected_preset + 1 < n {
             self.selected_preset += 1;
-        } else if d < 0.0 && self.selected_preset > 0 {
+        } else if d > 0.0 && self.selected_preset > 0 {
             self.selected_preset -= 1;
         }
     }
@@ -523,87 +544,261 @@ impl AppState {
         self.octave = (self.octave - 1).max(0);
     }
 
-    /// Returns `(label, value_string)` pairs for the currently selected section.
+    /// Display rows (label, formatted value, gauge level) for `section`.
     ///
-    /// Used by the UI to build the parameter list display.
-    pub fn section_params(&self) -> Vec<(&'static str, String)> {
+    /// Rows with an empty label are visual separators; their value holds the
+    /// sub-heading text.  `level` is the value mapped onto 0‥1 for continuous
+    /// parameters and `None` for enums, toggles, and separators.
+    #[allow(clippy::too_many_lines)] // one flat table of rows per section
+    pub fn params_for(&self, section: Section) -> Vec<ParamRow> {
         let p = &self.params;
-        match self.selected_section {
+        match section {
             Section::Osc => vec![
-                ("Wave", p.osc.waveform.name().to_string()),
-                ("PW", format!("{:.2}", p.osc.pulse_width)),
-                ("Det", format!("{:+.0}ct", p.osc.detune)),
-                ("Nse", format!("{:.2}", p.osc.noise_mix)),
-                ("", "\u{2500} OSC2 \u{2500}".to_string()),
-                ("Wv2", p.osc2.waveform.name().to_string()),
-                ("Det2", format!("{:+.0}ct", p.osc2.detune)),
-                ("Mix2", format!("{:.2}", p.osc2.osc2_mix)),
-                (
-                    "Sync",
-                    if p.osc2.hard_sync { "ON" } else { "off" }.to_string(),
+                ParamRow::text("Wave", p.osc.waveform.name()),
+                ParamRow::new(
+                    "PW",
+                    format!("{:.2}", p.osc.pulse_width),
+                    lin(p.osc.pulse_width, 0.05, 0.95),
                 ),
+                ParamRow::new(
+                    "Det",
+                    format!("{:+.0}ct", p.osc.detune),
+                    lin(p.osc.detune, -100.0, 100.0),
+                ),
+                ParamRow::new("Noise", format!("{:.2}", p.osc.noise_mix), p.osc.noise_mix),
+                ParamRow::separator("OSC2"),
+                ParamRow::text("Wave2", p.osc2.waveform.name()),
+                ParamRow::new(
+                    "Det2",
+                    format!("{:+.0}ct", p.osc2.detune),
+                    lin(p.osc2.detune, -100.0, 100.0),
+                ),
+                ParamRow::new("Mix2", format!("{:.2}", p.osc2.osc2_mix), p.osc2.osc2_mix),
+                ParamRow::toggle("Sync", p.osc2.hard_sync),
             ],
             Section::Env => vec![
-                ("Atk", format!("{:.3}s", p.env.attack)),
-                ("Dec", format!("{:.3}s", p.env.decay)),
-                ("Sus", format!("{:.2}", p.env.sustain)),
-                ("Rel", format!("{:.2}s", p.env.release)),
-                (
-                    "Rev",
-                    if p.env.env_reverse { "ON" } else { "off" }.to_string(),
+                ParamRow::new(
+                    "Atk",
+                    format!("{:.3}s", p.env.attack),
+                    log(p.env.attack, 0.001, 4.0),
                 ),
-                ("Gld", format!("{:.2}s", p.global.glide_time)),
+                ParamRow::new(
+                    "Dec",
+                    format!("{:.3}s", p.env.decay),
+                    log(p.env.decay, 0.001, 4.0),
+                ),
+                ParamRow::new("Sus", format!("{:.2}", p.env.sustain), p.env.sustain),
+                ParamRow::new(
+                    "Rel",
+                    format!("{:.2}s", p.env.release),
+                    log(p.env.release, 0.001, 8.0),
+                ),
+                ParamRow::toggle("Rev", p.env.env_reverse),
+                ParamRow::new(
+                    "Glide",
+                    format!("{:.2}s", p.global.glide_time),
+                    lin(p.global.glide_time, 0.0, 2.0),
+                ),
             ],
             Section::Filter => vec![
-                ("Mode", p.filter.filter_mode.name().to_string()),
-                ("Cut", format!("{:.0}Hz", p.filter.cutoff)),
-                ("Res", format!("{:.2}", p.filter.resonance)),
-                ("Drv", format!("{:.2}", p.filter.drive)),
+                ParamRow::text("Mode", p.filter.filter_mode.name()),
+                ParamRow::new(
+                    "Cut",
+                    format!("{:.0}Hz", p.filter.cutoff),
+                    log(p.filter.cutoff, 20.0, 18000.0),
+                ),
+                ParamRow::new(
+                    "Res",
+                    format!("{:.2}", p.filter.resonance),
+                    lin(p.filter.resonance, 0.0, 0.99),
+                ),
+                ParamRow::new("Drive", format!("{:.2}", p.filter.drive), p.filter.drive),
             ],
             Section::Lfo => vec![
-                ("Rate", format!("{:.2}Hz", p.lfo.lfo_rate)),
-                ("Dep", format!("{:.2}", p.lfo.lfo_depth)),
-                ("Tgt", p.lfo.lfo_target.name().to_string()),
+                ParamRow::new(
+                    "Rate",
+                    format!("{:.2}Hz", p.lfo.lfo_rate),
+                    log(p.lfo.lfo_rate, 0.01, 20.0),
+                ),
+                ParamRow::new("Depth", format!("{:.2}", p.lfo.lfo_depth), p.lfo.lfo_depth),
+                ParamRow::text("Tgt", p.lfo.lfo_target.name()),
             ],
-            Section::Mod => {
-                let p = &self.params;
-                vec![
-                    ("Rate", format!("{:.2}Hz", p.lfo.lfo_rate)),
-                    ("Dep", format!("{:.2}", p.lfo.lfo_depth)),
-                    ("Shape", p.lfo.lfo_shape.name().to_string()),
-                    ("Tgt", p.lfo.lfo_target.name().to_string()),
-                    ("", "\u{2500} LFO2 \u{2500}".to_string()),
-                    ("Rate2", format!("{:.2}Hz", p.lfo2.lfo_rate)),
-                    ("Dep2", format!("{:.2}", p.lfo2.lfo_depth)),
-                    ("Shp2", p.lfo2.lfo_shape.name().to_string()),
-                    ("Tgt2", p.lfo2.lfo_target.name().to_string()),
-                    ("", "\u{2500} Filter Env \u{2500}".to_string()),
-                    ("FAtk", format!("{:.3}s", p.filter_env.attack)),
-                    ("FDec", format!("{:.3}s", p.filter_env.decay)),
-                    ("FSus", format!("{:.2}", p.filter_env.sustain)),
-                    ("FRel", format!("{:.2}s", p.filter_env.release)),
-                    ("FDep", format!("{:+.2}", p.filter_env.depth)),
-                    ("", "\u{2500} Pitch Env \u{2500}".to_string()),
-                    ("PAtk", format!("{:.3}s", p.pitch_env.attack)),
-                    ("PDec", format!("{:.3}s", p.pitch_env.decay)),
-                    ("PSus", format!("{:.2}", p.pitch_env.sustain)),
-                    ("PRel", format!("{:.2}s", p.pitch_env.release)),
-                    ("PDep", format!("{:+.2}", p.pitch_env.depth)),
-                ]
-            }
+            Section::Mod => vec![
+                ParamRow::new(
+                    "Rate",
+                    format!("{:.2}Hz", p.lfo.lfo_rate),
+                    log(p.lfo.lfo_rate, 0.01, 20.0),
+                ),
+                ParamRow::new("Depth", format!("{:.2}", p.lfo.lfo_depth), p.lfo.lfo_depth),
+                ParamRow::text("Shape", p.lfo.lfo_shape.name()),
+                ParamRow::text("Tgt", p.lfo.lfo_target.name()),
+                ParamRow::separator("LFO2"),
+                ParamRow::new(
+                    "Rate2",
+                    format!("{:.2}Hz", p.lfo2.lfo_rate),
+                    log(p.lfo2.lfo_rate, 0.01, 20.0),
+                ),
+                ParamRow::new("Dep2", format!("{:.2}", p.lfo2.lfo_depth), p.lfo2.lfo_depth),
+                ParamRow::text("Shp2", p.lfo2.lfo_shape.name()),
+                ParamRow::text("Tgt2", p.lfo2.lfo_target.name()),
+                ParamRow::separator("FILTER ENV"),
+                ParamRow::new(
+                    "FAtk",
+                    format!("{:.3}s", p.filter_env.attack),
+                    log(p.filter_env.attack, 0.001, 4.0),
+                ),
+                ParamRow::new(
+                    "FDec",
+                    format!("{:.3}s", p.filter_env.decay),
+                    log(p.filter_env.decay, 0.001, 4.0),
+                ),
+                ParamRow::new(
+                    "FSus",
+                    format!("{:.2}", p.filter_env.sustain),
+                    p.filter_env.sustain,
+                ),
+                ParamRow::new(
+                    "FRel",
+                    format!("{:.2}s", p.filter_env.release),
+                    log(p.filter_env.release, 0.001, 8.0),
+                ),
+                ParamRow::new(
+                    "FDep",
+                    format!("{:+.2}", p.filter_env.depth),
+                    lin(p.filter_env.depth, -1.0, 1.0),
+                ),
+                ParamRow::separator("PITCH ENV"),
+                ParamRow::new(
+                    "PAtk",
+                    format!("{:.3}s", p.pitch_env.attack),
+                    log(p.pitch_env.attack, 0.001, 4.0),
+                ),
+                ParamRow::new(
+                    "PDec",
+                    format!("{:.3}s", p.pitch_env.decay),
+                    log(p.pitch_env.decay, 0.001, 4.0),
+                ),
+                ParamRow::new(
+                    "PSus",
+                    format!("{:.2}", p.pitch_env.sustain),
+                    p.pitch_env.sustain,
+                ),
+                ParamRow::new(
+                    "PRel",
+                    format!("{:.2}s", p.pitch_env.release),
+                    log(p.pitch_env.release, 0.001, 8.0),
+                ),
+                ParamRow::new(
+                    "PDep",
+                    format!("{:+.2}", p.pitch_env.depth),
+                    lin(p.pitch_env.depth, -1.0, 1.0),
+                ),
+            ],
             Section::Fx => vec![
-                ("RvbMix", format!("{:.2}", p.fx.reverb_mix)),
-                ("RvbSz", format!("{:.2}", p.fx.reverb_size)),
-                ("RvbDmp", format!("{:.2}", p.fx.reverb_damping)),
+                ParamRow::new("RvbMix", format!("{:.2}", p.fx.reverb_mix), p.fx.reverb_mix),
+                ParamRow::new(
+                    "RvbSz",
+                    format!("{:.2}", p.fx.reverb_size),
+                    p.fx.reverb_size,
+                ),
+                ParamRow::new(
+                    "RvbDmp",
+                    format!("{:.2}", p.fx.reverb_damping),
+                    p.fx.reverb_damping,
+                ),
             ],
-            Section::Presets => self
-                .patches
-                .iter()
-                .map(|p| ("", p.name.clone()))
-                .collect::<Vec<_>>()
-                .into_iter()
-                .map(|(_, name)| ("", name))
-                .collect(),
+            // The preset browser renders `self.patches` directly.
+            Section::Presets => Vec::new(),
         }
+    }
+}
+
+/// One display row of a parameter panel.
+#[derive(Debug, Clone)]
+pub struct ParamRow {
+    /// Short label; empty for separator rows.
+    pub label: &'static str,
+    /// Formatted value (or sub-heading text for separators).
+    pub value: String,
+    /// Value mapped onto 0‥1 for gauge display; `None` for discrete values.
+    pub level: Option<f32>,
+}
+
+impl ParamRow {
+    /// Continuous parameter with a gauge.
+    fn new(label: &'static str, value: String, level: f32) -> Self {
+        Self {
+            label,
+            value,
+            level: Some(level.clamp(0.0, 1.0)),
+        }
+    }
+
+    /// Discrete parameter (enum name) without a gauge.
+    fn text(label: &'static str, value: &str) -> Self {
+        Self {
+            label,
+            value: value.to_string(),
+            level: None,
+        }
+    }
+
+    /// On/off parameter.
+    fn toggle(label: &'static str, on: bool) -> Self {
+        Self::text(label, if on { "ON" } else { "off" })
+    }
+
+    /// Non-interactive sub-heading row.
+    fn separator(title: &str) -> Self {
+        Self::text("", title)
+    }
+
+    /// `true` for sub-heading rows.
+    pub fn is_separator(&self) -> bool {
+        self.label.is_empty()
+    }
+}
+
+/// Linear position of `v` within `lo..=hi`.
+fn lin(v: f32, lo: f32, hi: f32) -> f32 {
+    (v - lo) / (hi - lo)
+}
+
+/// Logarithmic position of `v` within `lo..=hi` (both > 0); used for times
+/// and frequencies so the gauge moves evenly per perceived step.
+fn log(v: f32, lo: f32, hi: f32) -> f32 {
+    (v.max(lo) / lo).ln() / (hi / lo).ln()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn state() -> AppState {
+        let (tx, _rx) = crossbeam_channel::unbounded();
+        AppState::new(tx)
+    }
+
+    #[test]
+    fn preset_up_down_follow_the_list() {
+        let mut s = state();
+        s.selected_section = Section::Presets;
+        s.adjust_param(-1.0); // Down
+        assert_eq!(s.selected_preset, 1);
+        s.adjust_param(1.0); // Up
+        assert_eq!(s.selected_preset, 0);
+        s.adjust_param(1.0); // Up at the top stays put
+        assert_eq!(s.selected_preset, 0);
+    }
+
+    #[test]
+    fn toggle_presets_jumps_there_and_back() {
+        let mut s = state();
+        s.selected_section = Section::Filter;
+        s.selected_param = 2;
+        s.toggle_presets();
+        assert_eq!(s.selected_section, Section::Presets);
+        s.toggle_presets();
+        assert_eq!((s.selected_section, s.selected_param), (Section::Filter, 2));
     }
 }

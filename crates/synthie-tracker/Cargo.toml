@@ -19,6 +19,7 @@ crossbeam-channel = { workspace = true }
 crossterm         = { workspace = true }
 ratatui           = { workspace = true }
 synthie           = { path = "../synthie" }
+synthie-ui        = { path = "../synthie-ui" }
 
 [lints]
 workspace = true

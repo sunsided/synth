@@ -13,6 +13,7 @@ A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as i
 | [`synthie`](crates/synthie/) | library | DSP engine: oscillators, envelopes, filter, LFO, reverb, preset system |
 | [`synth-tui`](crates/synth-tui/) | binary | Terminal synthesizer — interactive demo of the engine |
 | [`synthie-tracker`](crates/synthie-tracker/) | binary | **Step-sequencer tracker TUI** — 4-channel pattern editor with drum track |
+| [`synthie-ui`](crates/synthie-ui/) | library | Shared neon look for both TUIs — palette, panels, meters, piano strip, scope |
 
 ## Library
 
@@ -73,7 +74,8 @@ task tracker          # or: cargo run -p synthie-tracker --release
 | Key | Action |
 |---|---|
 | `Space` | Play / Stop |
-| `Esc` | Panic (silence all voices) |
+| `Esc` | Panic (silence all voices), then ask whether to quit |
+| `:q` `Enter` | Quit right away (also `:wq`, `:x`) |
 | `↑` / `↓` / `←` / `→` | Move cursor |
 | `Tab` / `Shift+Tab` | Next / previous preset on current track |
 | `Z`–`M`, `Q`–`U` | Enter note (lower / upper octave row, same layout as synth-tui) |
@@ -128,8 +130,9 @@ The keyboard is split into two chromatic octave rows. The lower row plays octave
 |---|---|
 | `Tab` | Next parameter section |
 | `Shift+Tab` | Previous parameter section |
+| `P` | Jump to the preset list, press again to return |
 | `←` / `→` | Select previous / next parameter within the section |
-| `↑` / `↓` | Increase / decrease the selected parameter value |
+| `↑` / `↓` | Increase / decrease the selected parameter value (move up / down in the preset list) |
 | `Enter` | Load the selected preset (in the Presets section) |
 | `1` – `8` | Quick-load preset slot 1–8 (in the Presets section) |
 
@@ -138,7 +141,8 @@ The keyboard is split into two chromatic octave rows. The lower row plays octave
 | Key | Action |
 |---|---|
 | `F1` | Toggle help overlay |
-| `Esc` | Panic — silence all active notes immediately |
+| `Esc` | Panic — silence all active notes immediately, then ask whether to quit |
+| `:q` `Enter` | Quit right away (also `:wq`, `:x`) |
 | `Ctrl+S` | Save current parameters as a new user patch |
 | `Ctrl+C` / `Ctrl+Q` | Quit |
 | `F12` | Quit |
