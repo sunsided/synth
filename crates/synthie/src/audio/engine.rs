@@ -33,6 +33,29 @@ const SCOPE_DECIMATION: usize = 4;
 /// Number of decimated samples accumulated before flushing to the scope channel.
 const SCOPE_BATCH: usize = 128;
 
+/// Event source driven from inside the audio callback.
+///
+/// Events sent through the `Sender<AudioEvent>` are only picked up at the start
+/// of each callback, so their timing is quantised to the hardware buffer
+/// (~93 ms for `Fixed(4096)`).  A sequencer runs on the audio thread instead:
+/// the engine splits each buffer at the frame offsets the sequencer asks for,
+/// so its events land sample-accurately regardless of buffer size.
+///
+/// [`tick`](Sequencer::tick) runs on the real-time thread and must not block
+/// or allocate.
+pub trait Sequencer: Send + 'static {
+    /// Called at the current output frame.  Push events that fire now into
+    /// `out` and return the number of frames until the next call (≥ 1).
+    fn tick(&mut self, sample_rate: f32, out: &mut Vec<AudioEvent>) -> usize;
+}
+
+/// The no-op sequencer: never emits events.
+impl Sequencer for () {
+    fn tick(&mut self, _sample_rate: f32, _out: &mut Vec<AudioEvent>) -> usize {
+        usize::MAX
+    }
+}
+
 /// Initialise CPAL audio output with a configurable channel count, buffer size,
 /// and stream-error handler.
 ///
@@ -66,6 +89,25 @@ pub fn setup_audio_n_with_error_handler<const N: usize, F>(
 where
     F: Fn(cpal::Error) + Send + 'static,
 {
+    setup_audio_n_with_sequencer::<N, _, _>(buffer_size, (), on_error)
+}
+
+/// Like [`setup_audio_n_with_error_handler`], plus a [`Sequencer`] that runs
+/// inside the audio callback for sample-accurate event timing.
+///
+/// # Errors
+///
+/// Returns an error if no default audio output device is available or if the
+/// stream configuration cannot be determined or opened.
+pub fn setup_audio_n_with_sequencer<const N: usize, S, F>(
+    buffer_size: cpal::BufferSize,
+    mut sequencer: S,
+    on_error: F,
+) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
+where
+    S: Sequencer,
+    F: Fn(cpal::Error) + Send + 'static,
+{
     let (event_tx, event_rx) = bounded::<AudioEvent>(EVENT_CHANNEL_CAPACITY);
     let (scope_tx, scope_rx) = bounded::<Vec<f32>>(SCOPE_CHANNEL_CAPACITY);
 
@@ -93,6 +135,8 @@ where
     let mut events_buf: Vec<AudioEvent> = Vec::with_capacity(EVENT_CHANNEL_CAPACITY);
     let mut scope_accum: Vec<f32> = Vec::with_capacity(SCOPE_BATCH * 2);
     let mut scope_dec_counter: usize = 0;
+    // Frames left until the sequencer's next tick; 0 → tick at the next frame.
+    let mut until_tick: usize = 0;
 
     let stream = device
         .build_output_stream(
@@ -103,7 +147,27 @@ where
                     events_buf.push(event);
                 }
 
-                processor.process_block(&events_buf, data, hw_channels);
+                // Render in slices split at sequencer ticks.  Queued events
+                // apply at the start of the first slice.
+                let frames = data.len() / hw_channels;
+                let mut offset = 0;
+                loop {
+                    if until_tick == 0 {
+                        until_tick = sequencer.tick(sample_rate, &mut events_buf).max(1);
+                    }
+                    let n = until_tick.min(frames - offset);
+                    processor.process_block(
+                        &events_buf,
+                        &mut data[offset * hw_channels..(offset + n) * hw_channels],
+                        hw_channels,
+                    );
+                    events_buf.clear();
+                    offset += n;
+                    until_tick -= n;
+                    if offset >= frames {
+                        break;
+                    }
+                }
 
                 // Forward decimated samples to the scope display.
                 for frame in data.chunks(hw_channels) {
@@ -165,13 +229,13 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
 
 /// Initialise CPAL audio output for TUI applications.
 ///
-/// Like [`setup_audio`] but uses `Fixed(1024)` (~23 ms at 44.1 kHz) so that
-/// note events queued from a sequencer thread are picked up within one callback
-/// period, keeping step timing tight.  Stream-error messages are silenced so
-/// they do not corrupt the alternate screen.
+/// Like [`setup_audio`] but uses `Fixed(4096)` (~93 ms at 44.1 kHz) to avoid
+/// underruns.  Stream-error messages are silenced so they do not corrupt the
+/// alternate screen.
 ///
 /// For error visibility (e.g. to detect when the stream stops), use
-/// [`setup_audio_silenced_with_error_handler`] instead.
+/// [`setup_audio_silenced_with_error_handler`] instead; for tight rhythmic
+/// timing, use [`setup_audio_silenced_with_sequencer`].
 ///
 /// # Errors
 ///
@@ -198,10 +262,32 @@ pub fn setup_audio_silenced_with_error_handler<F>(
 where
     F: Fn(cpal::Error) + Send + 'static,
 {
+    setup_audio_silenced_with_sequencer((), on_error)
+}
+
+/// Like [`setup_audio_silenced_with_error_handler`], plus a [`Sequencer`]
+/// that runs inside the audio callback for sample-accurate event timing.
+///
+/// # Errors
+///
+/// Returns an error if no default audio output device is available or if the
+/// stream configuration cannot be determined or opened.
+pub fn setup_audio_silenced_with_sequencer<S, F>(
+    sequencer: S,
+    on_error: F,
+) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
+where
+    S: Sequencer,
+    F: Fn(cpal::Error) + Send + 'static,
+{
     // Fixed(4096) (~93 ms at 44.1 kHz) gives the DSP enough headroom to avoid
     // xruns.  Smaller values (512/1024) cause buffer underruns on typical desktop
     // audio stacks; Default lets the driver pick its own quantum which can be
-    // even smaller.  At 140 BPM the step period (107 ms) exceeds the buffer
-    // period so note events still land in separate callbacks without bunching.
-    setup_audio_n_with_error_handler::<NUM_CHANNELS, _>(cpal::BufferSize::Fixed(4096), on_error)
+    // even smaller.  Events sent through the channel are therefore quantised to
+    // ~93 ms; anything rhythmic should come from the sequencer.
+    setup_audio_n_with_sequencer::<NUM_CHANNELS, _, _>(
+        cpal::BufferSize::Fixed(4096),
+        sequencer,
+        on_error,
+    )
 }
