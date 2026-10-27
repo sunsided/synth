@@ -1,0 +1,70 @@
+name: Publish npm package
+
+# Builds @sunsided/synthie (`task build:npm`) and publishes it to GitHub
+# Packages when a version tag is pushed.
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+permissions: {}
+
+jobs:
+  publish:
+    name: Build and publish @sunsided/synthie
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install stable toolchain with wasm32 target
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: stable
+          targets: wasm32-unknown-unknown
+
+      # No build cache on purpose: this workflow publishes what it builds.
+
+      - name: Install wasm-pack
+        uses: taiki-e/install-action@5488ac5a951645ce95062214902ac4b6bc1a1037 # v2.87.32
+        with:
+          tool: wasm-pack
+
+      - name: Install Task
+        uses: arduino/setup-task@c0bc642852239c2689f73f4ea6459c29405f3c52 # v3.0.0
+        with:
+          repo-token: ${{ github.token }}
+
+      - name: Set up Node.js for GitHub Packages
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          registry-url: https://npm.pkg.github.com
+          scope: '@sunsided'
+          package-manager-cache: false
+
+      - name: Build package
+        run: task build:npm
+
+      - name: Check that the tag matches the package version
+        env:
+          TAG: ${{ github.ref_name }}
+        run: |
+          version=$(node -p 'require("./target/npm/package.json").version')
+          if [ "$TAG" != "v$version" ]; then
+            echo "::error::tag $TAG does not match package version $version"
+            exit 1
+          fi
+
+      - name: Publish
+        working-directory: target/npm
+        env:
+          NODE_AUTH_TOKEN: ${{ github.token }}
+        # Trusted publishing (OIDC) is an npmjs.com feature; GitHub Packages
+        # authenticates with the workflow's own token.
+        run: npm publish # zizmor: ignore[use-trusted-publishing]
