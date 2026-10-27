@@ -1,4 +1,3 @@
 **/target
 .task/
-.gitnexus/
 crates/synthie/Cargo.lock
