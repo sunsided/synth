@@ -200,6 +200,37 @@ tasks:
     cmds:
       - python3 -m http.server 8000 --bind 127.0.0.1 --directory {{.ROOT_DIR}}/target/site
 
+  build:npm:
+    desc: Build the @sunsided/synthie npm package (browser + Node.js) into target/npm
+    preconditions:
+      - sh: command -v wasm-pack
+        msg: "wasm-pack not found — install via cargo install wasm-pack --locked"
+      - sh: rustup target list --installed | grep -q wasm32-unknown-unknown
+        msg: "wasm32 target missing — rustup target add wasm32-unknown-unknown"
+    vars:
+      CRATE: '{{.ROOT_DIR}}/crates/synthie-wasm'
+      OUT: '{{.ROOT_DIR}}/target/npm'
+      VERSION:
+        sh: |
+          cargo metadata --no-deps --format-version 1 | python3 -c '
+          import json, sys
+          meta = json.load(sys.stdin)
+          print(next(p["version"] for p in meta["packages"] if p["name"] == "synthie-wasm"))'
+    cmds:
+      - rm -rf {{.OUT}}
+      # One build per platform; package.json's conditional exports pick one.
+      - wasm-pack build {{.CRATE}} --release --target web --out-dir {{.OUT}}/web --out-name synthie --no-pack
+      - wasm-pack build {{.CRATE}} --release --target nodejs --out-dir {{.OUT}}/node --out-name synthie --no-pack
+      # wasm-pack's ignore-everything .gitignore would also hide the files from npm.
+      - rm -f {{.OUT}}/web/.gitignore {{.OUT}}/node/.gitignore
+      - |
+        echo '{ "type": "module" }' > {{.OUT}}/web/package.json
+        echo '{ "type": "commonjs" }' > {{.OUT}}/node/package.json
+        sed 's/"version": "0.0.0"/"version": "{{.VERSION}}"/' {{.CRATE}}/npm/package.json > {{.OUT}}/package.json
+      - cp {{.CRATE}}/npm/README.md {{.OUT}}/README.md
+      # AudioWorklet entry point (+ TextDecoder/TextEncoder polyfill) next to the web glue.
+      - cp {{.CRATE}}/npm/worklet.js {{.CRATE}}/npm/text-polyfill.js {{.OUT}}/web/
+
   example:tune:
     desc: Run the tune example (chord progression + melody, SID-style)
     aliases:

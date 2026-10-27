@@ -1,0 +1,44 @@
+{
+  "name": "@sunsided/synthie",
+  "version": "0.0.0",
+  "description": "Chiptune synthesizer engine (SID-style oscillators, filter, envelopes, LFOs, arpeggiator, FX, drums) compiled to WebAssembly, for browsers and Node.js.",
+  "keywords": [
+    "synthesizer",
+    "chiptune",
+    "sid",
+    "audio",
+    "webassembly",
+    "audioworklet"
+  ],
+  "license": "EUPL-1.2",
+  "author": "Markus Mayer",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/sunsided/synth.git",
+    "directory": "crates/synthie-wasm"
+  },
+  "homepage": "https://sunsided.github.io/synth/",
+  "files": [
+    "web/",
+    "node/",
+    "README.md"
+  ],
+  "types": "./web/synthie.d.ts",
+  "exports": {
+    ".": {
+      "node": {
+        "types": "./node/synthie.d.ts",
+        "default": "./node/synthie.js"
+      },
+      "default": {
+        "types": "./web/synthie.d.ts",
+        "default": "./web/synthie.js"
+      }
+    },
+    "./synthie_bg.wasm": "./web/synthie_bg.wasm",
+    "./worklet": "./web/worklet.js"
+  },
+  "publishConfig": {
+    "registry": "https://npm.pkg.github.com"
+  }
+}
