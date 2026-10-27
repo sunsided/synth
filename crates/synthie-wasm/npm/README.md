@@ -66,6 +66,20 @@ for (let i = 0; i < samples.length; i += 128) {
 }
 ```
 
+## Arpeggiator
+
+Each channel has an arpeggiator, configured through the parameter JSON. Enable it, then hold a chord: every held note joins the pattern.
+
+```js
+const params = JSON.parse(synth.presetParams(1)); // start from "Arp Lead"
+params.arp = { ...params.arp, enabled: true, rate: 8, gate: 0.8, mode: "UpDown" };
+synth.loadParams(JSON.stringify(params));
+
+for (const note of [57, 60, 64]) synth.noteOn(note); // A minor, held
+```
+
+`rate` is in steps per second, `gate` the fraction of a step a note sounds (`0..=1`), and `mode` one of `"Up"`, `"Down"`, `"UpDown"`, `"Random"`. Up to four held notes take part.
+
 ## API
 
 | Member | |

@@ -230,6 +230,57 @@ mod tests {
         assert!(buf.chunks(2).all(|f| f[0].to_bits() == f[1].to_bits())); // copied verbatim
     }
 
+    /// Dominant pitch of `window` as the nearest MIDI note, by autocorrelation.
+    fn pitch(window: &[f32], sample_rate: f32) -> u8 {
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        let lags = (sample_rate / 1000.0) as usize..(sample_rate / 100.0) as usize;
+        let lag = lags
+            .max_by(|&a, &b| {
+                let corr = |lag: usize| -> f32 {
+                    window.iter().zip(&window[lag..]).map(|(x, y)| x * y).sum()
+                };
+                corr(a).total_cmp(&corr(b))
+            })
+            .unwrap();
+        #[allow(clippy::cast_precision_loss)]
+        let hz = sample_rate / lag as f32;
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        {
+            (69.0 + 12.0 * (hz / 440.0).log2()).round() as u8
+        }
+    }
+
+    #[test]
+    fn arpeggiator_steps_through_a_held_chord() {
+        const SR: f32 = 48_000.0;
+        let mut synth = Synth::new(SR).unwrap();
+        let mut params: serde_json::Value =
+            serde_json::from_str(&synth.preset_params(1).unwrap()).unwrap();
+        params["arp"]["enabled"] = true.into();
+        params["arp"]["rate"] = 8.0.into();
+        params["arp"]["mode"] = "Up".into();
+        params["fx"]["reverb_mix"] = 0.0.into();
+        synth.load_params(&params.to_string(), None).unwrap();
+        for note in [60, 64, 67] {
+            synth.note_on(note, None).unwrap(); // C4 E4 G4, held
+        }
+
+        let mut out = vec![0.0_f32; 48_000]; // one second
+        for block in out.chunks_mut(128) {
+            synth.render(block, 1).unwrap();
+        }
+
+        // One pitch per 30 ms, collapsed to the sequence of distinct notes.
+        let mut sequence: Vec<u8> = out
+            .as_chunks::<1_440>()
+            .0
+            .iter()
+            .map(|w| pitch(w, SR))
+            .collect();
+        sequence.dedup();
+        assert_eq!(sequence[..6], [60, 64, 67, 60, 64, 67]);
+    }
+
     #[test]
     fn preset_params_round_trip_through_json() {
         let mut synth = Synth::new(44_100.0).unwrap();
