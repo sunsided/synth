@@ -9,6 +9,7 @@ use crate::audio::delay::Delay;
 use crate::audio::drums::DrumMachine;
 use crate::audio::fx::Reverb;
 use crate::audio::voice::Voice;
+use crate::param::Param;
 use crate::params::{AudioEvent, ChannelNo, MidiNote, SynthParams};
 
 /// Number of simultaneous voices per synthesis channel.
@@ -261,6 +262,12 @@ impl<const N: usize> SynthProcessor<N> {
         }
     }
 
+    /// The patch channel `ch` is playing, or `None` for an unknown channel.
+    #[must_use]
+    pub fn params(&self, ch: ChannelNo) -> Option<&SynthParams> {
+        self.channels.get(ch.as_usize()).map(|c| &c.params)
+    }
+
     /// Number of synth voices still sounding, held or releasing, across all
     /// channels. Drum hits are not counted; see [`Self::is_idle`].
     #[must_use]
@@ -339,6 +346,16 @@ impl<const N: usize> SynthProcessor<N> {
                         channel.params = sanitized(p);
                     }
                     if *ch == ChannelNo::DEFAULT {
+                        self.apply_reverb_params();
+                    }
+                }
+                AudioEvent::SetParam(ch, param, value) => {
+                    if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
+                        param.set(&mut channel.params, *value);
+                    }
+                    if *ch == ChannelNo::DEFAULT
+                        && matches!(param, Param::ReverbSize | Param::ReverbDamping)
+                    {
                         self.apply_reverb_params();
                     }
                 }
@@ -732,6 +749,81 @@ mod tests {
             reference.iter().map(|s| s.to_bits()).collect::<Vec<_>>(),
             "after the reset the engine should play like a new one"
         );
+    }
+
+    #[test]
+    fn set_param_changes_one_field_and_keeps_the_rest() {
+        let mut proc = make();
+        let ch = ChannelNo(2);
+        run(
+            &mut proc,
+            &[
+                AudioEvent::LoadPatchChannel(
+                    ch,
+                    Box::new(crate::presets::sid::default_patches()[1].params.clone()),
+                ),
+                AudioEvent::SetParam(ch, Param::FilterCutoff, 1e9),
+                AudioEvent::SetParam(ch, Param::OscWaveform, 2.0),
+            ],
+            64,
+        );
+        let mut expected = crate::presets::sid::default_patches()[1].params.clone();
+        expected.filter.cutoff = 18_000.0;
+        expected.osc.waveform = crate::params::Waveform::Triangle;
+        assert_eq!(proc.params(ch), Some(&expected));
+        assert_eq!(proc.params(ChannelNo(0)), Some(&SynthParams::default()));
+        assert_eq!(proc.params(ChannelNo(9)), None);
+    }
+
+    #[test]
+    fn set_param_reaches_the_shared_reverb() {
+        // Same final patch, built two ways, must sound identical.
+        let mut patch = SynthParams::default();
+        patch.fx.reverb_mix = 1.0;
+        patch.fx.reverb_size = 0.95;
+        patch.fx.reverb_damping = 0.05;
+        let mut loaded = make();
+        let a = run(
+            &mut loaded,
+            &[
+                AudioEvent::LoadPatch(Box::new(patch)),
+                AudioEvent::NoteOn(NOTE),
+            ],
+            8192,
+        );
+        let mut tweaked = make();
+        let b = run(
+            &mut tweaked,
+            &[
+                AudioEvent::SetParam(ChannelNo::DEFAULT, Param::ReverbMix, 1.0),
+                AudioEvent::SetParam(ChannelNo::DEFAULT, Param::ReverbSize, 0.95),
+                AudioEvent::SetParam(ChannelNo::DEFAULT, Param::ReverbDamping, 0.05),
+                AudioEvent::NoteOn(NOTE),
+            ],
+            8192,
+        );
+        assert_eq!(
+            a.iter().map(|s| s.to_bits()).collect::<Vec<_>>(),
+            b.iter().map(|s| s.to_bits()).collect::<Vec<_>>()
+        );
+    }
+
+    #[cfg(feature = "arp")]
+    #[test]
+    fn set_param_keeps_the_arpeggiator_running() {
+        let mut proc = make();
+        let notes = [MidiNote::MIDDLE_C; 4];
+        run(
+            &mut proc,
+            &[
+                AudioEvent::ArpEnabled(ChannelNo::DEFAULT, true),
+                AudioEvent::ArpSetNotes(ChannelNo::DEFAULT, notes, 1),
+                AudioEvent::SetParam(ChannelNo::DEFAULT, Param::ArpRate, 20.0),
+            ],
+            64,
+        );
+        assert_eq!(proc.params(ChannelNo::DEFAULT).unwrap().arp.count, 1);
+        assert!(!proc.is_idle(), "the arpeggiator should still be running");
     }
 
     #[test]

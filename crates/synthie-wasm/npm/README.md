@@ -23,26 +23,46 @@ Tagged releases are also published to GitHub Packages, which needs a token even 
 
 ## Browser: AudioWorklet
 
-`web/worklet.js` registers an `AudioWorkletProcessor` named `"synthie"`. Worklet modules and the wasm binary are loaded by URL, so serve the package's `web/` directory (`worklet.js`, `synthie.js`, `text-polyfill.js`, `synthie_bg.wasm`) as static assets: copy it into your public folder, or have your bundler emit it. Then hand the processor the compiled WebAssembly module and drive it through its port:
+`web/worklet.js` registers an `AudioWorkletProcessor` named `"synthie"`. Worklet modules and the wasm binary are loaded by URL, so serve the package's `web/` directory (`worklet.js`, `synthie.js`, `text-polyfill.js`, `synthie_bg.wasm`) as static assets: copy it into your public folder, or have your bundler emit it.
+
+The easiest way to drive it is the typed main-thread client from `@sunsided/synthie/client`:
 
 ```js
+import { SynthNode } from "@sunsided/synthie/client";
+
 const ctx = new AudioContext(); // create or resume it from a user gesture
-await ctx.audioWorklet.addModule("/synthie/worklet.js");
 const module = await WebAssembly.compileStreaming(fetch("/synthie/synthie_bg.wasm"));
-
-const synth = new AudioWorkletNode(ctx, "synthie", {
-  outputChannelCount: [2],
-  processorOptions: { module },
-});
+const synth = await SynthNode.create(ctx, { module, workletUrl: "/synthie/worklet.js" });
 synth.connect(ctx.destination);
-synth.port.onmessage = ({ data }) => console.error(data.message); // { type: "error" }
+synth.addEventListener("error", (e) => console.error(e.detail.message));
 
-synth.port.postMessage({ type: "loadPreset", index: 1 }); // "Arp Lead"
-synth.port.postMessage({ type: "noteOn", note: 69 });     // A4
-synth.port.postMessage({ type: "drum", hit: "kick" });
+console.log(synth.info.presetNames);                // reported once loaded
+synth.loadPreset(1);                                // "Arp Lead"
+synth.noteOn(69, { time: ctx.currentTime + 0.05 }); // A4
+synth.setParam("filter.cutoff", 1200);              // turn a knob
+const patch = await synth.params(0);                // what channel 0 plays now
 ```
 
-Messages: `noteOn` / `noteOff` `{ note, channel?, time? }`, `drum` `{ hit, time? }`, `panic`, `cancelScheduled`, `loadPreset` `{ index, channel?, time? }`, `loadParams` `{ json, channel?, time? }`, `masterGain` `{ gain }`, `normalizeVoices` `{ enabled }`, and `schedule` `{ events }` to send many at once.
+Queries (`presetNames()`, `presetPatch(i)`, `params(ch)`, `paramInfo()`, `get(name)`) return promises and reject on failure; failed commands raise `error` events. With `idleAfter` in the options, `idle` events report that the synth has gone quiet.
+
+### Raw messages
+
+Without the client, post messages to the node's port yourself:
+
+```js
+await ctx.audioWorklet.addModule("/synthie/worklet.js");
+const node = new AudioWorkletNode(ctx, "synthie", { outputChannelCount: [2], processorOptions: { module } });
+node.connect(ctx.destination);
+node.port.onmessage = ({ data }) => {
+  if (data.type === "ready") console.log("presets:", data.presetNames);
+  if (data.type === "error") console.error(data.message);
+};
+node.port.postMessage({ type: "noteOn", note: 69 });
+```
+
+Commands: `noteOn` / `noteOff` `{ note, channel?, time? }`, `drum` `{ hit, time? }`, `panic`, `cancelScheduled`, `loadPreset` `{ index, channel?, time? }`, `loadParams` `{ params, channel?, time? }` (a patch object or JSON text), `setParam` `{ path, value, channel?, time? }`, `masterGain` `{ gain }`, `normalizeVoices` `{ enabled }`, `silenceThreshold` `{ value }`, and `schedule` `{ events }` to send many at once.
+
+The processor posts `{ type: "ready", sampleRate, channels, presetNames, params }` once it has loaded (`params` is the `paramInfo()` registry). `{ type: "get", what, args?, id }` asks for a value and is answered with `{ type: "result", id, value }`; `what` is `presetNames`, `presetPatch` (`args: [index]`), `params` (`args: [channel]`), `paramInfo`, or a `Synth` property such as `activeVoices` or `currentFrame`. Errors arrive as `{ type: "error", message, id? }`, carrying the `id` of the failing message if it had one. Check `type` before reading other fields.
 
 ### Timing
 
@@ -59,7 +79,7 @@ synth.port.postMessage({
 
 For an endless pattern, use the usual lookahead loop: every ~25 ms, send whatever falls into the next ~100 ms. `cancelScheduled` drops everything not yet played (sounding notes ring on); `panic` also silences what is playing. Times in the past play at once.
 
-Pass `idleAfter` (seconds) in `processorOptions` to receive a `{ type: "idle" }` message once the synth has made sound and then been idle and silent that long, e.g. to suspend the `AudioContext`.
+Pass `idleAfter` (seconds) in `processorOptions` (or the client's options) to receive a `{ type: "idle" }` message once the synth has made sound and then been idle and silent that long, e.g. to suspend the `AudioContext`.
 
 To use the `Synth` class directly on the main thread instead, initialise the module first:
 
@@ -99,14 +119,29 @@ sfx.noteOff(81, 0, 0.25 * 44100);  // at 250 ms
 const samples = sfx.renderUntilSilent(5); // Float32Array, at most 5 s
 ```
 
+## Sound design: patches and parameters
+
+A patch is a plain object: `presetPatch(index)` returns a preset's, `params(channel)` the one a channel is playing, and `loadParams(patch, channel)` loads one (JSON text works too). The package ships TypeScript declarations for it (`SynthParams`), with each field's range in its doc comment. Out-of-range values are clamped when loaded, so untrusted patches are safe.
+
+To turn a single knob, use `setParam` with the parameter's path. It changes only that field (held arpeggiator notes keep playing) and, like any event, can be scheduled, which makes it usable for automation. On `Synth` it takes `(path, value, channel, at)`; on the client, `(path, value, { channel, time })`:
+
+```js
+synth.setParam("filter.cutoff", 800);            // number, clamped to 20..18000
+synth.setParam("osc.waveform", "Sawtooth");      // choice, by name
+synth.setParam("osc2.hard_sync", true);          // toggle
+synth.setParam("filter.cutoff", 4000, 0, 48000); // channel 0, one second in
+```
+
+`paramInfo()` lists every parameter with its kind (`float`, `choice`, `toggle`), range or choices, default, and `shared` flag, enough to build a UI without hard-coding anything. Reverb, delay and chorus (`fx.*`, `delay.*`, `chorus.*`) are one shared FX chain driven by channel 0's patch; setting them on another channel is an error.
+
 ## Arpeggiator
 
 Each channel has an arpeggiator, configured through the parameter JSON. Enable it, then hold a chord: every held note joins the pattern.
 
 ```js
-const params = JSON.parse(synth.presetParams(1)); // start from "Arp Lead"
+const params = synth.presetPatch(1); // start from "Arp Lead"
 params.arp = { ...params.arp, enabled: true, rate: 8, gate: 0.8, mode: "UpDown" };
-synth.loadParams(JSON.stringify(params));
+synth.loadParams(params);
 
 for (const note of [57, 60, 64]) synth.noteOn(note); // A minor, held
 ```
@@ -124,7 +159,11 @@ for (const note of [57, 60, 64]) synth.noteOn(note); // A minor, held
 | `cancelScheduled()` | Drop all pending events; sounding notes ring on. |
 | `presetNames()` | Names of the built-in presets, by index. |
 | `loadPreset(index, channel = 0, at?)` | Load a built-in preset onto a channel. |
-| `presetParams(index)` / `loadParams(json, channel = 0, at?)` | A preset's parameters as JSON; load edited parameters. Out-of-range values are clamped to each parameter's range, so untrusted JSON is safe to load. |
+| `presetPatch(index)` / `presetParams(index)` | A preset's patch, as an object or as JSON text. |
+| `loadParams(patch, channel = 0, at?)` | Load a full patch (object or JSON text). Out-of-range values are clamped, so untrusted patches are safe to load. |
+| `setParam(path, value, channel = 0, at?)` | Change one parameter, e.g. `"filter.cutoff"`; numbers are clamped to its range. |
+| `params(channel = 0)` | The patch a channel is playing (events not yet rendered are not included). |
+| `paramInfo()` | Every parameter's path, kind, range or choices, default, and whether it is shared FX. |
 | `render(output, outputChannels)` | Fill an interleaved `Float32Array`; the mono mix goes to every channel. |
 | `renderUntilSilent(maxSeconds, holdSeconds = 2.5)` | Render mono until idle and silent for `holdSeconds` (or `maxSeconds`); returns a `Float32Array` without trailing silence. |
 | `currentFrame` | Frames rendered so far: the timeline `at` refers to. |

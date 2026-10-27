@@ -36,7 +36,11 @@
       }
     },
     "./synthie_bg.wasm": "./web/synthie_bg.wasm",
-    "./worklet": "./web/worklet.js"
+    "./worklet": "./web/worklet.js",
+    "./client": {
+      "types": "./web/client.d.ts",
+      "default": "./web/client.js"
+    }
   },
   "publishConfig": {
     "access": "public"

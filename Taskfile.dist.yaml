@@ -228,8 +228,9 @@ tasks:
         echo '{ "type": "commonjs" }' > {{.OUT}}/node/package.json
         sed 's/"version": "0.0.0"/"version": "{{.VERSION}}"/' {{.CRATE}}/npm/package.json > {{.OUT}}/package.json
       - cp {{.CRATE}}/npm/README.md {{.OUT}}/README.md
-      # AudioWorklet entry point (+ TextDecoder/TextEncoder polyfill) next to the web glue.
-      - cp {{.CRATE}}/npm/worklet.js {{.CRATE}}/npm/text-polyfill.js {{.OUT}}/web/
+      # AudioWorklet entry point (+ TextDecoder/TextEncoder polyfill) and its
+      # main-thread client next to the web glue.
+      - cp {{.CRATE}}/npm/worklet.js {{.CRATE}}/npm/text-polyfill.js {{.CRATE}}/npm/client.js {{.CRATE}}/npm/client.d.ts {{.OUT}}/web/
 
   test:npm:
     desc: Build the npm package and test it in Node.js (Synth API and AudioWorklet)
@@ -237,8 +238,16 @@ tasks:
     preconditions:
       - sh: command -v node
         msg: "node not found — needed to run the npm package tests"
+    vars:
+      TYPES: '{{.ROOT_DIR}}/target/npm-types'
     cmds:
       - node --test '{{.ROOT_DIR}}/crates/synthie-wasm/test/*.test.mjs'
+      # Type-check the declarations by compiling sample code against the built
+      # package, resolved through its real `exports` map.
+      - rm -rf {{.TYPES}} && mkdir -p {{.TYPES}}/node_modules/@sunsided
+      - ln -s ../../../npm {{.TYPES}}/node_modules/@sunsided/synthie
+      - cp {{.ROOT_DIR}}/crates/synthie-wasm/test/types/* {{.TYPES}}/
+      - npx --yes -p typescript@5.6.3 tsc -p {{.TYPES}}/tsconfig.json
 
   example:tune:
     desc: Run the tune example (chord progression + melody, SID-style)

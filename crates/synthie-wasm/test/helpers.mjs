@@ -3,9 +3,10 @@
 // ships: the wasm binary, the wasm-bindgen glue and the worklet.
 
 import { existsSync } from "node:fs";
+import { readFile } from "node:fs/promises";
 import { createRequire } from "node:module";
 import { dirname, resolve } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 
 const here = dirname(fileURLToPath(import.meta.url));
 
@@ -40,4 +41,33 @@ export function assertSameSamples(assert, actual, expected, what) {
 
 export function peak(buf) {
   return buf.reduce((m, s) => Math.max(m, Math.abs(s)), 0);
+}
+
+/**
+ * Load the shipped web/worklet.js into a stub AudioWorkletGlobalScope and
+ * return the processor class it registers, plus the compiled wasm module.
+ * Each processor's port records what it posts in `port.posted`, and also
+ * hands it to `port.onpost` if one is set.
+ */
+export async function loadWorklet() {
+  globalThis.sampleRate = SAMPLE_RATE;
+  globalThis.currentFrame ??= 0;
+  globalThis.AudioWorkletProcessor = class {
+    constructor() {
+      this.port = {
+        posted: [],
+        postMessage(msg) {
+          this.posted.push(msg);
+          this.onpost?.(msg);
+        },
+      };
+    }
+  };
+  const registered = {};
+  globalThis.registerProcessor = (name, cls) => {
+    registered[name] = cls;
+  };
+  await import(pathToFileURL(resolve(PKG, "web/worklet.js")));
+  const module = await WebAssembly.compile(await readFile(resolve(PKG, "web/synthie_bg.wasm")));
+  return { registered, Processor: registered.synthie, module };
 }

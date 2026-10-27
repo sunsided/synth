@@ -3,30 +3,17 @@
 // This is the only coverage the worklet's message routing gets.
 
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
-import { resolve } from "node:path";
 import { before, describe, test } from "node:test";
-import { pathToFileURL } from "node:url";
-import { PKG, PROBE_GAIN, SAMPLE_RATE, amplify, assertSameSamples, peak } from "./helpers.mjs";
+import { PROBE_GAIN, SAMPLE_RATE, amplify, assertSameSamples, loadWorklet, peak } from "./helpers.mjs";
 
 const QUANTUM = 128;
 let Processor;
 let module;
 
 before(async () => {
-  // Just enough of AudioWorkletGlobalScope for worklet.js.
-  globalThis.sampleRate = SAMPLE_RATE;
-  globalThis.AudioWorkletProcessor = class {
-    constructor() {
-      this.port = { posted: [], postMessage(msg) { this.posted.push(msg); } };
-    }
-  };
-  globalThis.registerProcessor = (name, cls) => {
-    assert.equal(name, "synthie");
-    Processor = cls;
-  };
-  await import(pathToFileURL(resolve(PKG, "web/worklet.js")));
-  module = await WebAssembly.compile(await readFile(resolve(PKG, "web/synthie_bg.wasm")));
+  let registered;
+  ({ registered, Processor, module } = await loadWorklet());
+  assert.deepEqual(Object.keys(registered), ["synthie"]);
 });
 
 /**
@@ -43,6 +30,14 @@ function node({ startFrame = 12_345 * QUANTUM, ...options } = {}) {
   const proc = new Processor({ processorOptions: { module, ...options } });
   const posted = (type) => proc.port.posted.filter((m) => m.type === type);
   return {
+    proc,
+    posted,
+    /** Send one message and return the replies it produced. */
+    ask(msg) {
+      const before = proc.port.posted.length;
+      this.send(msg);
+      return proc.port.posted.slice(before);
+    },
     /** AudioContext time of the next render quantum, in seconds. */
     get currentTime() {
       return clock / SAMPLE_RATE;
@@ -250,3 +245,111 @@ describe("worklet idle notification", () => {
     assert.deepEqual(node({ idleAfter: -1 }).errors(), ["idleAfter must be a number of seconds >= 0"]);
   });
 });
+
+describe("worklet ready report and queries", () => {
+  test("reports ready, once, with the preset names and the parameter registry", () => {
+    const n = node();
+    const ready = n.posted("ready");
+    assert.equal(ready.length, 1);
+    assert.equal(n.proc.port.posted[0].type, "ready", "ready comes first");
+    const [info] = ready;
+    assert.equal(info.sampleRate, SAMPLE_RATE);
+    assert.equal(info.channels, 4);
+    assert.ok(info.presetNames.length >= 8);
+    const cutoff = info.params.find((p) => p.path === "filter.cutoff");
+    assert.deepEqual(cutoff, { path: "filter.cutoff", default: 4000, shared: false, kind: "float", min: 20, max: 18000 });
+  });
+
+  test("answers each query with its id", () => {
+    const n = node();
+    const ask = (what, ...args) => {
+      const replies = n.ask({ type: "get", what, args, id: `q-${what}` });
+      assert.equal(replies.length, 1, what);
+      assert.equal(replies[0].type, "result", `${what}: ${replies[0].message}`);
+      assert.equal(replies[0].id, `q-${what}`);
+      return replies[0].value;
+    };
+    assert.deepEqual(ask("presetNames"), n.posted("ready")[0].presetNames);
+    assert.equal(ask("presetPatch", 1).filter.cutoff, 3500);
+    assert.equal(ask("params", 0).filter.cutoff, 4000);
+    assert.equal(ask("paramInfo").length, n.posted("ready")[0].params.length);
+    assert.equal(ask("sampleRate"), SAMPLE_RATE);
+    assert.equal(ask("masterGain"), 0.5);
+    assert.equal(ask("isIdle"), true);
+    n.send({ type: "noteOn", note: 60 });
+    n.pull(1);
+    assert.equal(ask("activeVoices"), 1);
+    assert.equal(ask("currentFrame"), QUANTUM);
+  });
+
+  test("errors carry the id of the message that failed", () => {
+    const n = node();
+    assert.deepEqual(n.ask({ type: "get", what: "secrets", id: 7 }), [
+      { type: "error", message: "unknown query: secrets", id: 7 },
+    ]);
+    assert.deepEqual(n.ask({ type: "noteOn", note: 300, id: "bad-note" }), [
+      { type: "error", message: "note must be a MIDI note number 0..=127", id: "bad-note" },
+    ]);
+    assert.deepEqual(n.ask({ type: "noteOn", note: 300 }), [
+      { type: "error", message: "note must be a MIDI note number 0..=127" },
+    ]);
+  });
+
+  test("queries cannot reach anything but the listed methods and properties", () => {
+    const n = node();
+    for (const what of ["render", "free", "constructor", "__proto__", "toString", "panic"]) {
+      const [reply] = n.ask({ type: "get", what, id: 1 });
+      assert.equal(reply.type, "error", what);
+    }
+  });
+});
+
+describe("worklet patch messages", () => {
+  test("setParam changes one parameter, at its time", () => {
+    const n = node();
+    const params = () => n.ask({ type: "get", what: "params", id: 0 })[0].value;
+    n.send({ type: "loadPreset", index: 1 });
+    n.pull(1);
+    const t = n.currentTime + 1000 / SAMPLE_RATE;
+    n.send(
+      { type: "setParam", path: "filter.cutoff", value: 1234, time: t },
+      { type: "setParam", path: "osc.waveform", value: "Sine", time: t },
+    );
+    n.pull(5); // 640 frames: not yet
+    assert.equal(params().filter.cutoff, 3500);
+    n.pull(5);
+    const after = params();
+    assert.equal(after.filter.cutoff, 1234);
+    assert.equal(after.osc.waveform, "Sine");
+    assert.equal(after.env.attack, 0.003, "the rest of the preset stays");
+    assert.deepEqual(n.errors(), []);
+  });
+
+  test("setParam rejects nonsense with a reason", () => {
+    const n = node();
+    n.send(
+      { type: "setParam", path: "filter.cutof", value: 1 },
+      { type: "setParam", path: "osc.waveform", value: "Kazoo" },
+      { type: "setParam", path: "delay.mix", value: 0.5, channel: 1 },
+    );
+    assert.deepEqual(n.errors(), [
+      "unknown parameter: filter.cutof",
+      'osc.waveform must be one of "Pulse", "Sawtooth", "Triangle", "Noise", "PulseSaw", "Sine"',
+      "delay.mix belongs to the shared FX chain: set it on channel 0",
+    ]);
+  });
+
+  test("loadParams takes a patch object as well as JSON text", () => {
+    const n = node();
+    const patch = n.ask({ type: "get", what: "presetPatch", args: [2], id: 0 })[0].value;
+    patch.global.volume = 0.25;
+    n.send({ type: "loadParams", params: patch, channel: 1 });
+    n.send({ type: "loadParams", json: JSON.stringify(patch), channel: 2 });
+    n.pull(1);
+    for (const channel of [1, 2]) {
+      assert.deepEqual(n.ask({ type: "get", what: "params", args: [channel], id: 0 })[0].value, patch);
+    }
+    assert.deepEqual(n.errors(), []);
+  });
+});
+
