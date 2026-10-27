@@ -65,6 +65,8 @@ Run any example with `cargo run -p synth --example <name> --release`.
 
 A 16-step sequencer with 4 independent synth channels and a drum track (kick, closed/open hi-hat), powered by the same `synthie` DSP engine.
 
+![Tracker screenshot](docs/screenshot-tracker.png)
+
 ```sh
 task tracker          # or: cargo run -p synthie-tracker --release
 ```
@@ -91,7 +93,7 @@ task tracker          # or: cargo run -p synthie-tracker --release
 
 ## TUI Demo (synth-tui)
 
-![Screenshot](docs/screenshot.png)
+![synth-tui screenshot](docs/screenshot.png)
 
 ### Build and Run
 
