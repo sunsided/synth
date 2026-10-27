@@ -8,8 +8,8 @@ pub mod player;
 
 use synthie::params::MidiNote;
 
-/// Number of steps (rows) in a pattern.
-pub const STEPS: usize = 16;
+/// Maximum number of steps (rows) in a pattern: eight bars of 16th notes.
+pub const STEPS: usize = 128;
 
 /// Number of independent synth tracks per pattern.
 pub const SYNTH_TRACKS: usize = 4;
@@ -23,10 +23,18 @@ pub const DRUM_TRACK: usize = SYNTH_TRACKS;
 // ─── Step ────────────────────────────────────────────────────────────────────
 
 /// A single step on a synth track.
+///
+/// Notes sustain until the next [`Step::Note`] or [`Step::Off`] on the same
+/// track, so empty steps let the current note ring on.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
-pub struct Step {
-    /// MIDI note triggered at this step, or `None` for a rest.
-    pub note: Option<MidiNote>,
+pub enum Step {
+    /// No event; a sounding note keeps ringing.
+    #[default]
+    Empty,
+    /// Trigger a note, releasing the previous one on this track.
+    Note(MidiNote),
+    /// Release the sounding note (shown as `===`).
+    Off,
 }
 
 // ─── DrumStep ────────────────────────────────────────────────────────────────
@@ -92,76 +100,81 @@ impl Default for Song {
 
 // ─── Demo song ───────────────────────────────────────────────────────────────
 
-/// Return a pre-loaded demo pattern: A-minor groove at 140 BPM.
+/// The Lazy Jones hook (David Whittaker, 1984), the riff that later became
+/// Kernkraft 400: one monophonic line of straight 8th notes in which melody
+/// and bass alternate.  One entry per 8th note, MIDI note numbers.
+const LAZY_JONES_LINE: [u8; 32] = [
+    47, 71, 74, 76, 78, 59, 47, 59, // B2  B4 D5 E5 F#5  B3 B2 B3
+    47, 71, 74, 76, 78, 79, 78, 74, // B2  B4 D5 E5 F#5 G5 F#5 D5
+    76, 64, 52, 64, 74, 66, 78, 71, // E5 E4  E3  E4 D5 F#4 F#5 B4
+    47, 59, 47, 59, 47, 59, 47, 59, // B2 B3 B2 B3 B2 B3 B2 B3
+];
+
+/// Notes from this pitch up go to the lead track, the rest to the bass.
+const LEAD_SPLIT: u8 = 64;
+
+/// Sub-bass of the second pass: one note per beat on the off-beat 8th.
+const LAZY_JONES_SUB: [u8; 16] = [
+    35, 35, 35, 35, 35, 35, 35, 35, // B1
+    40, 40, // E2
+    42, 42, // F#2
+    35, 35, 35, 35, // B1
+];
+
+/// Length of one pass through the hook, in steps (four bars).
+const PASS: usize = 64;
+
+/// Return the startup demo: the Lazy Jones / Kernkraft 400 hook at 140 BPM
+/// as one 128-step pattern (two four-bar passes).
 ///
 /// Layout:
-/// * Track 0 – C64 Bass:    walking A-minor bass line (octave 2–3)
-/// * Track 1 – Arp Lead:    Kernkraft-inspired 10-note melodic hook (octave 4–5)
-/// * Track 2 – Plucky Pulse: syncopated stabs
-/// * Track 3 – PWM Lead:    sparse root notes on strong beats
-/// * Drums: 4-on-the-floor kick, off-beat closed hi-hat, open hat on 7/15
+/// * Track 0 – Arp Lead: the melody notes of the line
+/// * Track 1 – C64 Bass: the bass notes of the line, filling the melody's gaps
+/// * Track 2 – C64 Bass: B1 / E2 / F#2 off-beat sub-bass, second pass only
+/// * Track 3 – PWM Lead: left empty to play along
+/// * Drums: four-on-the-floor kick, off-beat open hats, 16th closed hats,
+///   kick fill into each pass
 #[must_use]
 pub fn demo_song() -> Song {
-    let note = |n: u8| Step {
-        note: Some(MidiNote(n)),
-    };
-
     let mut song = Song {
         bpm: 140.0,
         pattern: Pattern::default(),
-        track_patches: [0, 1, 2, 3],
+        track_patches: [1, 0, 0, 3],
     };
     let p = &mut song.pattern;
+    let mut put = |track: usize, step: usize, n: u8| {
+        p.synth[track][step] = Step::Note(MidiNote(n));
+        p.synth[track][step + 1] = Step::Off; // every note lasts one 8th
+    };
 
-    // Track 0 – C64 Bass (octave 2–3)
-    p.synth[0][0] = note(45); // A2
-    p.synth[0][2] = note(45); // A2
-    p.synth[0][4] = note(52); // E3
-    p.synth[0][6] = note(50); // D3
-    p.synth[0][8] = note(45); // A2
-    p.synth[0][10] = note(45); // A2
-    p.synth[0][12] = note(43); // G2
-    p.synth[0][13] = note(45); // A2
-    p.synth[0][14] = note(47); // B2
-    p.synth[0][15] = note(52); // E3
-
-    // Track 1 – Arp Lead: A B D E F E D C B A … G A (Kernkraft hook)
-    p.synth[1][0] = note(69); // A4
-    p.synth[1][1] = note(71); // B4
-    p.synth[1][2] = note(74); // D5
-    p.synth[1][3] = note(76); // E5
-    p.synth[1][4] = note(77); // F5
-    p.synth[1][5] = note(76); // E5
-    p.synth[1][6] = note(74); // D5
-    p.synth[1][7] = note(72); // C5
-    p.synth[1][8] = note(71); // B4
-    p.synth[1][9] = note(69); // A4
-    p.synth[1][12] = note(67); // G4
-    p.synth[1][13] = note(69); // A4
-
-    // Track 2 – Plucky Pulse stabs
-    p.synth[2][0] = note(57); // A3
-    p.synth[2][3] = note(64); // E4
-    p.synth[2][6] = note(62); // D4
-    p.synth[2][8] = note(57); // A3
-    p.synth[2][11] = note(62); // D4
-    p.synth[2][14] = note(64); // E4
-
-    // Track 3 – PWM Lead (root per chord on every 4th step)
-    p.synth[3][0] = note(69); // A4
-    p.synth[3][4] = note(64); // E4
-    p.synth[3][8] = note(62); // D4
-    p.synth[3][12] = note(67); // G4
-
-    // Drums: 4-on-the-floor kick + off-beat closed hat + open hat on "and of 2"
-    for s in [0_usize, 4, 8, 12] {
-        p.drums[s].kick = true;
+    for pass in 0..STEPS / PASS {
+        for (i, &n) in LAZY_JONES_LINE.iter().enumerate() {
+            let track = usize::from(n < LEAD_SPLIT);
+            put(track, pass * PASS + i * 2, n);
+        }
     }
-    for s in [2_usize, 6, 10, 14] {
-        p.drums[s].hihat_closed = true;
+    for (beat, &n) in LAZY_JONES_SUB.iter().enumerate() {
+        put(2, PASS + beat * 4 + 2, n);
     }
-    p.drums[7].hihat_open = true;
-    p.drums[15].hihat_open = true;
+
+    // Notes span two steps, so a note-off directly followed by a new note on
+    // the same track is redundant: drop it for a legato line.
+    for track in &mut p.synth {
+        for step in 0..STEPS - 1 {
+            if track[step] == Step::Off && matches!(track[step + 1], Step::Note(_)) {
+                track[step] = Step::Empty;
+            }
+        }
+    }
+
+    // Drums: four-on-the-floor, off-beat open hats, 16th closed hats on the
+    // "e" and "a", and a kick fill on the last beat of each pass.
+    for (step, drum) in p.drums.iter_mut().enumerate() {
+        let fill = step % PASS >= PASS - 2;
+        drum.kick = step % 4 == 0 || fill;
+        drum.hihat_open = step % 4 == 2 && !fill;
+        drum.hihat_closed = step % 2 == 1;
+    }
 
     song
 }
@@ -192,4 +205,50 @@ pub fn note_name(note: MidiNote) -> String {
         _ => unreachable!(),
     };
     format!("{name}{octave}")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn notes(track: &[Step]) -> Vec<(usize, u8)> {
+        track
+            .iter()
+            .enumerate()
+            .filter_map(|(i, s)| match s {
+                Step::Note(n) => Some((i, n.as_u8())),
+                _ => None,
+            })
+            .collect()
+    }
+
+    #[test]
+    fn demo_song_plays_the_line_as_straight_eighths() {
+        let song = demo_song();
+        assert_eq!(song.pattern.len, STEPS);
+
+        // Lead and bass together form one note on every 8th, never both.
+        let mut line = notes(&song.pattern.synth[0]);
+        line.extend(notes(&song.pattern.synth[1]));
+        line.sort_unstable();
+        let expected: Vec<(usize, u8)> = (0..STEPS / 2)
+            .map(|i| (i * 2, LAZY_JONES_LINE[i % LAZY_JONES_LINE.len()]))
+            .collect();
+        assert_eq!(line, expected);
+
+        // The hook opens on B4 D5 E5 F#5.
+        let lead: Vec<u8> = notes(&song.pattern.synth[0])
+            .iter()
+            .take(4)
+            .map(|&(_, n)| n)
+            .collect();
+        assert_eq!(lead, [71, 74, 76, 78]);
+
+        // Sub-bass only in the second pass.
+        assert!(
+            notes(&song.pattern.synth[2])
+                .iter()
+                .all(|&(s, _)| s >= PASS)
+        );
+    }
 }

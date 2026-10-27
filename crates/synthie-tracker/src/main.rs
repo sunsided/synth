@@ -12,13 +12,14 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
-use synthie::audio::engine::setup_audio_silenced_with_error_handler;
+use synthie::audio::engine::setup_audio_silenced_with_sequencer;
 use synthie_ui::ScopeBuf;
 
 mod app;
 mod tracker;
 
 use app::{input::handle_key, state::TrackerState, ui::draw};
+use tracker::player::Player;
 
 /// Number of decimated samples held in the scope display buffer.
 const SCOPE_CAPACITY: usize = 512;
@@ -32,16 +33,18 @@ fn main() -> Result<()> {
     }));
 
     // ── Start the audio engine ───────────────────────────────────────────────
+    let (player, sequencer) = Player::new();
     let audio_ok = Arc::new(AtomicBool::new(true));
     let audio_ok_cb = Arc::clone(&audio_ok);
-    let (_stream, event_tx, scope_rx) = setup_audio_silenced_with_error_handler(move |err| {
-        // Only flag fatal device loss; xruns (ErrorKind::Xrun) are non-fatal and
-        // self-recovering — latching false on every xrun would permanently show
-        // AUDIO ERR after the first underrun even when audio continues.
-        if err.kind() == cpal::ErrorKind::DeviceNotAvailable {
-            audio_ok_cb.store(false, Ordering::Relaxed);
-        }
-    })?;
+    let (_stream, event_tx, scope_rx) =
+        setup_audio_silenced_with_sequencer(sequencer, move |err| {
+            // Only flag fatal device loss; xruns (ErrorKind::Xrun) are non-fatal and
+            // self-recovering — latching false on every xrun would permanently show
+            // AUDIO ERR after the first underrun even when audio continues.
+            if err.kind() == cpal::ErrorKind::DeviceNotAvailable {
+                audio_ok_cb.store(false, Ordering::Relaxed);
+            }
+        })?;
 
     // ── Set up the ratatui terminal ──────────────────────────────────────────
     enable_raw_mode()?;
@@ -57,7 +60,7 @@ fn main() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     // ── Build application state ───────────────────────────────────────────────
-    let mut state = TrackerState::new(event_tx, audio_ok);
+    let mut state = TrackerState::new(event_tx, player, audio_ok);
     let mut scope = ScopeBuf::new(scope_rx, SCOPE_CAPACITY);
 
     // ── Main event loop ───────────────────────────────────────────────────────

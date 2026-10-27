@@ -32,7 +32,7 @@ use synthie_ui::widgets::{
 };
 
 use crate::app::state::TrackerState;
-use crate::tracker::{DRUM_TRACK, SYNTH_TRACKS, TOTAL_TRACKS, note_name};
+use crate::tracker::{DRUM_TRACK, SYNTH_TRACKS, Step, TOTAL_TRACKS, note_name};
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
@@ -176,8 +176,9 @@ fn draw_grid(frame: &mut Frame, area: Rect, state: &TrackerState) {
 
     let visible_rows = usize::from(inner.height).saturating_sub(lines.len());
     let len = state.song.pattern.len;
-    let start = scroll_offset(state.cursor_row, len, visible_rows);
     let playing = state.is_playing().then(|| state.playing_step());
+    // Follow the playhead while playing, the cursor otherwise.
+    let start = scroll_offset(playing.unwrap_or(state.cursor_row), len, visible_rows);
     lines.extend(
         (start..len)
             .take(visible_rows)
@@ -333,8 +334,8 @@ fn cell_spans(
         return spans;
     }
 
-    let (text, style) = match state.song.pattern.synth[track][step].note {
-        Some(note) => {
+    let (text, style) = match state.song.pattern.synth[track][step] {
+        Step::Note(note) => {
             let style = if is_cursor {
                 cursor
             } else if is_playing {
@@ -344,7 +345,8 @@ fn cell_spans(
             };
             (format!(" {}", note_name(note)), style)
         }
-        None => (
+        Step::Off => (" ===".to_string(), if is_cursor { cursor } else { fg(DIM) }),
+        Step::Empty => (
             " ···".to_string(),
             if is_cursor { cursor } else { fg(FAINT) },
         ),
@@ -443,6 +445,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
             "    Q 2 W 3 E R 5 T 6 Y 7 U   upper octave (C…B)",
             fg(GREEN),
         ),
+        help_entry("1 `", KW, "note off  (===)"),
         help_entry("Del Bksp", KW, "clear step"),
         Line::raw(""),
         help_heading("DRUM ENTRY  (drum track)"),
@@ -458,7 +461,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         Line::raw(""),
         Line::styled("press any key to close", fg(DIM)).centered(),
     ];
-    let rect = widgets::popup(frame, area, 62, 27);
+    let rect = widgets::popup(frame, area, 62, 28);
     frame.render_widget(
         Paragraph::new(lines).block(panel("KEY REFERENCE", true)),
         rect,
@@ -489,10 +492,12 @@ mod tests {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
+    use crate::tracker::player::Player;
+
     #[test]
     fn draws_at_common_and_tiny_sizes() {
         let (tx, _rx) = crossbeam_channel::unbounded();
-        let mut state = TrackerState::new(tx, Arc::new(AtomicBool::new(true)));
+        let mut state = TrackerState::new(tx, Player::new().0, Arc::new(AtomicBool::new(true)));
         state.activity = [1.0, 0.5, 0.0, 0.2, 0.9];
         let data: Vec<(f64, f64)> = (0..128)
             .map(|i| (f64::from(i), (f64::from(i) / 10.0).sin()))
@@ -520,7 +525,7 @@ mod tests {
     #[test]
     fn grid_lines_have_fixed_width() {
         let (tx, _rx) = crossbeam_channel::unbounded();
-        let state = TrackerState::new(tx, Arc::new(AtomicBool::new(true)));
+        let state = TrackerState::new(tx, Player::new().0, Arc::new(AtomicBool::new(true)));
         assert_eq!(rule().width(), GRID_W);
         for line in column_headers(&state) {
             assert_eq!(line.width(), GRID_W);

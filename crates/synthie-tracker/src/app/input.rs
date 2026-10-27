@@ -14,6 +14,8 @@
 //! Note: C  C# D  D# E  F  F# G  G# A  A# B
 //! ```
 //!
+//! `1` or `` ` `` enters a note-off (`===`).
+//!
 //! ## Drum track keys (when cursor is on the drum column)
 //!
 //! | Key | Action             |
@@ -159,7 +161,9 @@ fn handle_drum_key(code: KeyCode, state: &mut TrackerState) {
 }
 
 fn handle_synth_key(code: KeyCode, state: &mut TrackerState) {
-    if let Some(semi) = key_to_semitone(code) {
+    if matches!(code, KeyCode::Char('1' | '`')) {
+        state.enter_note_off();
+    } else if let Some(semi) = key_to_semitone(code) {
         let midi = make_midi(state.octave, semi);
         state.enter_note(midi);
     }

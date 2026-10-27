@@ -13,7 +13,9 @@ use synthie::presets::sid::default_patches;
 use synthie_ui::Modal;
 
 use crate::tracker::player::Player;
-use crate::tracker::{DRUM_TRACK, DrumStep, STEPS, SYNTH_TRACKS, Song, TOTAL_TRACKS, demo_song};
+use crate::tracker::{
+    DRUM_TRACK, DrumStep, STEPS, SYNTH_TRACKS, Song, Step, TOTAL_TRACKS, demo_song,
+};
 
 // ─── DrumKind ────────────────────────────────────────────────────────────────
 
@@ -64,9 +66,8 @@ pub struct TrackerState {
 
 impl TrackerState {
     /// Construct initial state and pre-load presets onto the audio engine.
-    pub fn new(event_tx: Sender<AudioEvent>, audio_ok: Arc<AtomicBool>) -> Self {
+    pub fn new(event_tx: Sender<AudioEvent>, player: Player, audio_ok: Arc<AtomicBool>) -> Self {
         let presets = default_patches();
-        let player = Player::spawn(event_tx.clone());
 
         // Pre-load default presets onto each channel.
         for (ch_idx, patch) in presets.iter().take(SYNTH_TRACKS).enumerate() {
@@ -113,7 +114,7 @@ impl TrackerState {
         for (track, hit) in hits.iter_mut().take(SYNTH_TRACKS).enumerate() {
             *hit = pattern.synth[track]
                 .get(step)
-                .is_some_and(|s| s.note.is_some());
+                .is_some_and(|s| matches!(s, Step::Note(_)));
         }
         hits[DRUM_TRACK] = pattern
             .drums
@@ -157,10 +158,12 @@ impl TrackerState {
         self.player.current_step.load(Ordering::Relaxed)
     }
 
-    /// Start playback from the first step.
+    /// Load each track's preset, then start playback from the first step.
     pub fn play(&self) {
-        self.player
-            .play(Box::new(self.song.clone()), self.presets.clone());
+        for track in 0..SYNTH_TRACKS {
+            self.reload_track_patch(track);
+        }
+        self.player.play(self.song.clone());
     }
 
     /// Stop playback.
@@ -177,9 +180,9 @@ impl TrackerState {
         }
     }
 
-    /// Push the current song snapshot to the player thread without restarting.
+    /// Push the current song snapshot to the sequencer without restarting.
     fn notify_player(&self) {
-        self.player.update_song(Box::new(self.song.clone()));
+        self.player.update_song(self.song.clone());
     }
 
     // ─── Cursor movement ─────────────────────────────────────────────────────
@@ -218,8 +221,19 @@ impl TrackerState {
     ///
     /// No-op if the cursor is on the drum track.
     pub fn enter_note(&mut self, midi: MidiNote) {
+        self.set_synth_step(Step::Note(midi));
+    }
+
+    /// Enter a note-off (`===`) at the cursor position, then advance.
+    ///
+    /// No-op if the cursor is on the drum track.
+    pub fn enter_note_off(&mut self) {
+        self.set_synth_step(Step::Off);
+    }
+
+    fn set_synth_step(&mut self, step: Step) {
         if self.cursor_track < SYNTH_TRACKS {
-            self.song.pattern.synth[self.cursor_track][self.cursor_row].note = Some(midi);
+            self.song.pattern.synth[self.cursor_track][self.cursor_row] = step;
             self.notify_player();
             self.cursor_down();
         }
@@ -230,7 +244,7 @@ impl TrackerState {
     /// On a synth track this removes the note; on the drum track it clears all hits.
     pub fn clear_step(&mut self) {
         if self.cursor_track < SYNTH_TRACKS {
-            self.song.pattern.synth[self.cursor_track][self.cursor_row].note = None;
+            self.song.pattern.synth[self.cursor_track][self.cursor_row] = Step::Empty;
         } else {
             self.song.pattern.drums[self.cursor_row] = DrumStep::default();
         }

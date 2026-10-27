@@ -63,7 +63,9 @@ Run any example with `cargo run -p synth --example <name> --release`.
 
 ## Synthie Tracker
 
-A 16-step sequencer with 4 independent synth channels and a drum track (kick, closed/open hi-hat), powered by the same `synthie` DSP engine.
+A step sequencer with up to 128 steps (eight bars of 16ths), 4 independent synth channels and a drum track (kick, closed/open hi-hat), powered by the same `synthie` DSP engine. Notes sustain until the next note or a note-off (`===`) on the same track.
+
+It starts with the Lazy Jones / Kernkraft 400 hook loaded: the line's melody and bass split across two tracks, the off-beat sub-bass on the second pass, and four-on-the-floor drums. Press `Space` to play.
 
 ![Tracker screenshot](docs/screenshot-tracker.png)
 
@@ -81,6 +83,7 @@ task tracker          # or: cargo run -p synthie-tracker --release
 | `↑` / `↓` / `←` / `→` | Move cursor |
 | `Tab` / `Shift+Tab` | Next / previous preset on current track |
 | `Z`–`M`, `Q`–`U` | Enter note (lower / upper octave row, same layout as synth-tui) |
+| `1` / `` ` `` | Note off (`===`) |
 | `Del` / `Bksp` | Clear step |
 | `k` / `h` / `o` | Toggle kick / closed hi-hat / open hi-hat (drum track) |
 | `+` / `-` | BPM up / down |
