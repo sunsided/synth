@@ -7,7 +7,7 @@ description = "Chiptune-focused synthesizer engine: dual OSC, ring mod, filters,
 repository.workspace = true
 license.workspace = true
 readme      = "README.md"
-keywords    = ["synthesizer", "audio", "midi", "gamedev", "game-audio"]
+keywords    = ["synthesizer", "chiptune", "sid", "audio", "game-audio"]
 categories  = ["game-engines", "multimedia::audio"]
 
 [package.metadata.docs.rs]
