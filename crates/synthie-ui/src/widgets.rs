@@ -30,7 +30,8 @@ pub fn paint_background(frame: &mut Frame) {
 }
 
 /// Rounded neon panel.  Focused panels glow magenta with a filled diamond;
-/// unfocused ones recede into the background.
+/// unfocused ones recede into the background.  An empty `title` draws a
+/// bare frame.
 #[must_use]
 pub fn panel(title: &str, focused: bool) -> Block<'_> {
     let (border, glyph, title_style) = if focused {
@@ -38,15 +39,18 @@ pub fn panel(title: &str, focused: bool) -> Block<'_> {
     } else {
         (FAINT, " ◇ ", fg(DIM))
     };
-    Block::bordered()
+    let block = Block::bordered()
         .border_type(BorderType::Rounded)
         .border_style(fg(border))
-        .title(Line::from(vec![
-            Span::styled(glyph, fg(border)),
-            Span::styled(title, title_style),
-            Span::raw(" "),
-        ]))
-        .style(Style::default().bg(BG))
+        .style(Style::default().bg(BG));
+    if title.is_empty() {
+        return block;
+    }
+    block.title(Line::from(vec![
+        Span::styled(glyph, fg(border)),
+        Span::styled(title, title_style),
+        Span::raw(" "),
+    ]))
 }
 
 /// Animated `▓▒░ S Y N T H I E ░▒▓` wordmark with a slowly scrolling gradient.
@@ -195,7 +199,19 @@ pub fn piano(
     [Line::from(top), Line::from(bottom)]
 }
 
-/// Braille oscilloscope with a faint zero line, drawn inside `block`.
+/// Vertical half-range of the scope for a signal peaking at `peak`: the
+/// smallest of ±1, ±½, ±¼ … ±1/16 that still fits it, so quiet patches fill
+/// the display instead of drawing a flat line.
+fn scope_range(peak: f64) -> f64 {
+    let mut range = 1.0;
+    while range > 1.0 / 16.0 && peak <= range / 2.0 {
+        range /= 2.0;
+    }
+    range
+}
+
+/// Auto-ranging Braille oscilloscope with a faint zero line, drawn inside
+/// `block`.  The zoom factor is shown in the bottom-right corner when > 1.
 #[allow(clippy::cast_precision_loss)] // sample count fits well within f64 mantissa
 pub fn scope(frame: &mut Frame, area: Rect, data: &[(f64, f64)], block: Block) {
     if data.is_empty() {
@@ -212,6 +228,14 @@ pub fn scope(frame: &mut Frame, area: Rect, data: &[(f64, f64)], block: Block) {
     }
 
     let x_max = data.len() as f64;
+    let range = scope_range(data.iter().fold(0.0, |m, &(_, y)| y.abs().max(m)));
+    let block = if range < 1.0 {
+        block.title_bottom(
+            Line::styled(format!(" ×{} ", (1.0 / range).round()), fg(DIM)).right_aligned(),
+        )
+    } else {
+        block
+    };
     let zero = [(0.0, 0.0), (x_max, 0.0)];
     let datasets = vec![
         Dataset::default()
@@ -229,8 +253,32 @@ pub fn scope(frame: &mut Frame, area: Rect, data: &[(f64, f64)], block: Block) {
         .block(block)
         .style(Style::default().bg(BG))
         .x_axis(Axis::default().bounds([0.0, x_max]))
-        .y_axis(Axis::default().bounds([-1.0, 1.0]));
+        .y_axis(Axis::default().bounds([-range, range]));
     frame.render_widget(chart, area);
+}
+
+/// Footer row: key-cap hints on the left and, if non-empty, a status
+/// message on the right.  Hints are clipped rather than overlapped.
+pub fn footer(frame: &mut Frame, area: Rect, hints: &[(&str, &str)], status: &str) {
+    let status_w = if status.is_empty() {
+        0
+    } else {
+        u16::try_from(status.chars().count() + 4).unwrap_or(u16::MAX)
+    };
+    let [left, right] =
+        ratatui::layout::Layout::horizontal([Constraint::Min(0), Constraint::Length(status_w)])
+            .areas(area);
+    frame.render_widget(Paragraph::new(key_hints(hints)), left);
+    if !status.is_empty() {
+        frame.render_widget(
+            Paragraph::new(Line::from(vec![
+                Span::styled(" ✦ ", fg(MAGENTA)),
+                Span::styled(status, bold(theme::YELLOW)),
+                Span::raw(" "),
+            ])),
+            right,
+        );
+    }
 }
 
 /// Peak readout spans: `-6.0 dB` plus a red `CLIP` LED near full scale.
@@ -325,5 +373,19 @@ pub fn modal(frame: &mut Frame, area: Rect, footer: Rect, modal: &crate::Modal) 
             );
             true
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::scope_range;
+
+    #[test]
+    fn scope_range_zooms_in_on_quiet_signals() {
+        assert!((scope_range(0.9) - 1.0).abs() < f64::EPSILON);
+        assert!((scope_range(0.3) - 0.5).abs() < f64::EPSILON);
+        assert!((scope_range(0.1) - 0.125).abs() < f64::EPSILON);
+        assert!((scope_range(0.06) - 1.0 / 16.0).abs() < f64::EPSILON);
+        assert!((scope_range(0.0) - 1.0 / 16.0).abs() < f64::EPSILON);
     }
 }

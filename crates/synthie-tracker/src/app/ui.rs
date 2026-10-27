@@ -28,7 +28,7 @@ use synthie_ui::theme::{
     PURPLE, RED, YELLOW, bold, fg,
 };
 use synthie_ui::widgets::{
-    self, bar, db_readout, help_entry, help_heading, key_hints, logo, meter, panel, vu,
+    self, bar, db_readout, help_entry, help_heading, logo, meter, panel, vu,
 };
 
 use crate::app::state::TrackerState;
@@ -102,7 +102,7 @@ pub fn draw(frame: &mut Frame, state: &TrackerState, scope_data: &[(f64, f64)], 
 
 /// Logo, transport badge, and song stats with a playhead progress bar.
 fn draw_header(frame: &mut Frame, area: Rect, state: &TrackerState) {
-    let block = panel("", false).title("");
+    let block = panel("", false);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -396,8 +396,10 @@ fn draw_side(frame: &mut Frame, area: Rect, state: &TrackerState, data: &[(f64, 
 
 /// Key-cap hints plus the transient status message.
 fn draw_footer(frame: &mut Frame, area: Rect, state: &TrackerState) {
-    frame.render_widget(
-        Paragraph::new(key_hints(&[
+    widgets::footer(
+        frame,
+        area,
+        &[
             ("Space", "play"),
             ("Esc", "panic·quit"),
             ("Del", "clear"),
@@ -407,20 +409,9 @@ fn draw_footer(frame: &mut Frame, area: Rect, state: &TrackerState) {
             ("+ -", "BPM"),
             ("F1", "help"),
             (":q", "quit"),
-        ])),
-        area,
+        ],
+        &state.status_msg,
     );
-    if !state.status_msg.is_empty() {
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("✦ ", fg(MAGENTA)),
-                Span::styled(state.status_msg.clone(), bold(YELLOW)),
-                Span::raw(" "),
-            ]))
-            .alignment(Alignment::Right),
-            area,
-        );
-    }
 }
 
 // ─── Help overlay ────────────────────────────────────────────────────────────

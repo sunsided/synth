@@ -38,7 +38,7 @@ use synthie_ui::theme::{
     self, BG, BG_CURSOR, CYAN, DIM, FAINT, FG, GREEN, MAGENTA, PURPLE, YELLOW, bold, fg,
 };
 use synthie_ui::widgets::{
-    self, db_readout, help_entry, help_heading, key_hints, logo, meter, panel, piano, vu,
+    self, db_readout, help_entry, help_heading, logo, meter, panel, piano, vu,
 };
 
 /// Width of the parameter column.
@@ -106,7 +106,7 @@ fn note_label(midi: u8) -> String {
 /// Title bar: animated logo, engine name and patch on the left; live note,
 /// octave and volume on the right.
 fn draw_header(frame: &mut Frame, area: Rect, state: &AppState) {
-    let block = panel("", false).title("");
+    let block = panel("", false);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
@@ -425,8 +425,10 @@ fn draw_keyboard(frame: &mut Frame, area: Rect, state: &AppState) {
 
 /// Key-cap hints plus the transient status message.
 fn draw_footer(frame: &mut Frame, area: Rect, state: &AppState) {
-    frame.render_widget(
-        Paragraph::new(key_hints(&[
+    widgets::footer(
+        frame,
+        area,
+        &[
             ("Tab", "section"),
             ("P", "presets"),
             ("←→", "param"),
@@ -436,20 +438,9 @@ fn draw_footer(frame: &mut Frame, area: Rect, state: &AppState) {
             ("^S", "save"),
             ("F1", "help"),
             (":q", "quit"),
-        ])),
-        area,
+        ],
+        &state.status_msg,
     );
-    if !state.status_msg.is_empty() {
-        frame.render_widget(
-            Paragraph::new(Line::from(vec![
-                Span::styled("✦ ", fg(MAGENTA)),
-                Span::styled(state.status_msg.clone(), bold(YELLOW)),
-                Span::raw(" "),
-            ]))
-            .alignment(Alignment::Right),
-            area,
-        );
-    }
 }
 
 /// Key reference popup drawn over the main UI.
