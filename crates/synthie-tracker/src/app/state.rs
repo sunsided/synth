@@ -10,6 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use crossbeam_channel::Sender;
 use synthie::params::{AudioEvent, ChannelNo, MidiNote, Patch};
 use synthie::presets::sid::default_patches;
+use synthie_ui::Modal;
 
 use crate::tracker::player::Player;
 use crate::tracker::{DRUM_TRACK, DrumStep, STEPS, SYNTH_TRACKS, Song, TOTAL_TRACKS, demo_song};
@@ -42,6 +43,15 @@ pub struct TrackerState {
     pub octave: i8,
     /// `true` → show the help overlay.
     pub show_help: bool,
+    /// Quit confirmation / `:` command line, when open.
+    pub modal: Modal,
+    /// Transient message shown in the footer (e.g. an unknown command).
+    pub status_msg: String,
+
+    /// Per-track trigger flash in 0‥1 (1 on a hit, decays each UI frame).
+    pub activity: [f32; TOTAL_TRACKS],
+    /// Step seen by the previous [`TrackerState::tick_meters`] call.
+    last_step: Option<usize>,
 
     /// `false` once the CPAL stream reports a fatal error.
     audio_ok: Arc<AtomicBool>,
@@ -75,6 +85,10 @@ impl TrackerState {
             cursor_track: 0,
             octave: 4,
             show_help: false,
+            modal: Modal::None,
+            status_msg: String::new(),
+            activity: [0.0; TOTAL_TRACKS],
+            last_step: None,
             audio_ok,
             player,
             event_tx,
@@ -87,6 +101,46 @@ impl TrackerState {
     #[must_use]
     pub fn audio_ok(&self) -> bool {
         self.audio_ok.load(Ordering::Relaxed)
+    }
+
+    // ─── Activity meters ─────────────────────────────────────────────────────
+
+    /// Which tracks trigger something on `step`.
+    #[must_use]
+    pub fn step_hits(&self, step: usize) -> [bool; TOTAL_TRACKS] {
+        let pattern = &self.song.pattern;
+        let mut hits = [false; TOTAL_TRACKS];
+        for (track, hit) in hits.iter_mut().take(SYNTH_TRACKS).enumerate() {
+            *hit = pattern.synth[track]
+                .get(step)
+                .is_some_and(|s| s.note.is_some());
+        }
+        hits[DRUM_TRACK] = pattern
+            .drums
+            .get(step)
+            .is_some_and(|d| d.kick || d.hihat_closed || d.hihat_open);
+        hits
+    }
+
+    /// Advance the activity meters by one UI frame: decay all tracks and
+    /// re-trigger those that fire on a newly reached step.
+    pub fn tick_meters(&mut self) {
+        const DECAY: f32 = 0.88;
+        for a in &mut self.activity {
+            *a *= DECAY;
+        }
+        let step = self.is_playing().then(|| self.playing_step());
+        if step != self.last_step
+            && let Some(step) = step
+        {
+            let hits = self.step_hits(step);
+            for (a, hit) in self.activity.iter_mut().zip(hits) {
+                if hit {
+                    *a = 1.0;
+                }
+            }
+        }
+        self.last_step = step;
     }
 
     // ─── Playback ────────────────────────────────────────────────────────────

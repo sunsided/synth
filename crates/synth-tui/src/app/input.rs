@@ -19,6 +19,7 @@
 use crate::app::state::AppState;
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use synthie::params::MidiNote;
+use synthie_ui::ModalAction;
 
 /// Map a key code to a semitone offset (0 = C of the bottom row, 12 = C of
 /// the upper row).  Returns `None` for non-note keys.
@@ -76,6 +77,17 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
         }
     }
 
+    // Quit dialog / command line capture key presses while open.
+    match state.modal.handle_key(key) {
+        ModalAction::Ignored => {}
+        ModalAction::Consumed => return false,
+        ModalAction::Quit => return true,
+        ModalAction::Message(msg) => {
+            state.status_msg = msg;
+            return false;
+        }
+    }
+
     // Key-release events: send note-off for piano keys.
     if key.kind == KeyEventKind::Release {
         if let Some(semi) = key_to_semitone(key.code) {
@@ -106,9 +118,14 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
             state.show_help = !state.show_help;
         }
 
+        // Esc closes help; otherwise silence everything and ask to quit.
+        KeyCode::Esc if state.show_help => state.show_help = false,
         KeyCode::Esc => {
             state.panic_all_notes();
+            state.modal.confirm_quit();
         }
+
+        KeyCode::Char(':') => state.modal.open_command(),
 
         KeyCode::Tab => {
             if key.modifiers.contains(KeyModifiers::SHIFT) {
@@ -117,6 +134,8 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
                 state.next_section();
             }
         }
+
+        KeyCode::Char('p' | 'P') => state.toggle_presets(),
 
         KeyCode::Left => state.prev_param(),
         KeyCode::Right => state.next_param(),

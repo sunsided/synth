@@ -1,0 +1,17 @@
+[package]
+name              = "synthie-ui"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+description       = "Shared neon/retro look and widgets for the synthie terminal front-ends"
+repository.workspace = true
+license.workspace = true
+publish           = false
+
+[dependencies]
+crossbeam-channel = { workspace = true }
+crossterm         = { workspace = true }
+ratatui           = { workspace = true }
+
+[lints]
+workspace = true

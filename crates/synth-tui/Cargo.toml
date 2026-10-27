@@ -19,6 +19,7 @@ crossterm          = { workspace = true }
 ratatui    = { workspace = true }
 serde_json = { workspace = true }
 synthie      = { path = "../synthie", features = ["serde"] }
+synthie-ui   = { path = "../synthie-ui" }
 
 [lints]
 workspace = true

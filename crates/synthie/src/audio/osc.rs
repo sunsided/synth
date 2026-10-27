@@ -81,7 +81,7 @@ impl Oscillator {
             Waveform::PulseSaw => {
                 let pulse = if p < pulse_width { 1.0_f32 } else { -1.0_f32 };
                 let saw = 2.0 * p - 1.0;
-                (pulse + saw) * 0.5
+                f32::midpoint(pulse, saw)
             }
             Waveform::Sine => crate::math::sinf(TAU * p),
         };

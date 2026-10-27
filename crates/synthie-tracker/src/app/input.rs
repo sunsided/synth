@@ -24,6 +24,7 @@
 
 use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use synthie::params::MidiNote;
+use synthie_ui::ModalAction;
 
 use crate::app::state::{DrumKind, TrackerState};
 use crate::tracker::DRUM_TRACK;
@@ -81,6 +82,17 @@ pub fn handle_key(key: KeyEvent, state: &mut TrackerState) -> bool {
         return matches!(key.code, KeyCode::Char('c' | 'q'));
     }
 
+    // ── Quit dialog / command line ────────────────────────────────────────────
+    match state.modal.handle_key(key) {
+        ModalAction::Ignored => {}
+        ModalAction::Consumed => return false,
+        ModalAction::Quit => return true,
+        ModalAction::Message(msg) => {
+            state.status_msg = msg;
+            return false;
+        }
+    }
+
     // ── Help overlay ──────────────────────────────────────────────────────────
     if key.code == KeyCode::F(1) {
         state.show_help = !state.show_help;
@@ -95,7 +107,11 @@ pub fn handle_key(key: KeyEvent, state: &mut TrackerState) -> bool {
     // ── Global controls ───────────────────────────────────────────────────────
     match key.code {
         KeyCode::F(12) => return true,
-        KeyCode::Esc => state.panic_all(),
+        KeyCode::Esc => {
+            state.panic_all();
+            state.modal.confirm_quit();
+        }
+        KeyCode::Char(':') => state.modal.open_command(),
         KeyCode::Char(' ') => state.toggle_play(),
         KeyCode::Up => state.cursor_up(),
         KeyCode::Down => state.cursor_down(),

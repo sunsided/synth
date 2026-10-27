@@ -3,16 +3,16 @@
 //! Owns TUI runtime bootstrap, event loop, terminal lifecycle, and user-preset
 //! file I/O.  Core DSP and parameter types are imported from the `synth` library.
 //!
-//! The application layer (`app`), visualisation (`viz`), and preset persistence
-//! (`preset_store`) are binary-local modules declared here.
+//! The application layer (`app`) and preset persistence (`preset_store`) are
+//! binary-local modules declared here; the shared look and the waveform scope
+//! buffer come from `synthie-ui`.
 
 mod app;
 mod preset_store;
-mod viz;
 
 use app::{input, state::AppState, ui};
 use synthie::audio::engine::setup_audio_silenced;
-use viz::scope::ScopeBuf;
+use synthie_ui::ScopeBuf;
 
 use anyhow::Result;
 use crossterm::{
@@ -102,8 +102,9 @@ fn run_loop(
         // Drain new waveform samples from the audio thread.
         scope.update();
         let chart_data = scope.as_chart_data();
+        let level = scope.level();
 
-        terminal.draw(|frame| ui::draw(frame, state, &chart_data))?;
+        terminal.draw(|frame| ui::draw(frame, state, &chart_data, level))?;
 
         // Poll with a short timeout so the scope stays animated.
         if event::poll(tick)? {
