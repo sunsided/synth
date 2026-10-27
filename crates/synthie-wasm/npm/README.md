@@ -6,16 +6,15 @@ The package does no audio I/O itself. You pull samples with `render()`: from an 
 
 ## Install
 
-The package lives in GitHub Packages, which needs a token with `read:packages` even for public packages:
-
-```ini
-# .npmrc
-@sunsided:registry=https://npm.pkg.github.com
-//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
-```
-
 ```sh
 npm install @sunsided/synthie
+```
+
+Tagged releases are also published to GitHub Packages, which needs a token even for public packages: a personal access token (classic) with `read:packages`, and in `.npmrc`:
+
+```ini
+@sunsided:registry=https://npm.pkg.github.com
+//npm.pkg.github.com/:_authToken=${GITHUB_TOKEN}
 ```
 
 ## Browser: AudioWorklet

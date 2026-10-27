@@ -10,10 +10,15 @@ on:
       - main
       - 'release/*'
       - 'feature/*'
+  # First stage of release.yml: a tag only publishes after these checks pass.
+  workflow_call:
 
 concurrency:
-  group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: true
+  # A fixed name: when called, github.workflow would be the caller's and the
+  # group would collide with release.yml's own (names compare case-insensitively).
+  group: test-${{ github.ref }}
+  # Superseded branch runs can go; runs called from a release must finish.
+  cancel-in-progress: ${{ !startsWith(github.ref, 'refs/tags/') }}
 
 permissions:
   contents: read
