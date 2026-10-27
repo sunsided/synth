@@ -11,7 +11,7 @@ license    = "EUPL-1.2"
 
 [workspace.dependencies]
 anyhow            = "1"
-cpal              = "0.17"
+cpal              = "0.18"
 crossbeam-channel = "0.5"
 crossterm         = "0.29"
 libm              = "0.2"

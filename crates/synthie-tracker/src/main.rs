@@ -35,10 +35,10 @@ fn main() -> Result<()> {
     let audio_ok = Arc::new(AtomicBool::new(true));
     let audio_ok_cb = Arc::clone(&audio_ok);
     let (_stream, event_tx, scope_rx) = setup_audio_silenced_with_error_handler(move |err| {
-        // Only flag fatal device loss; xruns (BackendSpecific) are non-fatal and
+        // Only flag fatal device loss; xruns (ErrorKind::Xrun) are non-fatal and
         // self-recovering — latching false on every xrun would permanently show
         // AUDIO ERR after the first underrun even when audio continues.
-        if matches!(err, cpal::StreamError::DeviceNotAvailable) {
+        if err.kind() == cpal::ErrorKind::DeviceNotAvailable {
             audio_ok_cb.store(false, Ordering::Relaxed);
         }
     })?;

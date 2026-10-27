@@ -64,7 +64,7 @@ pub fn setup_audio_n_with_error_handler<const N: usize, F>(
     on_error: F,
 ) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
 where
-    F: Fn(cpal::StreamError) + Send + 'static,
+    F: Fn(cpal::Error) + Send + 'static,
 {
     let (event_tx, event_rx) = bounded::<AudioEvent>(EVENT_CHANNEL_CAPACITY);
     let (scope_tx, scope_rx) = bounded::<Vec<f32>>(SCOPE_CHANNEL_CAPACITY);
@@ -96,7 +96,7 @@ where
 
     let stream = device
         .build_output_stream(
-            &stream_config,
+            stream_config,
             move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
                 events_buf.clear();
                 while let Ok(event) = event_rx.try_recv() {
@@ -196,7 +196,7 @@ pub fn setup_audio_silenced_with_error_handler<F>(
     on_error: F,
 ) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
 where
-    F: Fn(cpal::StreamError) + Send + 'static,
+    F: Fn(cpal::Error) + Send + 'static,
 {
     // Fixed(4096) (~93 ms at 44.1 kHz) gives the DSP enough headroom to avoid
     // xruns.  Smaller values (512/1024) cause buffer underruns on typical desktop
