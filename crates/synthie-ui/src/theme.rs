@@ -5,7 +5,7 @@
 
 use ratatui::style::{Color, Modifier, Style};
 use std::sync::OnceLock;
-use std::time::Instant;
+use web_time::Instant; // `std::time::Instant` panics in the browser
 
 /// Screen background: deep indigo-black.
 pub const BG: Color = Color::Rgb(12, 9, 24);

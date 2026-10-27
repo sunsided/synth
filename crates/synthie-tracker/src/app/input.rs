@@ -24,10 +24,10 @@
 //! | `h` | Toggle closed hi-hat |
 //! | `o` | Toggle open hi-hat |
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use synthie::params::MidiNote;
-use synthie_ui::ModalAction;
+use synthie_ui::{Key, KeyCode, KeyKind, ModalAction};
 
+use crate::app::CAN_QUIT;
 use crate::app::state::{DrumKind, TrackerState};
 use crate::tracker::DRUM_TRACK;
 
@@ -73,15 +73,15 @@ fn make_midi(octave: i8, semitone: u8) -> MidiNote {
 }
 
 /// Process a single key event.  Returns `true` when the application should quit.
-pub fn handle_key(key: KeyEvent, state: &mut TrackerState) -> bool {
+pub fn handle_key(key: Key, state: &mut TrackerState) -> bool {
     // Ignore key-release events; we only act on press.
-    if key.kind == KeyEventKind::Release || key.kind == KeyEventKind::Repeat {
+    if key.kind != KeyKind::Press {
         return false;
     }
 
     // Ctrl+C / Ctrl+Q → quit
-    if key.modifiers.contains(KeyModifiers::CONTROL) {
-        return matches!(key.code, KeyCode::Char('c' | 'q'));
+    if key.ctrl {
+        return CAN_QUIT && matches!(key.code, KeyCode::Char('c' | 'q'));
     }
 
     // ── Quit dialog / command line ────────────────────────────────────────────
@@ -108,12 +108,16 @@ pub fn handle_key(key: KeyEvent, state: &mut TrackerState) -> bool {
 
     // ── Global controls ───────────────────────────────────────────────────────
     match key.code {
-        KeyCode::F(12) => return true,
+        KeyCode::F(12) if CAN_QUIT => return true,
         KeyCode::Esc => {
+            // Stop the sequencer first, or the next step would sound again.
+            state.stop();
             state.panic_all();
-            state.modal.confirm_quit();
+            if CAN_QUIT {
+                state.modal.confirm_quit();
+            }
         }
-        KeyCode::Char(':') => state.modal.open_command(),
+        KeyCode::Char(':') if CAN_QUIT => state.modal.open_command(),
         KeyCode::Char(' ') => state.toggle_play(),
         KeyCode::Up => state.cursor_up(),
         KeyCode::Down => state.cursor_down(),
@@ -126,7 +130,7 @@ pub fn handle_key(key: KeyEvent, state: &mut TrackerState) -> bool {
         KeyCode::Char(']' | '.') => state.octave_up(),
         // Tab / Shift-Tab: cycle preset on current synth track
         KeyCode::Tab => {
-            if key.modifiers.contains(KeyModifiers::SHIFT) {
+            if key.shift {
                 state.prev_patch();
             } else {
                 state.next_patch();

@@ -6,6 +6,8 @@
 
 A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as its primary demo.
 
+**Try it in the browser:** [sunsided.github.io/synth](https://sunsided.github.io/synth/). Both terminal front-ends, the synth and the tracker, are compiled to WebAssembly and run there unchanged.
+
 ## Workspace
 
 | Crate | Type | Description |
@@ -71,6 +73,7 @@ It starts with the Lazy Jones / Kernkraft 400 hook loaded: the line's melody and
 
 ```sh
 task tracker          # or: cargo run -p synthie-tracker --release
+task tracker:web      # browser build with live reload (needs trunk)
 ```
 
 ### Controls
@@ -78,7 +81,7 @@ task tracker          # or: cargo run -p synthie-tracker --release
 | Key | Action |
 |---|---|
 | `Space` | Play / Stop |
-| `Esc` | Panic (silence all voices), then ask whether to quit |
+| `Esc` | Stop playback, silence all voices, then ask whether to quit (in the browser: stop only) |
 | `:q` `Enter` | Quit right away (also `:wq`, `:x`) |
 | `↑` / `↓` / `←` / `→` | Move cursor |
 | `Tab` / `Shift+Tab` | Next / previous preset on current track |
@@ -102,6 +105,7 @@ task tracker          # or: cargo run -p synthie-tracker --release
 
 ```sh
 cargo run -p synth-tui --release
+task synth:web        # browser build with live reload (needs trunk)
 ```
 
 Or build first, then run directly:
@@ -162,6 +166,18 @@ The keyboard is split into two chromatic octave rows. The lower row plays octave
 | `-` or `_` | Volume down |
 
 ## Development
+
+### Browser builds
+
+Both front-ends also build for `wasm32-unknown-unknown`: [Ratzilla](https://github.com/ratatui/ratzilla) renders the ratatui UI into a WebGL2 canvas and cpal plays through Web Audio. You need [trunk](https://trunkrs.dev/) (`cargo install trunk --locked`) and the target (`rustup target add wasm32-unknown-unknown`).
+
+```sh
+task synth:web        # serve one app with live reload (also: task tracker:web)
+task build:web        # landing page + both apps into target/site, as deployed to Pages
+task serve:web        # build the site and serve it on http://127.0.0.1:8000
+```
+
+The browser builds are always release builds: debug-built DSP is too slow for real-time audio in wasm. The `Deploy Pages` workflow publishes `target/site` on every push to `main`.
 
 ### Pre-commit hooks
 

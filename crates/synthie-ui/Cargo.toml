@@ -8,10 +8,23 @@ repository.workspace = true
 license.workspace = true
 publish           = false
 
+[features]
+default   = ["crossterm"]
+## `From<crossterm::event::KeyEvent>` for [`Key`].
+crossterm = ["dep:crossterm"]
+## `From<&web_sys::KeyboardEvent>` for [`Key`], plus the [`web`] module:
+## WebGL2 terminal, centring, start prompt and key listeners for browser builds.
+web       = ["dep:web-sys", "dep:ratzilla", "dep:wasm-bindgen", "dep:console_error_panic_hook"]
+
 [dependencies]
 crossbeam-channel = { workspace = true }
-crossterm         = { workspace = true }
+crossterm         = { workspace = true, optional = true }
 ratatui           = { workspace = true }
+console_error_panic_hook = { version = "0.1", optional = true }
+ratzilla          = { version = "0.3.1", optional = true }
+wasm-bindgen      = { version = "0.2", optional = true }
+web-sys           = { version = "0.3", optional = true, features = ["Document", "KeyboardEvent", "Window"] }
+web-time          = "1"
 
 [lints]
 workspace = true

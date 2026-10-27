@@ -31,6 +31,7 @@ use synthie_ui::widgets::{
     self, bar, db_readout, help_entry, help_heading, logo, meter, panel, vu,
 };
 
+use crate::app::CAN_QUIT;
 use crate::app::state::TrackerState;
 use crate::tracker::{DRUM_TRACK, SYNTH_TRACKS, Step, TOTAL_TRACKS, note_name};
 
@@ -66,9 +67,21 @@ fn track_color(track: usize) -> Color {
 /// Top-level draw call: the editor, plus the help overlay when requested.
 ///
 /// `scope_data` and `level` come from the shared output scope buffer.
+#[cfg(not(target_arch = "wasm32"))] // the browser build centres via `draw_in`
 pub fn draw(frame: &mut Frame, state: &TrackerState, scope_data: &[(f64, f64)], level: f32) {
+    draw_in(frame, frame.area(), state, scope_data, level);
+}
+
+/// Like [`draw`], but lays the UI out inside `area` (the rest of the frame
+/// keeps the plain background).
+pub fn draw_in(
+    frame: &mut Frame,
+    area: Rect,
+    state: &TrackerState,
+    scope_data: &[(f64, f64)],
+    level: f32,
+) {
     widgets::paint_background(frame);
-    let area = frame.area();
 
     let [header, body, footer] = Layout::vertical([
         Constraint::Length(3),
@@ -398,12 +411,10 @@ fn draw_side(frame: &mut Frame, area: Rect, state: &TrackerState, data: &[(f64, 
 
 /// Key-cap hints plus the transient status message.
 fn draw_footer(frame: &mut Frame, area: Rect, state: &TrackerState) {
-    widgets::footer(
-        frame,
-        area,
+    let hints: &[(&str, &str)] = if CAN_QUIT {
         &[
             ("Space", "play"),
-            ("Esc", "panic·quit"),
+            ("Esc", "stop·quit"),
             ("Del", "clear"),
             ("↑↓", "row"),
             ("←→", "track"),
@@ -411,9 +422,20 @@ fn draw_footer(frame: &mut Frame, area: Rect, state: &TrackerState) {
             ("+ -", "BPM"),
             ("F1", "help"),
             (":q", "quit"),
-        ],
-        &state.status_msg,
-    );
+        ]
+    } else {
+        &[
+            ("Space", "play"),
+            ("Esc", "stop"),
+            ("Del", "clear"),
+            ("↑↓", "row"),
+            ("←→", "track"),
+            ("Tab", "patch"),
+            ("+ -", "BPM"),
+            ("F1", "help"),
+        ]
+    };
+    widgets::footer(frame, area, hints, &state.status_msg);
 }
 
 // ─── Help overlay ────────────────────────────────────────────────────────────
@@ -421,12 +443,21 @@ fn draw_footer(frame: &mut Frame, area: Rect, state: &TrackerState) {
 /// Key reference popup drawn over the editor.
 fn draw_help(frame: &mut Frame, area: Rect) {
     const KW: usize = 11;
-    let lines = vec![
+    let quit = if CAN_QUIT {
+        vec![
+            help_entry("Esc", KW, "stop, silence all voices, ask to quit"),
+            help_entry(":q ⏎", KW, "quit right away  (also :wq, :x)"),
+        ]
+    } else {
+        vec![help_entry("Esc", KW, "stop and silence all voices")]
+    };
+    let mut lines = vec![
         Line::raw(""),
         help_heading("TRANSPORT"),
         help_entry("Space", KW, "play / stop"),
-        help_entry("Esc", KW, "panic, then ask to quit"),
-        help_entry(":q ⏎", KW, "quit right away  (also :wq, :x)"),
+    ];
+    lines.extend(quit);
+    lines.extend([
         help_entry("+ -", KW, "BPM up / down"),
         help_entry("PgUp PgDn", KW, "extend / shorten pattern"),
         Line::raw(""),
@@ -460,8 +491,9 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         ]),
         Line::raw(""),
         Line::styled("press any key to close", fg(DIM)).centered(),
-    ];
-    let rect = widgets::popup(frame, area, 62, 28);
+    ]);
+    let height = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX);
+    let rect = widgets::popup(frame, area, 62, height);
     frame.render_widget(
         Paragraph::new(lines).block(panel("KEY REFERENCE", true)),
         rect,

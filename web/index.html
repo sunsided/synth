@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Synthie</title>
+    <meta name="description" content="Chiptune synthesizer and step-sequencer tracker, written in Rust and running in your browser." />
+    <style>
+      :root {
+        --bg: #0c0918; /* synthie_ui::theme::BG */
+        --fg: #ded8ff; /* theme::FG */
+        --dim: #8a83b3;
+        --cyan: #00f0ff; /* theme::CYAN */
+        --magenta: #ff2eaa; /* theme::MAGENTA */
+        --yellow: #ffe44d; /* theme::YELLOW */
+        --panel: #15102a;
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; min-height: 100%; background: var(--bg); color: var(--fg); }
+      body {
+        font-family: "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", Menlo, Consolas, ui-monospace, monospace;
+        display: grid;
+        place-items: center;
+        min-height: 100vh;
+        padding: 24px 16px;
+      }
+      main { width: min(760px, 100%); }
+      h1 {
+        margin: 0 0 4px;
+        font-size: clamp(28px, 6vw, 44px);
+        letter-spacing: 0.35em;
+        background: linear-gradient(90deg, var(--cyan), var(--magenta), var(--yellow));
+        -webkit-background-clip: text;
+        background-clip: text;
+        color: transparent;
+      }
+      p.lead { margin: 0 0 32px; color: var(--dim); line-height: 1.5; }
+      .apps { display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr)); gap: 16px; }
+      a.app {
+        display: block;
+        padding: 20px;
+        border: 1px solid var(--magenta);
+        background: var(--panel);
+        color: inherit;
+        text-decoration: none;
+        transition: border-color 120ms, transform 120ms;
+      }
+      a.app:hover, a.app:focus-visible { border-color: var(--cyan); transform: translateY(-2px); outline: none; }
+      a.app h2 { margin: 0 0 8px; font-size: 18px; color: var(--yellow); }
+      a.app h2::before { content: "◆ "; color: var(--magenta); }
+      a.app p { margin: 0; color: var(--dim); line-height: 1.5; font-size: 14px; }
+      .note { margin-top: 28px; color: var(--dim); font-size: 13px; line-height: 1.6; }
+      .note a { color: var(--cyan); }
+      kbd {
+        padding: 0 5px;
+        border: 1px solid var(--dim);
+        border-radius: 3px;
+        font: inherit;
+        font-size: 12px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>SYNTHIE</h1>
+      <p class="lead">A chiptune synthesizer engine in Rust, with two terminal front-ends — compiled to WebAssembly and running right here in your browser.</p>
+      <div class="apps">
+        <a class="app" href="synth/">
+          <h2>Synth</h2>
+          <p>Play the SID-style synth from your keyboard and tweak oscillators, filter, envelopes, LFOs and FX live.</p>
+        </a>
+        <a class="app" href="tracker/">
+          <h2>Tracker</h2>
+          <p>A step sequencer with four synth tracks and drums, preloaded with the Lazy Jones / Kernkraft 400 hook.</p>
+        </a>
+      </div>
+      <p class="note">
+        Needs a keyboard. The first key press starts audio; <kbd>F1</kbd> shows all keys.
+        Source on <a href="https://github.com/sunsided/synth">GitHub</a> ·
+        engine on <a href="https://crates.io/crates/synthie">crates.io</a> ·
+        API docs on <a href="https://docs.rs/synthie">docs.rs</a>
+      </p>
+    </main>
+  </body>
+</html>

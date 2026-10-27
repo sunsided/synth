@@ -151,6 +151,55 @@ tasks:
     cmds:
       - cargo run -p synthie-tracker {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
 
+  # Browser builds. Always release: debug-built DSP is too slow for real-time
+  # audio in wasm.
+
+  dev:synth:web:
+    desc: Serve the synth's browser build with live reload (http://127.0.0.1:8080)
+    aliases:
+      - synth:web
+    dir: crates/synth-tui
+    preconditions: &web-preconditions
+      - sh: command -v trunk
+        msg: "trunk not found — install via cargo install trunk --locked"
+      - sh: rustup target list --installed | grep -q wasm32-unknown-unknown
+        msg: "wasm32 target missing — rustup target add wasm32-unknown-unknown"
+    cmds:
+      - trunk serve --release {{.CLI_ARGS}}
+
+  dev:tracker:web:
+    desc: Serve the tracker's browser build with live reload (http://127.0.0.1:8080)
+    aliases:
+      - tracker:web
+    dir: crates/synthie-tracker
+    preconditions: *web-preconditions
+    cmds:
+      - trunk serve --release {{.CLI_ARGS}}
+
+  build:web:
+    desc: Build the GitHub Pages site (landing page, synth, tracker) into target/site
+    preconditions: *web-preconditions
+    vars:
+      SITE: '{{.ROOT_DIR}}/target/site'
+    cmds:
+      - rm -rf {{.SITE}}
+      - mkdir -p {{.SITE}}
+      - cp web/index.html {{.SITE}}/
+      # Relative public URL: the same bundle works locally and under /synth/ on Pages.
+      # trunk resolves the crate from the working directory.
+      - cd crates/synth-tui && trunk build --release --public-url ./ --dist {{.SITE}}/synth {{.CLI_ARGS}}
+      - cd crates/synthie-tracker && trunk build --release --public-url ./ --dist {{.SITE}}/tracker {{.CLI_ARGS}}
+      - rm -f {{.SITE}}/*/.trunk-lock
+
+  serve:web:
+    desc: Build the Pages site and serve it locally (http://127.0.0.1:8000)
+    deps: [build:web]
+    preconditions:
+      - sh: command -v python3
+        msg: "python3 not found — needed for the local static file server"
+    cmds:
+      - python3 -m http.server 8000 --bind 127.0.0.1 --directory {{.ROOT_DIR}}/target/site
+
   example:tune:
     desc: Run the tune example (chord progression + melody, SID-style)
     aliases:

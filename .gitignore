@@ -1,3 +1,4 @@
 **/target
 .task/
 crates/synthie/Cargo.lock
+crates/*/dist/

@@ -13,13 +13,27 @@ name = "synth-tui"
 path = "src/main.rs"
 
 [dependencies]
-anyhow             = { workspace = true }
-crossbeam-channel  = { workspace = true }
-crossterm          = { workspace = true }
-ratatui    = { workspace = true }
-serde_json = { workspace = true }
-synthie      = { path = "../synthie", features = ["serde"] }
-synthie-ui   = { path = "../synthie-ui" }
+anyhow            = { workspace = true }
+cpal              = { workspace = true }
+crossbeam-channel = { workspace = true }
+ratatui           = { workspace = true }
+serde_json        = { workspace = true }
+synthie           = { path = "../synthie", features = ["serde"] }
+synthie-ui        = { path = "../synthie-ui", default-features = false }
+
+# Terminal build.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+crossterm  = { workspace = true }
+ratatui    = { workspace = true, features = ["crossterm"] }
+synthie-ui = { path = "../synthie-ui", features = ["crossterm"] }
+
+# Browser build (`trunk build`): Ratzilla renders, cpal plays through Web Audio,
+# user presets go to localStorage.
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+cpal       = { workspace = true, features = ["wasm-bindgen"] }
+ratzilla   = "0.3.1"
+synthie-ui = { path = "../synthie-ui", default-features = false, features = ["web"] }
+web-sys    = { version = "0.3", features = ["Storage", "Window"] }
 
 [lints]
 workspace = true
