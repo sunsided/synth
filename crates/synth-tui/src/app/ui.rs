@@ -131,7 +131,7 @@ fn draw_header(frame: &mut Frame, area: Rect, state: &AppState) {
     ]);
     frame.render_widget(Paragraph::new(left), inner);
 
-    let note = match state.active_note {
+    let note = match state.active_note() {
         Some(midi) => Span::styled(format!("{:<4}", note_label(midi.as_u8())), bold(GREEN)),
         None => Span::styled("--- ", fg(FAINT)),
     };
@@ -338,11 +338,11 @@ fn draw_output(frame: &mut Frame, area: Rect, state: &AppState, level: f32) {
     let mut readout = vec![Span::raw(" ")];
     readout.extend(db_readout(level));
 
-    let note = match state.active_note {
+    let note = match state.active_note() {
         Some(midi) => Span::styled(note_label(midi.as_u8()), bold(theme::gradient(0.6))),
         None => Span::styled("---", fg(FAINT)),
     };
-    let glow = if state.active_note.is_some() {
+    let glow = if state.active_note().is_some() {
         Span::styled(" ●", fg(GREEN))
     } else {
         Span::styled(" ○", fg(FAINT))
@@ -410,8 +410,8 @@ fn draw_presets(frame: &mut Frame, area: Rect, state: &AppState) {
     frame.render_stateful_widget(list, area, &mut list_state);
 }
 
-/// Two-octave piano strip matching the computer keyboard, lighting the
-/// currently held note.
+/// Two-octave piano strip matching the computer keyboard, lighting every
+/// held note.
 fn draw_keyboard(frame: &mut Frame, area: Rect, state: &AppState) {
     let low = u8::try_from((i32::from(state.octave) + 1) * 12).unwrap_or(0);
     let range = Line::from(Span::styled(
@@ -419,15 +419,14 @@ fn draw_keyboard(frame: &mut Frame, area: Rect, state: &AppState) {
         fg(DIM),
     ))
     .right_aligned();
-    let block = panel("KEYBOARD", state.active_note.is_some()).title_top(range);
+    let block = panel("KEYBOARD", !state.held_notes.is_empty()).title_top(range);
     let inner = block.inner(area);
     frame.render_widget(block, area);
 
-    let held = state.active_note.map(MidiNote::as_u8);
     let rows = piano(
         low,
         25,
-        |n| held == Some(n),
+        |n| state.held_notes.contains(&MidiNote(n)),
         |n| PIANO_KEYS.get(usize::from(n - low)).copied(),
     );
     frame.render_widget(

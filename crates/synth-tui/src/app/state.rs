@@ -86,6 +86,9 @@ impl Section {
     }
 }
 
+/// Number of computer-keyboard piano keys: two rows of one octave each.
+pub const PIANO_KEY_COUNT: usize = 24;
+
 /// Central application state owned by the UI thread.
 pub struct AppState {
     /// Live parameter snapshot; updated by `adjust_*` methods and preset loads.
@@ -94,8 +97,11 @@ pub struct AppState {
     pub selected_section: Section,
     /// Index of the focused parameter within `selected_section`.
     pub selected_param: usize,
-    /// MIDI note currently held (if any), for display in the status bar.
-    pub active_note: Option<MidiNote>,
+    /// MIDI notes currently held, oldest first; lit on the piano strip.
+    pub held_notes: Vec<MidiNote>,
+    /// Note started by each computer-keyboard piano key (two octaves), so a
+    /// release turns off that note even if the octave changed meanwhile.
+    key_notes: [Option<MidiNote>; PIANO_KEY_COUNT],
     /// Current keyboard octave (piano keys map to this octave and octave+1).
     pub octave: i8,
     /// Envelope stage name for potential future status feedback (unused in display).
@@ -141,7 +147,8 @@ impl AppState {
                 .unwrap_or_default(),
             selected_section: Section::Osc,
             selected_param: 0,
-            active_note: None,
+            held_notes: Vec::new(),
+            key_notes: [None; PIANO_KEY_COUNT],
             octave: 4,
             envelope_stage_name: "Idle".to_string(),
             current_patch_name,
@@ -160,25 +167,55 @@ impl AppState {
         let _ = self.audio_tx.send(event);
     }
 
+    /// The most recently pressed note still held, for the header and the
+    /// output panel.
+    #[must_use]
+    pub fn active_note(&self) -> Option<MidiNote> {
+        self.held_notes.last().copied()
+    }
+
     /// Record a note-on and forward it to the audio thread.
     pub fn note_on(&mut self, midi: impl Into<MidiNote>) {
         let midi = midi.into();
-        self.active_note = Some(midi);
+        self.held_notes.retain(|&n| n != midi);
+        self.held_notes.push(midi);
         self.send(AudioEvent::NoteOn(midi));
     }
 
     /// Record a note-off and forward it to the audio thread.
     pub fn note_off(&mut self, midi: impl Into<MidiNote>) {
         let midi = midi.into();
-        if self.active_note == Some(midi) {
-            self.active_note = None;
-        }
+        self.held_notes.retain(|&n| n != midi);
         self.send(AudioEvent::NoteOff(midi));
+    }
+
+    /// Piano key `key` (0 = C of the lower row) went down, playing `midi`.
+    pub fn piano_key_down(&mut self, key: u8, midi: MidiNote) {
+        let previous = self
+            .key_notes
+            .get_mut(usize::from(key))
+            .and_then(|slot| slot.replace(midi));
+        if let Some(previous) = previous.filter(|&n| n != midi) {
+            self.note_off(previous);
+        }
+        self.note_on(midi);
+    }
+
+    /// Piano key `key` came up: release the note it started.
+    pub fn piano_key_up(&mut self, key: u8) {
+        let started = self
+            .key_notes
+            .get_mut(usize::from(key))
+            .and_then(Option::take);
+        if let Some(midi) = started {
+            self.note_off(midi);
+        }
     }
 
     /// Send a panic event (all notes off, voice reset) to the audio thread.
     pub fn panic_all_notes(&mut self) {
-        self.active_note = None;
+        self.held_notes.clear();
+        self.key_notes = [None; PIANO_KEY_COUNT];
         self.send(AudioEvent::Panic);
     }
 
@@ -796,5 +833,33 @@ mod tests {
         assert_eq!(s.selected_section, Section::Presets);
         s.toggle_presets();
         assert_eq!((s.selected_section, s.selected_param), (Section::Filter, 2));
+    }
+
+    #[test]
+    fn chords_light_every_held_note() {
+        let mut s = state();
+        s.note_on(MidiNote(60));
+        s.note_on(MidiNote(64));
+        s.note_on(MidiNote(67));
+        assert_eq!(s.held_notes, [MidiNote(60), MidiNote(64), MidiNote(67)]);
+        assert_eq!(s.active_note(), Some(MidiNote(67)));
+
+        // Releasing the newest falls back to the next most recent one.
+        s.note_off(MidiNote(67));
+        assert_eq!(s.active_note(), Some(MidiNote(64)));
+        s.note_off(MidiNote(60));
+        assert_eq!(s.held_notes, [MidiNote(64)]);
+
+        s.panic_all_notes();
+        assert_eq!(s.held_notes, []);
+    }
+
+    #[test]
+    fn key_release_ends_its_own_note_after_an_octave_change() {
+        let mut s = state();
+        s.piano_key_down(0, MidiNote(60)); // C4
+        s.octave_up();
+        s.piano_key_up(0); // would be C5 in the new octave
+        assert_eq!(s.held_notes, []);
     }
 }

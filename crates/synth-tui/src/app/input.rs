@@ -91,8 +91,7 @@ pub fn handle_key(key: Key, state: &mut AppState) -> bool {
     // Key-release events: send note-off for piano keys.
     if key.kind == KeyKind::Release {
         if let Some(semi) = key_to_semitone(key.code) {
-            let midi = make_midi(state.octave, semi);
-            state.note_off(midi);
+            state.piano_key_up(semi);
         }
         return false;
     }
@@ -106,7 +105,7 @@ pub fn handle_key(key: Key, state: &mut AppState) -> bool {
     // Piano note keys (Press only)
     if let Some(semi) = key_to_semitone(key.code) {
         let midi = make_midi(state.octave, semi);
-        state.note_on(midi);
+        state.piano_key_down(semi, midi);
         return false;
     }
 
