@@ -182,7 +182,7 @@ The browser builds are always release builds: debug-built DSP is too slow for re
 
 ### npm package
 
-`crates/synthie-wasm` wraps the engine for JavaScript; see its [package README](crates/synthie-wasm/npm/README.md) for usage. `task build:npm` (needs [wasm-pack](https://rustwasm.github.io/wasm-pack/)) builds it into `target/npm`, with one build for browsers and one for Node.js behind conditional exports. Pushing a `v*` tag publishes it to GitHub Packages.
+`crates/synthie-wasm` wraps the engine for JavaScript; see its [package README](crates/synthie-wasm/npm/README.md) for usage. `task build:npm` (needs [wasm-pack](https://rustwasm.github.io/wasm-pack/)) builds it into `target/npm`, with one build for browsers and one for Node.js behind conditional exports. Pushing a version tag (`v1.2.3`, or `v1.2.3-rc.1` for a prerelease) runs the `Release` workflow: CI, a GitHub release with the package attached, and publishing to npmjs.com (trusted publishing) and GitHub Packages. The tag must match the workspace version in `Cargo.toml`.
 
 ### Pre-commit hooks
 
