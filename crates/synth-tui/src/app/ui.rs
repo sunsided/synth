@@ -21,6 +21,7 @@
 //!  Tab section  ←→ param  ↑↓ value  …
 //! ```
 
+use crate::app::CAN_QUIT;
 use crate::app::state::{AppState, ParamRow, Section};
 use ratatui::{
     Frame,
@@ -68,9 +69,21 @@ const PIANO_KEYS: [char; 24] = [
 ///
 /// Renders the full synth UI and, when `state.show_help` is set, the key
 /// reference on top of it.  `level` is the smoothed output peak (0‥1).
+#[cfg(not(target_arch = "wasm32"))] // the browser build centres via `draw_in`
 pub fn draw(frame: &mut Frame, state: &AppState, scope_data: &[(f64, f64)], level: f32) {
+    draw_in(frame, frame.area(), state, scope_data, level);
+}
+
+/// Like [`draw`], but lays the UI out inside `area` (the rest of the frame
+/// keeps the plain background).
+pub fn draw_in(
+    frame: &mut Frame,
+    area: Rect,
+    state: &AppState,
+    scope_data: &[(f64, f64)],
+    level: f32,
+) {
     widgets::paint_background(frame);
-    let area = frame.area();
 
     let [header, body, keys, footer] = Layout::vertical([
         Constraint::Length(3),
@@ -425,28 +438,29 @@ fn draw_keyboard(frame: &mut Frame, area: Rect, state: &AppState) {
 
 /// Key-cap hints plus the transient status message.
 fn draw_footer(frame: &mut Frame, area: Rect, state: &AppState) {
-    widgets::footer(
-        frame,
-        area,
-        &[
-            ("Tab", "section"),
-            ("P", "presets"),
-            ("←→", "param"),
-            ("↑↓", "value"),
-            ("[ ]", "octave"),
-            ("+ -", "volume"),
-            ("^S", "save"),
-            ("F1", "help"),
-            (":q", "quit"),
-        ],
-        &state.status_msg,
-    );
+    const HINTS: [(&str, &str); 9] = [
+        ("Tab", "section"),
+        ("P", "presets"),
+        ("←→", "param"),
+        ("↑↓", "value"),
+        ("[ ]", "octave"),
+        ("+ -", "volume"),
+        ("^S", "save"),
+        ("F1", "help"),
+        (":q", "quit"), // keep last: dropped where the app cannot quit
+    ];
+    let hints = if CAN_QUIT {
+        &HINTS[..]
+    } else {
+        &HINTS[..HINTS.len() - 1]
+    };
+    widgets::footer(frame, area, hints, &state.status_msg);
 }
 
 /// Key reference popup drawn over the main UI.
 fn draw_help(frame: &mut Frame, area: Rect) {
     const KW: usize = 9;
-    let lines = vec![
+    let mut lines = vec![
         Line::raw(""),
         help_heading("PIANO"),
         Line::styled(
@@ -469,17 +483,32 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         help_heading("PERFORMANCE"),
         help_entry("[ ]", KW, "octave down / up  (also , .)"),
         help_entry("+ -", KW, "volume up / down"),
-        help_entry("Esc", KW, "all notes off, then ask to quit"),
+        help_entry(
+            "Esc",
+            KW,
+            if CAN_QUIT {
+                "all notes off, then ask to quit"
+            } else {
+                "all notes off"
+            },
+        ),
         Line::raw(""),
         help_heading("SESSION"),
         help_entry("Ctrl+S", KW, "quick-save current patch"),
         help_entry("F1", KW, "toggle this screen"),
-        help_entry(":q ⏎", KW, "quit right away  (also :wq, :x)"),
-        help_entry("Ctrl+C", KW, "quit  (also Ctrl+Q, F12)"),
+    ];
+    if CAN_QUIT {
+        lines.extend([
+            help_entry(":q ⏎", KW, "quit right away  (also :wq, :x)"),
+            help_entry("Ctrl+C", KW, "quit  (also Ctrl+Q, F12)"),
+        ]);
+    }
+    lines.extend([
         Line::raw(""),
         Line::styled("  press F1 to close", fg(DIM)).centered(),
-    ];
-    let rect = widgets::popup(frame, area, 60, 28);
+    ]);
+    let height = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX);
+    let rect = widgets::popup(frame, area, 60, height);
     frame.render_widget(
         Paragraph::new(lines).block(panel("KEYBOARD REFERENCE", true)),
         rect,

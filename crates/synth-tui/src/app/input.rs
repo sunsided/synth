@@ -16,10 +16,10 @@
 //!
 //! MIDI note = 12 × (octave + 1) + semitone
 
+use crate::app::CAN_QUIT;
 use crate::app::state::AppState;
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind, KeyModifiers};
 use synthie::params::MidiNote;
-use synthie_ui::ModalAction;
+use synthie_ui::{Key, KeyCode, KeyKind, ModalAction};
 
 /// Map a key code to a semitone offset (0 = C of the bottom row, 12 = C of
 /// the upper row).  Returns `None` for non-note keys.
@@ -62,11 +62,11 @@ fn make_midi(octave: i8, semitone: u8) -> MidiNote {
 }
 
 /// Process a single key event.  Returns `true` if the application should quit.
-pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
+pub fn handle_key(key: Key, state: &mut AppState) -> bool {
     // Ctrl+C / Ctrl+Q → quit
-    if key.modifiers.contains(KeyModifiers::CONTROL) {
+    if key.ctrl {
         match key.code {
-            KeyCode::Char('c' | 'q') => return true,
+            KeyCode::Char('c' | 'q') => return CAN_QUIT,
             KeyCode::Char('s') => {
                 // Ctrl+S: save current params as user patch (quick save)
                 let name = format!("User {}", state.patches.len() + 1);
@@ -78,7 +78,7 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
     }
 
     // Quit dialog / command line capture key presses while open.
-    match state.modal.handle_key(key.into()) {
+    match state.modal.handle_key(key) {
         ModalAction::Ignored => {}
         ModalAction::Consumed => return false,
         ModalAction::Quit => return true,
@@ -89,7 +89,7 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
     }
 
     // Key-release events: send note-off for piano keys.
-    if key.kind == KeyEventKind::Release {
+    if key.kind == KeyKind::Release {
         if let Some(semi) = key_to_semitone(key.code) {
             let midi = make_midi(state.octave, semi);
             state.note_off(midi);
@@ -99,7 +99,7 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
 
     // From here on we only handle Press (and Repeat for held keys – repeat
     // does NOT re-trigger note-on to avoid LFSR/envelope resets).
-    if key.kind == KeyEventKind::Repeat {
+    if key.kind == KeyKind::Repeat {
         return false;
     }
 
@@ -112,7 +112,7 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
 
     // Application control keys
     match key.code {
-        KeyCode::F(12) => return true,
+        KeyCode::F(12) if CAN_QUIT => return true,
 
         KeyCode::F(1) => {
             state.show_help = !state.show_help;
@@ -122,13 +122,15 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
         KeyCode::Esc if state.show_help => state.show_help = false,
         KeyCode::Esc => {
             state.panic_all_notes();
-            state.modal.confirm_quit();
+            if CAN_QUIT {
+                state.modal.confirm_quit();
+            }
         }
 
-        KeyCode::Char(':') => state.modal.open_command(),
+        KeyCode::Char(':') if CAN_QUIT => state.modal.open_command(),
 
         KeyCode::Tab => {
-            if key.modifiers.contains(KeyModifiers::SHIFT) {
+            if key.shift {
                 state.prev_section();
             } else {
                 state.next_section();

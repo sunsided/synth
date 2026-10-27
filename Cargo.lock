@@ -1894,12 +1894,15 @@ name = "synth-tui"
 version = "0.5.0"
 dependencies = [
  "anyhow",
+ "cpal",
  "crossbeam-channel",
  "crossterm",
  "ratatui",
+ "ratzilla",
  "serde_json",
  "synthie",
  "synthie-ui",
+ "web-sys",
 ]
 
 [[package]]
@@ -1919,7 +1922,6 @@ name = "synthie-tracker"
 version = "0.5.0"
 dependencies = [
  "anyhow",
- "console_error_panic_hook",
  "cpal",
  "crossbeam-channel",
  "crossterm",
@@ -1927,17 +1929,18 @@ dependencies = [
  "ratzilla",
  "synthie",
  "synthie-ui",
- "wasm-bindgen",
- "web-sys",
 ]
 
 [[package]]
 name = "synthie-ui"
 version = "0.5.0"
 dependencies = [
+ "console_error_panic_hook",
  "crossbeam-channel",
  "crossterm",
  "ratatui",
+ "ratzilla",
+ "wasm-bindgen",
  "web-sys",
  "web-time",
 ]

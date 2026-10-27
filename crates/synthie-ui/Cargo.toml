@@ -12,14 +12,18 @@ publish           = false
 default   = ["crossterm"]
 ## `From<crossterm::event::KeyEvent>` for [`Key`].
 crossterm = ["dep:crossterm"]
-## `From<&web_sys::KeyboardEvent>` for [`Key`].
-web       = ["dep:web-sys"]
+## `From<&web_sys::KeyboardEvent>` for [`Key`], plus the [`web`] module:
+## WebGL2 terminal, centring, start prompt and key listeners for browser builds.
+web       = ["dep:web-sys", "dep:ratzilla", "dep:wasm-bindgen", "dep:console_error_panic_hook"]
 
 [dependencies]
 crossbeam-channel = { workspace = true }
 crossterm         = { workspace = true, optional = true }
 ratatui           = { workspace = true }
-web-sys           = { version = "0.3", optional = true, features = ["KeyboardEvent"] }
+console_error_panic_hook = { version = "0.1", optional = true }
+ratzilla          = { version = "0.3.1", optional = true }
+wasm-bindgen      = { version = "0.2", optional = true }
+web-sys           = { version = "0.3", optional = true, features = ["Document", "KeyboardEvent", "Window"] }
 web-time          = "1"
 
 [lints]

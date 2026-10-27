@@ -28,12 +28,9 @@ synthie-ui = { path = "../synthie-ui", features = ["crossterm"] }
 
 # Browser build (`trunk build`): Ratzilla renders, cpal plays through WebAudio.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
-console_error_panic_hook = "0.1"
-cpal                     = { workspace = true, features = ["wasm-bindgen"] }
-ratzilla                 = "0.3.1"
-synthie-ui               = { path = "../synthie-ui", default-features = false, features = ["web"] }
-wasm-bindgen             = "0.2"
-web-sys                  = { version = "0.3", features = ["Document", "KeyboardEvent", "Window"] }
+cpal       = { workspace = true, features = ["wasm-bindgen"] }
+ratzilla   = "0.3.1"
+synthie-ui = { path = "../synthie-ui", default-features = false, features = ["web"] }
 
 [lints]
 workspace = true

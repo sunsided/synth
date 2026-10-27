@@ -9,6 +9,8 @@ pub mod key;
 pub mod modal;
 pub mod scope;
 pub mod theme;
+#[cfg(feature = "web")]
+pub mod web;
 pub mod widgets;
 
 pub use key::{Key, KeyCode, KeyKind};

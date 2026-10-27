@@ -110,8 +110,6 @@ pub struct AppState {
     /// Section and param focused before jumping to the preset browser with
     /// [`AppState::toggle_presets`], restored when jumping back.
     return_focus: (Section, usize),
-    /// When `true`, the event loop exits after the current frame.
-    pub should_quit: bool,
     /// When `true`, the help overlay is drawn instead of the main UI.
     pub show_help: bool,
     /// Quit confirmation / `:` command line, when open.
@@ -150,7 +148,6 @@ impl AppState {
             patches,
             selected_preset: 0,
             return_focus: (Section::Osc, 0),
-            should_quit: false,
             show_help: false,
             modal: Modal::None,
             status_msg: String::new(),
@@ -204,7 +201,7 @@ impl AppState {
     /// Save current params as a named preset.
     ///
     /// If a patch with the same name already exists it is overwritten; otherwise
-    /// a new entry is appended.  Persists to disk as a best-effort operation.
+    /// a new entry is appended.  Persists the bank as a best-effort operation.
     pub fn save_current_as_preset(&mut self, name: &str) {
         let patch = Patch::new(name, self.params.clone());
         self.current_patch_name = name.to_string();
@@ -214,8 +211,7 @@ impl AppState {
             self.patches.push(patch);
             self.selected_preset = self.patches.len() - 1;
         }
-        let save_path = crate::preset_store::user_presets_path();
-        if let Err(e) = crate::preset_store::save_patches(&self.patches, &save_path) {
+        if let Err(e) = crate::preset_store::save(&self.patches) {
             self.status_msg = format!("Save failed: {e}");
         } else {
             self.status_msg = format!("Saved: {name}");
