@@ -205,7 +205,7 @@ impl LfoTarget {
 }
 
 /// Oscillator section parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct OscParams {
     /// Active waveform shape.
@@ -270,7 +270,7 @@ impl RingModMode {
 }
 
 /// Second oscillator section parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Osc2Params {
     /// Waveform shape for the second oscillator.
@@ -299,7 +299,7 @@ impl Default for Osc2Params {
 }
 
 /// Amplitude envelope section parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct EnvParams {
     /// Attack time in seconds.
@@ -315,7 +315,7 @@ pub struct EnvParams {
 }
 
 /// Filter section parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FilterParams {
     /// Filter topology (LP / BP / HP).
@@ -380,7 +380,7 @@ impl LfoShape {
 
 /// LFO section parameters.
 #[allow(clippy::struct_field_names)] // `lfo_` prefix is intentional for clarity in a flat params struct
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct LfoParams {
     /// LFO rate in Hz.
@@ -406,7 +406,7 @@ impl Default for LfoParams {
 }
 
 /// Modulation envelope parameters (filter cutoff or pitch target).
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ModEnvParams {
     /// Attack time in seconds.
@@ -437,7 +437,7 @@ impl Default for ModEnvParams {
 
 /// FX section parameters.
 #[allow(clippy::struct_field_names)] // reverb_ prefix is intentional; struct may gain non-reverb fields
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct FxParams {
     /// Reverb wet/dry mix, 0 .. 1.
@@ -449,7 +449,7 @@ pub struct FxParams {
 }
 
 /// Bitcrusher section parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct CrusherParams {
     /// Bit depth: 1.0..=16.0. At 16.0 with `rate` 1.0, the DSP path is bypassed entirely (exact pass-through).
@@ -468,7 +468,7 @@ impl Default for CrusherParams {
 }
 
 /// Delay/echo FX parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct DelayParams {
     /// Delay time in ms, 1.0..=2000.0.
@@ -490,7 +490,7 @@ impl Default for DelayParams {
 }
 
 /// Chorus FX parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct ChorusParams {
     /// LFO modulation rate in Hz, 0.1..=5.0.
@@ -512,7 +512,7 @@ impl Default for ChorusParams {
 }
 
 /// Global section parameters.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct GlobalParams {
     /// Master output volume, 0 .. 1.
@@ -525,7 +525,7 @@ pub struct GlobalParams {
 ///
 /// The UI owns the authoritative copy; the audio thread receives a boxed clone
 /// via `AudioEvent::LoadPatch` on every user edit.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SynthParams {
     /// Oscillator parameters.
@@ -618,8 +618,96 @@ impl Default for SynthParams {
     }
 }
 
+/// Clamp `v` into `lo..=hi`; a non-finite `v` becomes `fallback`.
+fn fit(v: &mut f32, lo: f32, hi: f32, fallback: f32) {
+    *v = if v.is_finite() {
+        v.clamp(lo, hi)
+    } else {
+        fallback
+    };
+}
+
+impl ModEnvParams {
+    fn sanitize(&mut self, d: &Self) {
+        fit(&mut self.attack, 0.001, 10.0, d.attack);
+        fit(&mut self.decay, 0.001, 10.0, d.decay);
+        fit(&mut self.sustain, 0.0, 1.0, d.sustain);
+        fit(&mut self.release, 0.001, 20.0, d.release);
+        fit(&mut self.depth, -1.0, 1.0, d.depth);
+    }
+}
+
+impl LfoParams {
+    fn sanitize(&mut self, d: &Self) {
+        fit(&mut self.lfo_rate, 0.0, 50.0, d.lfo_rate);
+        fit(&mut self.lfo_depth, 0.0, 1.0, d.lfo_depth);
+    }
+}
+
+impl SynthParams {
+    /// Bring every parameter into its documented range, in place.
+    ///
+    /// Patches from untrusted sources (user-edited JSON, files, the network)
+    /// can carry any finite value, and some DSP stages overflow or divide by
+    /// zero outside their range. The processor sanitizes every patch it
+    /// loads; call this to see what it will actually play. Values already
+    /// in range, including every built-in preset, are left untouched, and a
+    /// non-finite value falls back to the field's default.
+    pub fn sanitize(&mut self) {
+        let d = Self::default();
+        fit(&mut self.osc.pulse_width, 0.05, 0.95, d.osc.pulse_width);
+        fit(&mut self.osc.detune, -100.0, 100.0, d.osc.detune);
+        fit(&mut self.osc.noise_mix, 0.0, 1.0, d.osc.noise_mix);
+
+        fit(&mut self.osc2.detune, -100.0, 100.0, d.osc2.detune);
+        fit(&mut self.osc2.osc2_mix, 0.0, 1.0, d.osc2.osc2_mix);
+
+        fit(&mut self.env.attack, 0.001, 10.0, d.env.attack);
+        fit(&mut self.env.decay, 0.001, 10.0, d.env.decay);
+        fit(&mut self.env.sustain, 0.0, 1.0, d.env.sustain);
+        fit(&mut self.env.release, 0.001, 20.0, d.env.release);
+
+        fit(&mut self.filter.cutoff, 20.0, 18_000.0, d.filter.cutoff);
+        fit(&mut self.filter.resonance, 0.0, 0.99, d.filter.resonance);
+        fit(&mut self.filter.drive, 0.0, 1.0, d.filter.drive);
+
+        self.lfo.sanitize(&d.lfo);
+        self.lfo2.sanitize(&d.lfo2);
+        self.filter_env.sanitize(&d.filter_env);
+        self.pitch_env.sanitize(&d.pitch_env);
+
+        fit(&mut self.fx.reverb_mix, 0.0, 1.0, d.fx.reverb_mix);
+        fit(&mut self.fx.reverb_size, 0.0, 1.0, d.fx.reverb_size);
+        fit(&mut self.fx.reverb_damping, 0.0, 1.0, d.fx.reverb_damping);
+
+        fit(&mut self.crusher.bits, 1.0, 16.0, d.crusher.bits);
+        fit(&mut self.crusher.rate, 1.0, 16.0, d.crusher.rate);
+
+        fit(&mut self.delay.time_ms, 1.0, 2_000.0, d.delay.time_ms);
+        fit(&mut self.delay.feedback, 0.0, 0.95, d.delay.feedback);
+        fit(&mut self.delay.mix, 0.0, 1.0, d.delay.mix);
+
+        fit(&mut self.chorus.rate, 0.1, 5.0, d.chorus.rate);
+        fit(&mut self.chorus.depth_ms, 0.0, 10.0, d.chorus.depth_ms);
+        fit(&mut self.chorus.mix, 0.0, 1.0, d.chorus.mix);
+
+        #[cfg(feature = "arp")]
+        {
+            fit(&mut self.arp.rate, 0.0, 50.0, d.arp.rate);
+            fit(&mut self.arp.gate, 0.0, 1.0, d.arp.gate);
+            self.arp.count = self.arp.count.min(4);
+            for note in &mut self.arp.notes {
+                *note = MidiNote::new_clamped(note.0);
+            }
+        }
+
+        fit(&mut self.global.volume, 0.0, 1.0, d.global.volume);
+        fit(&mut self.global.glide_time, 0.0, 10.0, d.global.glide_time);
+    }
+}
+
 /// A named preset: a display name paired with a full parameter snapshot.
-#[derive(Debug, Clone)]
+#[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct Patch {
     /// Human-readable patch name shown in the preset list.

@@ -19,7 +19,7 @@ path = ".."
 default-features = false
 
 # Re-enable std and serde; std is needed for the math shim, serde for fuzz_params_serde.
-features = ["std", "serde"]
+features = ["std", "serde", "arp"]
 
 # Fuzz targets are compiled as separate binaries; keep them out of normal
 # workspace builds and disable doc/test targets to speed up fuzzer compilation.
@@ -50,3 +50,9 @@ doc = false
 # This `[workspace]` declaration is required by cargo-fuzz; it prevents the
 # fuzz package from being absorbed by the parent workspace.
 [workspace]
+
+[[bin]]
+name = "fuzz_patch_playback"
+path = "fuzz_targets/fuzz_patch_playback.rs"
+test = false
+doc = false

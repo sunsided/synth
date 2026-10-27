@@ -38,6 +38,12 @@ impl CombFilter {
     }
 
     /// Update feedback gain and damping without reallocating the delay line.
+    fn reset(&mut self) {
+        self.buf.fill(0.0);
+        self.idx = 0;
+        self.damp_state = 0.0;
+    }
+
     fn set_params(&mut self, feedback: f32, damp: f32) {
         self.feedback = feedback;
         self.damp = damp.clamp(0.0, 0.999);
@@ -72,6 +78,11 @@ impl AllpassFilter {
     }
 
     /// Process one sample through the allpass section.
+    fn reset(&mut self) {
+        self.buf.fill(0.0);
+        self.idx = 0;
+    }
+
     fn process(&mut self, input: f32) -> f32 {
         let buf_out = self.buf[self.idx];
         let out = buf_out - input;
@@ -118,6 +129,12 @@ impl Reverb {
     }
 
     /// Update room size and damping without reallocating delay buffers.
+    /// Clear the reverb tail. Does not allocate.
+    pub fn reset(&mut self) {
+        self.combs.iter_mut().for_each(CombFilter::reset);
+        self.allpasses.iter_mut().for_each(AllpassFilter::reset);
+    }
+
     pub fn set_params(&mut self, size: f32, damping: f32) {
         let feedback = 0.70 + size.clamp(0.0, 1.0) * 0.25; // 0.70 .. 0.95
         let damp = damping.clamp(0.0, 0.999);
