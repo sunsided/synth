@@ -8,10 +8,19 @@ repository.workspace = true
 license.workspace = true
 publish           = false
 
+[features]
+default   = ["crossterm"]
+## `From<crossterm::event::KeyEvent>` for [`Key`].
+crossterm = ["dep:crossterm"]
+## `From<&web_sys::KeyboardEvent>` for [`Key`].
+web       = ["dep:web-sys"]
+
 [dependencies]
 crossbeam-channel = { workspace = true }
-crossterm         = { workspace = true }
+crossterm         = { workspace = true, optional = true }
 ratatui           = { workspace = true }
+web-sys           = { version = "0.3", optional = true, features = ["KeyboardEvent"] }
+web-time          = "1"
 
 [lints]
 workspace = true

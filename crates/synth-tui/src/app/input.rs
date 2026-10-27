@@ -78,7 +78,7 @@ pub fn handle_key(key: KeyEvent, state: &mut AppState) -> bool {
     }
 
     // Quit dialog / command line capture key presses while open.
-    match state.modal.handle_key(key) {
+    match state.modal.handle_key(key.into()) {
         ModalAction::Ignored => {}
         ModalAction::Consumed => return false,
         ModalAction::Quit => return true,

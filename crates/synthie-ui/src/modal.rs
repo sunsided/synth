@@ -5,7 +5,7 @@
 //! detected from plain key presses; `:` opens a small command line in the
 //! footer instead, and the command runs on `Enter`, as in vim.
 
-use crossterm::event::{KeyCode, KeyEvent, KeyEventKind};
+use crate::key::{Key, KeyCode, KeyKind};
 
 /// Modal input state; while not [`Modal::None`] it captures key presses.
 #[derive(Debug, Clone, Default, PartialEq, Eq)]
@@ -53,8 +53,8 @@ impl Modal {
     ///
     /// Release and repeat events are never consumed, so held piano keys still
     /// get their note-off after a modal opens.
-    pub fn handle_key(&mut self, key: KeyEvent) -> ModalAction {
-        if key.kind != KeyEventKind::Press {
+    pub fn handle_key(&mut self, key: Key) -> ModalAction {
+        if key.kind != KeyKind::Press {
             return ModalAction::Ignored;
         }
         match self {
@@ -106,10 +106,9 @@ fn run_command(cmd: &str) -> ModalAction {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crossterm::event::KeyModifiers;
 
-    fn press(code: KeyCode) -> KeyEvent {
-        KeyEvent::new(code, KeyModifiers::NONE)
+    fn press(code: KeyCode) -> Key {
+        Key::press(code)
     }
 
     fn type_command(modal: &mut Modal, text: &str) -> ModalAction {
@@ -154,7 +153,7 @@ mod tests {
     fn releases_pass_through() {
         let mut modal = Modal::ConfirmQuit;
         let mut release = press(KeyCode::Char('z'));
-        release.kind = KeyEventKind::Release;
+        release.kind = KeyKind::Release;
         assert_eq!(modal.handle_key(release), ModalAction::Ignored);
         assert!(modal.is_open());
     }

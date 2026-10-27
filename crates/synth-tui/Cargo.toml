@@ -16,7 +16,7 @@ path = "src/main.rs"
 anyhow             = { workspace = true }
 crossbeam-channel  = { workspace = true }
 crossterm          = { workspace = true }
-ratatui    = { workspace = true }
+ratatui    = { workspace = true, features = ["crossterm"] }
 serde_json = { workspace = true }
 synthie      = { path = "../synthie", features = ["serde"] }
 synthie-ui   = { path = "../synthie-ui" }

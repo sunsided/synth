@@ -151,6 +151,27 @@ tasks:
     cmds:
       - cargo run -p synthie-tracker {{.PROFILE_FLAG}} -- {{.CLI_ARGS}}
 
+  dev:tracker:web:
+    desc: Serve the tracker's browser build with live reload (http://127.0.0.1:8080)
+    aliases:
+      - tracker:web
+    dir: crates/synthie-tracker
+    preconditions: &tracker-web-preconditions
+      - sh: command -v trunk
+        msg: "trunk not found — install via cargo install trunk --locked"
+      - sh: rustup target list --installed | grep -q wasm32-unknown-unknown
+        msg: "wasm32 target missing — rustup target add wasm32-unknown-unknown"
+    cmds:
+      # Always release: debug-built DSP is too slow for real-time audio in wasm.
+      - trunk serve --release {{.CLI_ARGS}}
+
+  build:tracker:web:
+    desc: Build the tracker for the browser into crates/synthie-tracker/dist
+    dir: crates/synthie-tracker
+    preconditions: *tracker-web-preconditions
+    cmds:
+      - trunk build --release {{.CLI_ARGS}}
+
   example:tune:
     desc: Run the tune example (chord progression + melody, SID-style)
     aliases:
