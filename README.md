@@ -78,7 +78,7 @@ task tracker          # or: cargo run -p synthie-tracker --release
 | Key | Action |
 |---|---|
 | `Space` | Play / Stop |
-| `Esc` | Panic (silence all voices), then ask whether to quit |
+| `Esc` | Stop playback, silence all voices, then ask whether to quit (in the browser: stop only) |
 | `:q` `Enter` | Quit right away (also `:wq`, `:x`) |
 | `↑` / `↓` / `←` / `→` | Move cursor |
 | `Tab` / `Shift+Tab` | Next / previous preset on current track |

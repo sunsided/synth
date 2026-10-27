@@ -110,6 +110,8 @@ pub fn handle_key(key: Key, state: &mut TrackerState) -> bool {
     match key.code {
         KeyCode::F(12) if CAN_QUIT => return true,
         KeyCode::Esc => {
+            // Stop the sequencer first, or the next step would sound again.
+            state.stop();
             state.panic_all();
             if CAN_QUIT {
                 state.modal.confirm_quit();

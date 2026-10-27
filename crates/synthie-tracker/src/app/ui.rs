@@ -414,7 +414,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, state: &TrackerState) {
     let hints: &[(&str, &str)] = if CAN_QUIT {
         &[
             ("Space", "play"),
-            ("Esc", "panic·quit"),
+            ("Esc", "stop·quit"),
             ("Del", "clear"),
             ("↑↓", "row"),
             ("←→", "track"),
@@ -426,7 +426,7 @@ fn draw_footer(frame: &mut Frame, area: Rect, state: &TrackerState) {
     } else {
         &[
             ("Space", "play"),
-            ("Esc", "panic"),
+            ("Esc", "stop"),
             ("Del", "clear"),
             ("↑↓", "row"),
             ("←→", "track"),
@@ -445,11 +445,11 @@ fn draw_help(frame: &mut Frame, area: Rect) {
     const KW: usize = 11;
     let quit = if CAN_QUIT {
         vec![
-            help_entry("Esc", KW, "panic, then ask to quit"),
+            help_entry("Esc", KW, "stop, silence all voices, ask to quit"),
             help_entry(":q ⏎", KW, "quit right away  (also :wq, :x)"),
         ]
     } else {
-        vec![help_entry("Esc", KW, "panic (silence all voices)")]
+        vec![help_entry("Esc", KW, "stop and silence all voices")]
     };
     let mut lines = vec![
         Line::raw(""),
