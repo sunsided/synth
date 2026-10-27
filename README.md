@@ -1,5 +1,9 @@
 # synthie
 
+[![crates.io](https://img.shields.io/crates/v/synthie.svg)](https://crates.io/crates/synthie)
+[![docs.rs](https://docs.rs/synthie/badge.svg)](https://docs.rs/synthie)
+[![npm](https://img.shields.io/npm/v/@sunsided/synthie.svg)](https://www.npmjs.com/package/@sunsided/synthie)
+[![Live demo](https://img.shields.io/badge/demo-sunsided.github.io%2Fsynth-ff2eaa.svg)](https://sunsided.github.io/synth/)
 [![Test](https://github.com/sunsided/synth/actions/workflows/test.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/test.yml)
 [![Format](https://github.com/sunsided/synth/actions/workflows/format.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/format.yml)
 [![Fuzz Build](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml)

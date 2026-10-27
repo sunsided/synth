@@ -1,5 +1,9 @@
 # @sunsided/synthie
 
+[![npm](https://img.shields.io/npm/v/@sunsided/synthie.svg)](https://www.npmjs.com/package/@sunsided/synthie)
+[![crates.io](https://img.shields.io/crates/v/synthie.svg)](https://crates.io/crates/synthie)
+[![Live demo](https://img.shields.io/badge/demo-sunsided.github.io%2Fsynth-ff2eaa.svg)](https://sunsided.github.io/synth/)
+
 A chiptune synthesizer engine compiled to WebAssembly: SID-style oscillators, a resonant filter, envelopes, LFOs, an arpeggiator, reverb/delay/chorus/bitcrusher FX and a drum voice, with four independent channels and the built-in preset bank. It is the engine behind the [browser demos](https://sunsided.github.io/synth/), written in Rust ([`synthie`](https://crates.io/crates/synthie)).
 
 The package does no audio I/O itself. You pull samples with `render()`: from an AudioWorklet in the browser (a ready-made one is included), or in a loop in Node.js, e.g. to write a WAV file.

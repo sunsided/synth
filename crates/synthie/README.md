@@ -1,7 +1,8 @@
-# synth
+# synthie
 
 [![docs.rs](https://docs.rs/synthie/badge.svg)](https://docs.rs/synthie)
 [![crates.io](https://img.shields.io/crates/v/synthie.svg)](https://crates.io/crates/synthie)
+[![npm](https://img.shields.io/npm/v/@sunsided/synthie.svg)](https://www.npmjs.com/package/@sunsided/synthie)
 [![unsafe forbidden](https://img.shields.io/badge/unsafe-forbidden-success.svg)](https://github.com/rust-secure-code/safety-dance/)
 [![Lint and Test](https://github.com/sunsided/synth/actions/workflows/test.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/test.yml)
 [![Fuzz Build](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml/badge.svg)](https://github.com/sunsided/synth/actions/workflows/fuzz-check.yml)
