@@ -17,5 +17,8 @@ serde_json   = { workspace = true }
 synthie      = { path = "../synthie", default-features = false, features = ["std", "serde", "arp"] }
 wasm-bindgen = "0.2"
 
+[dev-dependencies]
+proptest = { workspace = true }
+
 [lints]
 workspace = true
