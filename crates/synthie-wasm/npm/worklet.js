@@ -11,7 +11,8 @@
 //
 // Messages mirror the Synth methods: noteOn / noteOff { note, channel? },
 // drum { hit }, panic, loadPreset { index, channel? },
-// loadParams { json, channel? }. Failures come back as { type: "error", message }.
+// loadParams { json, channel? }, masterGain { gain },
+// normalizeVoices { enabled }. Failures come back as { type: "error", message }.
 
 import "./text-polyfill.js";
 import { initSync, Synth } from "./synthie.js";
@@ -34,6 +35,8 @@ class SynthieProcessor extends AudioWorkletProcessor {
         case "panic": this.synth.panic(); break;
         case "loadPreset": this.synth.loadPreset(msg.index, msg.channel); break;
         case "loadParams": this.synth.loadParams(msg.json, msg.channel); break;
+        case "masterGain": this.synth.masterGain = msg.gain; break;
+        case "normalizeVoices": this.synth.normalizeVoices = msg.enabled; break;
         default: throw new Error(`unknown message type: ${msg.type}`);
       }
     } catch (e) {
