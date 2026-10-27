@@ -139,12 +139,11 @@ impl Voice {
 
     /// Immediately silence the voice and reset DSP state (all-notes-off / panic).
     pub fn panic(&mut self) {
-        self.active = false;
-        self.env.reset();
-        self.filter.reset();
-        self.filter_env.reset();
-        self.pitch_env.reset();
-        self.crusher.reset();
+        // A full reset, not just the envelopes: glide frequency, oscillator
+        // and LFO phases carry over into the next note, so a non-finite
+        // value left in any of them would never clear. `Voice` holds no heap
+        // data, so this does not allocate.
+        *self = Self::new();
     }
 
     /// Render one sample.  Called from the audio callback – no allocation.

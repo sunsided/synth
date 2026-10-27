@@ -29,6 +29,12 @@ impl Delay {
         }
     }
 
+    /// Clear the echo tail. Does not allocate.
+    pub fn reset(&mut self) {
+        self.buf.fill(0.0);
+        self.write_idx = 0;
+    }
+
     /// Process one sample.
     ///
     /// Returns `input` unchanged when `mix < 1e-4` (fast bypass).

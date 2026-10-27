@@ -124,7 +124,7 @@ for (const note of [57, 60, 64]) synth.noteOn(note); // A minor, held
 | `cancelScheduled()` | Drop all pending events; sounding notes ring on. |
 | `presetNames()` | Names of the built-in presets, by index. |
 | `loadPreset(index, channel = 0, at?)` | Load a built-in preset onto a channel. |
-| `presetParams(index)` / `loadParams(json, channel = 0, at?)` | A preset's parameters as JSON; load edited parameters. |
+| `presetParams(index)` / `loadParams(json, channel = 0, at?)` | A preset's parameters as JSON; load edited parameters. Out-of-range values are clamped to each parameter's range, so untrusted JSON is safe to load. |
 | `render(output, outputChannels)` | Fill an interleaved `Float32Array`; the mono mix goes to every channel. |
 | `renderUntilSilent(maxSeconds, holdSeconds = 2.5)` | Render mono until idle and silent for `holdSeconds` (or `maxSeconds`); returns a `Float32Array` without trailing silence. |
 | `currentFrame` | Frames rendered so far: the timeline `at` refers to. |

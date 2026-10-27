@@ -267,3 +267,30 @@ describe("silence", () => {
   }
 });
 
+
+describe("untrusted patches", () => {
+  test("absurd values from JSON are clamped, and the synth keeps working", () => {
+    const synth = new Synth(SAMPLE_RATE);
+    const params = JSON.parse(synth.presetParams(1));
+    // The patch fuzzing found: it used to silence the engine for good.
+    params.chorus = { rate: 1.7e38, depth_ms: 9.2e-41, mix: 5.8e17 };
+    params.delay = { time_ms: -5, feedback: 1e30, mix: 1e9 };
+    params.filter.cutoff = 1e38;
+    params.env.attack = -1;
+    params.crusher = { bits: 0, rate: 0 };
+    params.global.volume = 3e38;
+    synth.loadParams(JSON.stringify(params));
+    for (const note of [57, 60, 64]) synth.noteOn(note);
+    const loud = render(synth, SAMPLE_RATE);
+    assert.ok(loud.every((s) => Number.isFinite(s) && Math.abs(s) <= 1));
+    assert.ok(peak(loud) > 0.01, "the clamped patch still plays");
+
+    synth.panic();
+    synth.loadPreset(1);
+    synth.noteOn(69);
+    const fresh = new Synth(SAMPLE_RATE);
+    fresh.loadPreset(1);
+    fresh.noteOn(69);
+    assertSameSamples(assert, render(synth), render(fresh), "after panic and a sane preset");
+  });
+});

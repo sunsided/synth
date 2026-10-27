@@ -40,17 +40,30 @@ impl Chorus {
     pub fn new(sample_rate: f32) -> Self {
         #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
         let len = ((MAX_CHORUS_DELAY_MS / 1000.0) * sample_rate).ceil() as usize;
-        let phases = [0.0_f32, TAU / 3.0, 2.0 * TAU / 3.0];
-        let lfo = phases.map(crate::math::sin_cos);
         Self {
             buf: vec![0.0; len.max(1)],
             write_idx: 0,
-            lfo,
+            lfo: Self::initial_lfo(),
             sin_inc: 0.0,
             cos_inc: 1.0,
             cached_rate: -1.0,
             sample_rate,
         }
+    }
+
+    /// LFO state at 0°, 120° and 240°.
+    fn initial_lfo() -> [(f32, f32); NUM_TAPS] {
+        [0.0_f32, TAU / 3.0, 2.0 * TAU / 3.0].map(crate::math::sin_cos)
+    }
+
+    /// Clear the delay line and restart the LFOs. Does not allocate.
+    pub fn reset(&mut self) {
+        self.buf.fill(0.0);
+        self.write_idx = 0;
+        self.lfo = Self::initial_lfo();
+        self.sin_inc = 0.0;
+        self.cos_inc = 1.0;
+        self.cached_rate = -1.0;
     }
 
     /// Process one sample.

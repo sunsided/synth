@@ -189,6 +189,13 @@ impl AudioChannel {
     }
 }
 
+/// A copy of `params` brought into range, see [`SynthParams::sanitize`].
+fn sanitized(params: &SynthParams) -> SynthParams {
+    let mut params = params.clone();
+    params.sanitize();
+    params
+}
+
 /// Multi-channel DSP processor with shared FX chain.
 ///
 /// `N` is the number of independent synthesis channels, each with its own
@@ -303,11 +310,15 @@ impl<const N: usize> SynthProcessor<N> {
         }
     }
 
+    /// Silence everything at once: voices, drums and the FX tails.
     fn panic(&mut self) {
         for channel in &mut self.channels {
             channel.panic();
         }
         self.drums.panic();
+        self.chorus.reset();
+        self.delay.reset();
+        self.reverb.reset();
     }
 
     fn apply_events(&mut self, events: &[AudioEvent]) {
@@ -317,7 +328,7 @@ impl<const N: usize> SynthProcessor<N> {
                 AudioEvent::NoteOff(midi) => self.note_off(ChannelNo::DEFAULT, *midi),
                 AudioEvent::Panic => self.panic(),
                 AudioEvent::LoadPatch(p) => {
-                    self.channels[0].params = (**p).clone();
+                    self.channels[0].params = sanitized(p);
                     self.apply_reverb_params();
                 }
                 AudioEvent::Drum(hit) => self.drums.trigger(*hit),
@@ -325,7 +336,7 @@ impl<const N: usize> SynthProcessor<N> {
                 AudioEvent::NoteOffChannel(ch, midi) => self.note_off(*ch, *midi),
                 AudioEvent::LoadPatchChannel(ch, p) => {
                     if let Some(channel) = self.channels.get_mut(ch.as_usize()) {
-                        channel.params = (**p).clone();
+                        channel.params = sanitized(p);
                     }
                     if *ch == ChannelNo::DEFAULT {
                         self.apply_reverb_params();
@@ -390,7 +401,12 @@ impl<const N: usize> SynthProcessor<N> {
             let sample = if sample.is_finite() {
                 sample.clamp(-1.0, 1.0)
             } else {
+                // Something overflowed despite sanitized patches. A NaN or
+                // infinity would otherwise circulate in the voice and FX
+                // feedback paths forever, silencing the engine for good:
+                // drop all state and start over from silence.
                 core::hint::cold_path();
+                self.panic();
                 0.0
             };
 
@@ -691,6 +707,31 @@ mod tests {
         }
         run(&mut proc, &[AudioEvent::Panic], 1);
         assert!(proc.is_idle());
+    }
+
+    /// Belt and braces: even if a non-finite value gets past the patch
+    /// sanitizing, the engine drops all state instead of staying silent.
+    #[test]
+    fn a_non_finite_sample_resets_the_engine_instead_of_poisoning_it() {
+        let mut proc = make();
+        // Bypass sanitizing: this rate overflows the chorus LFO to NaN.
+        proc.channels[0].params.chorus.rate = f32::MAX;
+        proc.channels[0].params.chorus.mix = 0.5;
+        proc.channels[0].params.delay.mix = 0.5;
+        let out = run(&mut proc, &[AudioEvent::NoteOn(NOTE)], 4096);
+        assert!(out.iter().all(|s| s.is_finite()));
+
+        let events = [
+            AudioEvent::LoadPatch(Box::default()),
+            AudioEvent::NoteOn(NOTE),
+        ];
+        let healed = run(&mut proc, &events, 4096);
+        let reference = run(&mut make(), &events, 4096);
+        assert_eq!(
+            healed.iter().map(|s| s.to_bits()).collect::<Vec<_>>(),
+            reference.iter().map(|s| s.to_bits()).collect::<Vec<_>>(),
+            "after the reset the engine should play like a new one"
+        );
     }
 
     #[test]
