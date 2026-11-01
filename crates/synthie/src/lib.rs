@@ -13,6 +13,9 @@
 #![cfg_attr(docsrs, feature(doc_cfg))]
 
 pub mod audio;
+#[cfg(feature = "kira")]
+#[cfg_attr(docsrs, doc(cfg(feature = "kira")))]
+pub mod kira;
 mod math;
 pub mod param;
 pub mod params;
