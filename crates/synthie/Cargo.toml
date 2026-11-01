@@ -60,6 +60,12 @@ path = "examples/drums.rs"
 required-features = ["io"]
 
 [[example]]
+name = "pattern"
+path = "examples/pattern.rs"
+required-features = ["io", "arp"]
+test = true
+
+[[example]]
 name = "lazy_jones"
 path = "examples/lazy_jones.rs"
 required-features = ["io"]
