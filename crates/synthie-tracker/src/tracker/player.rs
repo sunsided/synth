@@ -18,7 +18,7 @@ use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
 use crossbeam_channel::{Receiver, Sender, bounded};
 use synthie::audio::engine::Sequencer;
-use synthie::params::{AudioEvent, ChannelNo, DrumHit, MidiNote};
+use synthie::params::{AudioEvent, ChannelNo, MidiNote};
 
 use super::{SYNTH_TRACKS, Song, Step};
 
@@ -216,21 +216,13 @@ fn fire_step(
     }
 
     // Trigger drum hits.
-    let drum = &song.pattern.drums[step];
-    if drum.kick {
-        out.push(AudioEvent::Drum(DrumHit::Kick));
-    }
-    if drum.hihat_closed {
-        out.push(AudioEvent::Drum(DrumHit::HiHatClosed));
-    }
-    if drum.hihat_open {
-        out.push(AudioEvent::Drum(DrumHit::HiHatOpen));
-    }
+    out.extend(song.pattern.drums[step].hits().map(AudioEvent::Drum));
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use synthie::params::DrumHit;
 
     fn synth_events(out: &mut Vec<AudioEvent>) -> Vec<(bool, u8)> {
         out.drain(..)
@@ -277,7 +269,7 @@ mod tests {
             ..Song::default()
         };
         for drum in &mut song.pattern.drums {
-            drum.kick = true;
+            drum.set(DrumHit::Kick, true);
         }
         player.play(song);
 
@@ -303,5 +295,24 @@ mod tests {
             let err = (at as f64 - ideal).abs();
             assert!(err <= 1.0, "step {i} at frame {at}, expected {ideal}");
         }
+    }
+
+    #[test]
+    fn every_kit_drum_on_a_step_fires() {
+        let mut song = Song::default();
+        for hit in crate::tracker::KIT {
+            song.pattern.drums[3].set(hit, true);
+        }
+        let mut out = Vec::new();
+        let mut active = [None; SYNTH_TRACKS];
+        fire_step(&mut out, &song, 3, &mut active);
+        let fired: Vec<_> = out
+            .iter()
+            .filter_map(|e| match e {
+                AudioEvent::Drum(hit) => Some(*hit),
+                _ => None,
+            })
+            .collect();
+        assert_eq!(fired, crate::tracker::KIT);
     }
 }

@@ -6,7 +6,7 @@
 
 pub mod player;
 
-use synthie::params::MidiNote;
+use synthie::params::{DrumHit, MidiNote};
 
 /// Maximum number of steps (rows) in a pattern: eight bars of 16th notes.
 pub const STEPS: usize = 128;
@@ -39,15 +39,50 @@ pub enum Step {
 
 // ─── DrumStep ────────────────────────────────────────────────────────────────
 
-/// Which drum hits are active at a single step.
-#[derive(Debug, Clone, Copy, Default)]
-pub struct DrumStep {
-    /// Kick drum hit.
-    pub kick: bool,
-    /// Closed hi-hat hit.
-    pub hihat_closed: bool,
-    /// Open hi-hat hit.
-    pub hihat_open: bool,
+/// The drum kit, in column order: every hit the drum machine can play.
+pub const KIT: [DrumHit; KIT_SIZE] = DrumHit::ALL;
+
+/// Number of drums in [`KIT`].
+pub const KIT_SIZE: usize = DrumHit::ALL.len();
+
+/// Which drum hits are active at a single step, one flag per [`KIT`] entry.
+#[derive(Debug, Clone, Copy, Default, PartialEq, Eq)]
+pub struct DrumStep([bool; KIT_SIZE]);
+
+impl DrumStep {
+    /// Whether `hit` fires on this step.
+    #[must_use]
+    pub fn has(self, hit: DrumHit) -> bool {
+        kit_index(hit).is_some_and(|i| self.0[i])
+    }
+
+    /// Set whether `hit` fires on this step.
+    pub fn set(&mut self, hit: DrumHit, on: bool) {
+        if let Some(i) = kit_index(hit) {
+            self.0[i] = on;
+        }
+    }
+
+    /// Toggle `hit` on this step.
+    pub fn toggle(&mut self, hit: DrumHit) {
+        self.set(hit, !self.has(hit));
+    }
+
+    /// Whether any drum fires on this step.
+    #[must_use]
+    pub fn any(self) -> bool {
+        self.0.contains(&true)
+    }
+
+    /// The hits on this step, in kit order.
+    pub fn hits(self) -> impl Iterator<Item = DrumHit> {
+        KIT.into_iter().filter(move |&hit| self.has(hit))
+    }
+}
+
+/// Column of `hit` in [`KIT`].
+fn kit_index(hit: DrumHit) -> Option<usize> {
+    KIT.iter().position(|&h| h == hit)
 }
 
 // ─── Pattern ─────────────────────────────────────────────────────────────────
@@ -171,9 +206,9 @@ pub fn demo_song() -> Song {
     // "e" and "a", and a kick fill on the last beat of each pass.
     for (step, drum) in p.drums.iter_mut().enumerate() {
         let fill = step % PASS >= PASS - 2;
-        drum.kick = step % 4 == 0 || fill;
-        drum.hihat_open = step % 4 == 2 && !fill;
-        drum.hihat_closed = step % 2 == 1;
+        drum.set(DrumHit::Kick, step % 4 == 0 || fill);
+        drum.set(DrumHit::HiHatOpen, step % 4 == 2 && !fill);
+        drum.set(DrumHit::HiHatClosed, step % 2 == 1);
     }
 
     song

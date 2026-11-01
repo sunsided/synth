@@ -8,7 +8,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossbeam_channel::Sender;
-use synthie::params::{AudioEvent, ChannelNo, MidiNote, Patch};
+use synthie::params::{AudioEvent, ChannelNo, DrumHit, MidiNote, Patch};
 use synthie::presets::sid::default_patches;
 use synthie_ui::Modal;
 
@@ -16,16 +16,6 @@ use crate::tracker::player::Player;
 use crate::tracker::{
     DRUM_TRACK, DrumStep, STEPS, SYNTH_TRACKS, Song, Step, TOTAL_TRACKS, demo_song,
 };
-
-// ─── DrumKind ────────────────────────────────────────────────────────────────
-
-/// Which drum instrument to toggle on the drum track.
-#[derive(Copy, Clone)]
-pub enum DrumKind {
-    Kick,
-    HiHatClosed,
-    HiHatOpen,
-}
 
 // ─── TrackerState ────────────────────────────────────────────────────────────
 
@@ -116,10 +106,7 @@ impl TrackerState {
                 .get(step)
                 .is_some_and(|s| matches!(s, Step::Note(_)));
         }
-        hits[DRUM_TRACK] = pattern
-            .drums
-            .get(step)
-            .is_some_and(|d| d.kick || d.hihat_closed || d.hihat_open);
+        hits[DRUM_TRACK] = pattern.drums.get(step).is_some_and(|d| d.any());
         hits
     }
 
@@ -257,14 +244,9 @@ impl TrackerState {
     /// Toggle a drum hit at the cursor row and advance.
     ///
     /// No-op if the cursor is on a synth track.
-    pub fn toggle_drum(&mut self, kind: DrumKind) {
+    pub fn toggle_drum(&mut self, hit: DrumHit) {
         if self.cursor_track == DRUM_TRACK {
-            let step = &mut self.song.pattern.drums[self.cursor_row];
-            match kind {
-                DrumKind::Kick => step.kick = !step.kick,
-                DrumKind::HiHatClosed => step.hihat_closed = !step.hihat_closed,
-                DrumKind::HiHatOpen => step.hihat_open = !step.hihat_open,
-            }
+            self.song.pattern.drums[self.cursor_row].toggle(hit);
             self.notify_player();
             self.cursor_down();
         }
