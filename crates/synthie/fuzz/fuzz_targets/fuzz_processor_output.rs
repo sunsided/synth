@@ -27,7 +27,7 @@ use synthie::audio::processor::{NUM_CHANNELS, SynthProcessor, VoiceNormalization
 use synthie::params::{AudioEvent, ChannelNo, DrumHit, MidiNote};
 use synthie::presets::sid::default_patches;
 
-const DRUMS: [DrumHit; 3] = [DrumHit::Kick, DrumHit::HiHatClosed, DrumHit::HiHatOpen];
+const DRUMS: [DrumHit; 9] = DrumHit::ALL;
 
 #[allow(clippy::cast_possible_truncation)] // NUM_CHANNELS is tiny
 fn channel(byte: u8) -> ChannelNo {

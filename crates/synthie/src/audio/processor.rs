@@ -680,7 +680,7 @@ mod tests {
 
     #[test]
     fn drums_keep_the_processor_busy_until_they_decay() {
-        for hit in [DrumHit::Kick, DrumHit::HiHatClosed, DrumHit::HiHatOpen] {
+        for hit in DrumHit::ALL {
             let mut proc = make();
             run(&mut proc, &[AudioEvent::Drum(hit)], 64);
             assert!(!proc.is_idle(), "{hit:?} should keep the processor busy");

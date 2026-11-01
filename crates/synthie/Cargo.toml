@@ -55,6 +55,11 @@ path = "examples/tune.rs"
 required-features = ["io"]
 
 [[example]]
+name = "drums"
+path = "examples/drums.rs"
+required-features = ["io"]
+
+[[example]]
 name = "lazy_jones"
 path = "examples/lazy_jones.rs"
 required-features = ["io"]

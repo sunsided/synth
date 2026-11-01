@@ -154,7 +154,7 @@ for (const note of [57, 60, 64]) synth.noteOn(note); // A minor, held
 |---|---|
 | `new Synth(sampleRate)` | Four-channel synth at `sampleRate` Hz. |
 | `noteOn(note, channel = 0, at?)` / `noteOff(note, channel = 0, at?)` | MIDI note `0..=127` on channel `0..channels`. |
-| `drum(hit, at?)` | `"kick"`, `"hihat-closed"` or `"hihat-open"`. |
+| `drum(hit, at?)` | `"kick"`, `"snare"`, `"hihat-closed"`, `"hihat-open"`, `"crash"`, `"tom-low"`, `"tom-mid"`, `"tom-high"` or `"clap"`. |
 | `panic()` | Silence every voice and drop all pending events. |
 | `cancelScheduled()` | Drop all pending events; sounding notes ring on. |
 | `presetNames()` | Names of the built-in presets, by index. |
