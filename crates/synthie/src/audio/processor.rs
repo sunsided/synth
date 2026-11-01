@@ -243,6 +243,12 @@ impl<const N: usize> SynthProcessor<N> {
         }
     }
 
+    /// The sample rate this processor renders at, in Hz.
+    #[must_use]
+    pub fn sample_rate(&self) -> f32 {
+        self.sample_rate
+    }
+
     /// Master output gain applied after the FX chain.
     ///
     /// Defaults to [`DEFAULT_MASTER_GAIN`].
@@ -328,7 +334,7 @@ impl<const N: usize> SynthProcessor<N> {
         self.reverb.reset();
     }
 
-    fn apply_events(&mut self, events: &[AudioEvent]) {
+    pub(crate) fn apply_events(&mut self, events: &[AudioEvent]) {
         for event in events {
             match event {
                 AudioEvent::NoteOn(midi) => self.note_on(ChannelNo::DEFAULT, *midi),
@@ -380,8 +386,10 @@ impl<const N: usize> SynthProcessor<N> {
     /// Apply `events` then render `hw_channels`-interleaved frames into `buf`.
     ///
     /// `buf.len()` must be a multiple of `hw_channels`. Events are applied
-    /// once before the entire buffer is rendered (same semantics as a
-    /// sample-accurate block boundary).
+    /// once before the entire buffer is rendered, so their timing is
+    /// quantized to the buffer size; for sample-accurate timing drive the
+    /// processor through a
+    /// [`SequencedProcessor`](crate::audio::sequencer::SequencedProcessor).
     ///
     /// # Panics
     ///

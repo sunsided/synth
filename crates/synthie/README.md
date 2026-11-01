@@ -18,6 +18,8 @@ A Rust synthesizer engine library with polyphonic voices, ADSR envelopes, state-
 - **LFO** targeting pitch, pulse width, filter cutoff, or volume
 - **Reverb FX** with room size and damping controls
 - **Multi-timbral channels** via `ChannelNo` newtypes
+- **Drum machine** beside the voice pools: kick, snare, hi-hats, crash, toms and clap
+- **Sample-accurate sequencing** on any host via `Sequencer` and `SequencedProcessor`
 - **Serde support** via the `serde` feature (enabled by default)
 
 ## Quick Start
@@ -38,6 +40,30 @@ fn main() -> anyhow::Result<()> {
 ```
 
 See [`examples/`](examples/) for full usage.
+
+## Bring Your Own Audio Backend
+
+`SynthProcessor` has no I/O and renders into any interleaved `f32` buffer, so
+it can run inside kira, a game engine's stream, or an `AudioWorklet`. Pair it
+with a `Sequencer` for events that land on the exact frame, whatever buffer
+size the backend uses:
+
+```rust
+use synthie::prelude::*;
+
+struct FourOnTheFloor;
+
+impl Sequencer for FourOnTheFloor {
+    fn tick(&mut self, sample_rate: f32, out: &mut Vec<AudioEvent>) -> usize {
+        out.push(AudioEvent::Drum(DrumHit::Kick));
+        (sample_rate * 0.5) as usize // 120 bpm
+    }
+}
+
+let mut synth = SequencedProcessor::new(SynthProcessor::<4>::new(48_000.0), FourOnTheFloor);
+let mut buf = vec![0.0; 2 * 512]; // stereo, interleaved
+synth.process_block(&[], &mut buf, 2); // call from the audio callback
+```
 
 ## Feature Flags
 

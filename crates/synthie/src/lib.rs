@@ -30,6 +30,7 @@ pub mod prelude {
     pub use crate::audio::processor::{
         DEFAULT_MASTER_GAIN, NUM_CHANNELS, SynthProcessor, VoiceNormalization,
     };
+    pub use crate::audio::sequencer::{SequencedProcessor, Sequencer};
     pub use crate::params::*;
     pub use crate::presets;
 }

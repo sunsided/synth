@@ -1,8 +1,8 @@
 //! CPAL audio stream setup — thin I/O wrapper around [`SynthProcessor`].
 //!
 //! [`setup_audio`] / [`setup_audio_n`] open the default output device and wire a
-//! crossbeam event channel into the real-time callback, which drives
-//! [`SynthProcessor::process_block`]. Scope samples are decimated and forwarded
+//! crossbeam event channel into the real-time callback, which drives a
+//! [`SequencedProcessor`]. Scope samples are decimated and forwarded
 //! to the UI thread via a second channel.
 //!
 //! TUI applications should prefer [`setup_audio_silenced`], which uses a larger
@@ -14,9 +14,11 @@ use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
 use crossbeam_channel::{Receiver, Sender, bounded};
 
 use crate::audio::processor::SynthProcessor;
+use crate::audio::sequencer::SequencedProcessor;
 use crate::params::AudioEvent;
 
 pub use crate::audio::processor::NUM_CHANNELS;
+pub use crate::audio::sequencer::Sequencer;
 
 /// Capacity of the scope channel (batches of `Vec<f32>` that can be queued
 /// before the audio thread starts dropping them).
@@ -32,29 +34,6 @@ const SCOPE_DECIMATION: usize = 4;
 
 /// Number of decimated samples accumulated before flushing to the scope channel.
 const SCOPE_BATCH: usize = 128;
-
-/// Event source driven from inside the audio callback.
-///
-/// Events sent through the `Sender<AudioEvent>` are only picked up at the start
-/// of each callback, so their timing is quantised to the hardware buffer
-/// (~93 ms for `Fixed(4096)`).  A sequencer runs on the audio thread instead:
-/// the engine splits each buffer at the frame offsets the sequencer asks for,
-/// so its events land sample-accurately regardless of buffer size.
-///
-/// [`tick`](Sequencer::tick) runs on the real-time thread and must not block
-/// or allocate.
-pub trait Sequencer: Send + 'static {
-    /// Called at the current output frame.  Push events that fire now into
-    /// `out` and return the number of frames until the next call (≥ 1).
-    fn tick(&mut self, sample_rate: f32, out: &mut Vec<AudioEvent>) -> usize;
-}
-
-/// The no-op sequencer: never emits events.
-impl Sequencer for () {
-    fn tick(&mut self, _sample_rate: f32, _out: &mut Vec<AudioEvent>) -> usize {
-        usize::MAX
-    }
-}
 
 /// Initialise CPAL audio output with a configurable channel count, buffer size,
 /// and stream-error handler.
@@ -95,17 +74,22 @@ where
 /// Like [`setup_audio_n_with_error_handler`], plus a [`Sequencer`] that runs
 /// inside the audio callback for sample-accurate event timing.
 ///
+/// Events sent through the returned `Sender<AudioEvent>` are only picked up
+/// at the start of each callback, so their timing is quantised to the
+/// hardware buffer (~93 ms for `Fixed(4096)`). The sequencer's events land
+/// on the exact frame it asks for, regardless of buffer size.
+///
 /// # Errors
 ///
 /// Returns an error if no default audio output device is available or if the
 /// stream configuration cannot be determined or opened.
 pub fn setup_audio_n_with_sequencer<const N: usize, S, F>(
     buffer_size: cpal::BufferSize,
-    mut sequencer: S,
+    sequencer: S,
     on_error: F,
 ) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
 where
-    S: Sequencer,
+    S: Sequencer + Send + 'static,
     F: Fn(cpal::Error) + Send + 'static,
 {
     let (event_tx, event_rx) = bounded::<AudioEvent>(EVENT_CHANNEL_CAPACITY);
@@ -131,12 +115,10 @@ where
         buffer_size,
     };
 
-    let mut processor = SynthProcessor::<N>::new(sample_rate);
+    let mut processor = SequencedProcessor::new(SynthProcessor::<N>::new(sample_rate), sequencer);
     let mut events_buf: Vec<AudioEvent> = Vec::with_capacity(EVENT_CHANNEL_CAPACITY);
     let mut scope_accum: Vec<f32> = Vec::with_capacity(SCOPE_BATCH * 2);
     let mut scope_dec_counter: usize = 0;
-    // Frames left until the sequencer's next tick; 0 → tick at the next frame.
-    let mut until_tick: usize = 0;
 
     let stream = device
         .build_output_stream(
@@ -147,27 +129,9 @@ where
                     events_buf.push(event);
                 }
 
-                // Render in slices split at sequencer ticks.  Queued events
-                // apply at the start of the first slice.
-                let frames = data.len() / hw_channels;
-                let mut offset = 0;
-                loop {
-                    if until_tick == 0 {
-                        until_tick = sequencer.tick(sample_rate, &mut events_buf).max(1);
-                    }
-                    let n = until_tick.min(frames - offset);
-                    processor.process_block(
-                        &events_buf,
-                        &mut data[offset * hw_channels..(offset + n) * hw_channels],
-                        hw_channels,
-                    );
-                    events_buf.clear();
-                    offset += n;
-                    until_tick -= n;
-                    if offset >= frames {
-                        break;
-                    }
-                }
+                // Queued events apply at the first frame; the sequencer's
+                // events land on the exact frames it asks for.
+                processor.process_block(&events_buf, data, hw_channels);
 
                 // Forward decimated samples to the scope display.
                 for frame in data.chunks(hw_channels) {
@@ -277,7 +241,7 @@ pub fn setup_audio_silenced_with_sequencer<S, F>(
     on_error: F,
 ) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
 where
-    S: Sequencer,
+    S: Sequencer + Send + 'static,
     F: Fn(cpal::Error) + Send + 'static,
 {
     // Fixed(4096) (~93 ms at 44.1 kHz) gives the DSP enough headroom to avoid
