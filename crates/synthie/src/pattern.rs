@@ -936,7 +936,7 @@ mod tests {
 
     #[test]
     fn the_tempo_does_not_drift() {
-        // 152 bpm in eighths at 44.1 kHz: 8 704.6... frames per row.
+        // 152 bpm in eighths at 44.1 kHz: 8 703.9... frames per row.
         let song = Song::new(Tempo::bpm(152.0, 2)).lane(CH0, "C4").unwrap();
         let mut player = SongPlayer::new(song);
         let total: usize = (0..304)
