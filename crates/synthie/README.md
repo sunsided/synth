@@ -65,11 +65,47 @@ let mut buf = vec![0.0; 2 * 512]; // stereo, interleaved
 synth.process_block(&[], &mut buf, 2); // call from the audio callback
 ```
 
+Already using [kira](https://crates.io/crates/kira)? Enable the `kira` feature
+and play the synth as a kira sound instead, mixed, faded and paused like any
+other:
+
+```rust,ignore
+use synthie::kira::SynthSoundData;
+use synthie::pattern::SongPlayer;
+
+let mut synth = manager.play(SynthSoundData::new().with_sequencer(SongPlayer::new(song)))?;
+synth.drum(DrumHit::Kick)?;
+synth.set_volume(-6.0, Tween::default());
+```
+
+## Game Music
+
+`synthie::pattern` plays tracker-style songs written in a compact notation,
+sample-accurately through the same `Sequencer` trait:
+
+```rust
+use synthie::params::ChannelNo;
+use synthie::pattern::{Song, SongPlayer, Tempo};
+
+// One row per eighth note at 152 bpm.
+let song = Song::new(Tempo::bpm(152.0, 2))
+    .lane(ChannelNo(0), "E4 . G4 . A4 . B4 . | E5 . . . - . . .")?
+    .lane(ChannelNo(1), "E2 E2 E2 E2 G2 A2 . . | E2 . . . - . . .")?
+    .lane(ChannelNo(3), "k+c h s h k k s h | k h s h k k s o")?;
+let player = SongPlayer::new(song); // hand to any host as a Sequencer
+```
+
+See the `synthie::pattern` docs for the full notation (notes, holds, note-offs,
+drum hits, chip arpeggios, patch changes).
+
 ## Feature Flags
 
 | Feature | Default | Description |
 |---------|---------|-------------|
 | `serde` | enabled | `Serialize`/`Deserialize` on all parameter types |
+| `io` | enabled | cpal output stream (`audio::engine`) |
+| `arp` | enabled | Built-in arpeggiator, and arpeggio cells in patterns |
+| `kira` | disabled | Play the synth as a [kira](https://crates.io/crates/kira) sound (`synthie::kira`); independent of `io` |
 
 ## Terminal UI
 

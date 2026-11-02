@@ -87,7 +87,7 @@ pub struct SequencedProcessor<const N: usize, S> {
     pending: Vec<AudioEvent>,
 }
 
-impl<const N: usize, S: Sequencer> SequencedProcessor<N, S> {
+impl<const N: usize, S> SequencedProcessor<N, S> {
     /// Pair `processor` with `sequencer`. The sequencer's first tick happens
     /// at the first rendered frame.
     #[must_use]
@@ -97,43 +97,6 @@ impl<const N: usize, S: Sequencer> SequencedProcessor<N, S> {
             sequencer,
             until_tick: 0,
             pending: Vec::with_capacity(SEQUENCER_EVENT_CAPACITY),
-        }
-    }
-
-    /// Apply `events`, then render `hw_channels`-interleaved frames into
-    /// `buf`, ticking the sequencer and applying its events at exactly the
-    /// frames it asked for.
-    ///
-    /// `events` take effect at the first frame of `buf`, before any
-    /// sequencer events due at that frame. Use them for live input (a key
-    /// press, a game event); anything rhythmic belongs in the sequencer.
-    ///
-    /// # Panics
-    ///
-    /// Panics if `hw_channels` is zero or if `buf.len()` is not a multiple of
-    /// `hw_channels`.
-    pub fn process_block(&mut self, events: &[AudioEvent], buf: &mut [f32], hw_channels: usize) {
-        assert!(hw_channels > 0, "hw_channels must be > 0");
-        assert_eq!(
-            buf.len() % hw_channels,
-            0,
-            "buf.len() must be a multiple of hw_channels"
-        );
-        self.processor.apply_events(events);
-
-        let sample_rate = self.processor.sample_rate();
-        let mut rest = buf;
-        while !rest.is_empty() {
-            if self.until_tick == 0 {
-                self.pending.clear();
-                self.until_tick = self.sequencer.tick(sample_rate, &mut self.pending).max(1);
-                self.processor.apply_events(&self.pending);
-            }
-            let n = self.until_tick.min(rest.len() / hw_channels);
-            let (slice, tail) = rest.split_at_mut(n * hw_channels);
-            self.processor.process_block(&[], slice, hw_channels);
-            self.until_tick -= n;
-            rest = tail;
         }
     }
 
@@ -178,6 +141,45 @@ impl<const N: usize, S: Sequencer> SequencedProcessor<N, S> {
     #[must_use]
     pub fn into_parts(self) -> (SynthProcessor<N>, S) {
         (self.processor, self.sequencer)
+    }
+}
+
+impl<const N: usize, S: Sequencer> SequencedProcessor<N, S> {
+    /// Apply `events`, then render `hw_channels`-interleaved frames into
+    /// `buf`, ticking the sequencer and applying its events at exactly the
+    /// frames it asked for.
+    ///
+    /// `events` take effect at the first frame of `buf`, before any
+    /// sequencer events due at that frame. Use them for live input (a key
+    /// press, a game event); anything rhythmic belongs in the sequencer.
+    ///
+    /// # Panics
+    ///
+    /// Panics if `hw_channels` is zero or if `buf.len()` is not a multiple of
+    /// `hw_channels`.
+    pub fn process_block(&mut self, events: &[AudioEvent], buf: &mut [f32], hw_channels: usize) {
+        assert!(hw_channels > 0, "hw_channels must be > 0");
+        assert_eq!(
+            buf.len() % hw_channels,
+            0,
+            "buf.len() must be a multiple of hw_channels"
+        );
+        self.processor.apply_events(events);
+
+        let sample_rate = self.processor.sample_rate();
+        let mut rest = buf;
+        while !rest.is_empty() {
+            if self.until_tick == 0 {
+                self.pending.clear();
+                self.until_tick = self.sequencer.tick(sample_rate, &mut self.pending).max(1);
+                self.processor.apply_events(&self.pending);
+            }
+            let n = self.until_tick.min(rest.len() / hw_channels);
+            let (slice, tail) = rest.split_at_mut(n * hw_channels);
+            self.processor.process_block(&[], slice, hw_channels);
+            self.until_tick -= n;
+            rest = tail;
+        }
     }
 }
 

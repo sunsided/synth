@@ -63,6 +63,11 @@ jobs:
       - name: Check DSP-only build (libm, no std/io)
         run: cargo clippy -p synthie --all-targets --no-default-features --features libm -- -D warnings
 
+      - name: Check the kira backend without cpal (native and wasm)
+        run: |
+          cargo check -p synthie --no-default-features --features kira
+          cargo check -p synthie --no-default-features --features kira --target wasm32-unknown-unknown
+
   npm-package:
     name: npm package tests
     runs-on: ubuntu-latest

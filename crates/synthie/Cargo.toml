@@ -34,6 +34,9 @@ io      = ["std", "dep:anyhow", "dep:cpal", "dep:crossbeam-channel"]
 ## Use alongside `--no-default-features` when targeting platforms without `std` math.
 ## Has no effect when `std` is active (std backend takes precedence).
 libm    = ["dep:libm"]
+## Makes synthie a kira sound source (`kira` module): play the synth inside a
+## kira `AudioManager` instead of opening a cpal stream. Independent of `io`.
+kira    = ["std", "dep:kira", "dep:rtrb"]
 ## Enables the built-in arpeggiator. Included in the default feature set.
 ## Disable for targets where binary size is critical and arpeggios are unneeded.
 arp     = []
@@ -42,10 +45,14 @@ arp     = []
 anyhow            = { workspace = true, optional = true }
 cpal              = { workspace = true, optional = true }
 crossbeam-channel = { workspace = true, optional = true }
+kira              = { workspace = true, optional = true }
 libm              = { workspace = true, optional = true }
+rtrb              = { workspace = true, optional = true }
 serde             = { workspace = true, optional = true }
 
 [dev-dependencies]
+anyhow     = { workspace = true }
+kira       = { workspace = true, features = ["cpal"] }
 proptest   = { workspace = true }
 serde_json = { workspace = true }
 
@@ -64,6 +71,11 @@ name = "pattern"
 path = "examples/pattern.rs"
 required-features = ["io", "arp"]
 test = true
+
+[[example]]
+name = "kira"
+path = "examples/kira.rs"
+required-features = ["kira", "arp"]
 
 [[example]]
 name = "lazy_jones"
