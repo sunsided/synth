@@ -33,7 +33,7 @@ use synthie_ui::widgets::{
 
 use crate::app::CAN_QUIT;
 use crate::app::state::TrackerState;
-use crate::tracker::{DRUM_TRACK, SYNTH_TRACKS, Step, TOTAL_TRACKS, note_name};
+use crate::tracker::{DRUM_TRACK, KIT, KIT_SIZE, SYNTH_TRACKS, Step, TOTAL_TRACKS, note_name};
 
 // ─── Palette ─────────────────────────────────────────────────────────────────
 
@@ -41,6 +41,19 @@ use crate::tracker::{DRUM_TRACK, SYNTH_TRACKS, Step, TOTAL_TRACKS, note_name};
 const CHANNEL_COLORS: [Color; SYNTH_TRACKS] = [CYAN, GREEN, YELLOW, ORANGE];
 /// Drum track colour.
 const DRUM_COLOR: Color = MAGENTA;
+/// Column label, entry key and colour of each drum in [`KIT`] order. The
+/// label doubles as the key that toggles the drum on the drum track.
+pub(crate) const DRUM_GLYPHS: [(&str, &str, Color); KIT_SIZE] = [
+    ("k", "kick", ORANGE),
+    ("s", "snare", RED),
+    ("h", "closed hat", CYAN),
+    ("o", "open hat", YELLOW),
+    ("c", "crash", PURPLE),
+    ("1", "low tom", GREEN),
+    ("2", "mid tom", GREEN),
+    ("3", "high tom", GREEN),
+    ("x", "clap", MAGENTA),
+];
 /// Background of the cursor row (between stripe and cursor-cell intensity).
 const BG_CURSOR_ROW: Color = Color::Rgb(36, 26, 66);
 
@@ -50,8 +63,8 @@ const BG_CURSOR_ROW: Color = Color::Rgb(36, 26, 66);
 const COL_ROW_W: usize = 4;
 /// Width of each synth track column.
 const COL_SYNTH_W: usize = 10;
-/// Width of the drum track column.
-const COL_DRUM_W: usize = 10;
+/// Width of the drum track column: a space plus one glyph per drum.
+const COL_DRUM_W: usize = 1 + KIT_SIZE;
 /// Total width of one grid line, including the `│` separators.
 const GRID_W: usize = COL_ROW_W + (1 + COL_SYNTH_W) * SYNTH_TRACKS + 1 + COL_DRUM_W;
 /// Minimum width of the scope/mixer side column; it takes all spare width.
@@ -224,7 +237,8 @@ fn column_headers(state: &TrackerState) -> Vec<Line<'static>> {
         let active = state.cursor_track == track;
         let bg = if active { BG_CURSOR } else { BG };
         let (title, subtitle, width) = if track == DRUM_TRACK {
-            ("DRUMS".to_string(), " K  H  O".to_string(), COL_DRUM_W)
+            let labels = DRUM_GLYPHS.map(|g| g.0).concat().to_ascii_uppercase();
+            ("DRUMS".to_string(), format!(" {labels}"), COL_DRUM_W)
         } else {
             let patch_idx = state.song.track_patches[track];
             let patch = state.presets.get(patch_idx).map_or("", |p| p.name.as_str());
@@ -321,29 +335,20 @@ fn cell_spans(
         .add_modifier(Modifier::BOLD);
 
     if track == DRUM_TRACK {
-        let drum = &state.song.pattern.drums[step];
-        let mut spans = vec![Span::raw(" ")];
-        for (on, glyph) in [
-            (drum.kick, ORANGE),
-            (drum.hihat_closed, CYAN),
-            (drum.hihat_open, YELLOW),
-        ] {
+        let drum = state.song.pattern.drums[step];
+        let mut spans = vec![Span::styled(
+            " ",
+            if is_cursor { cursor } else { fg(FAINT) },
+        )];
+        for (&hit, &(_, _, color)) in KIT.iter().zip(&DRUM_GLYPHS) {
+            let on = drum.has(hit);
             let style = match (is_cursor, on) {
                 (true, _) => cursor,
-                (false, true) => bold(glyph),
+                (false, true) => bold(color),
                 (false, false) => fg(FAINT),
             };
             spans.push(Span::styled(if on { "●" } else { "·" }, style));
-            spans.push(Span::styled(
-                "  ",
-                if is_cursor { cursor } else { fg(FAINT) },
-            ));
         }
-        let used = 1 + 3 * 3;
-        spans.push(Span::styled(
-            fit("", COL_DRUM_W.saturating_sub(used)),
-            if is_cursor { cursor } else { fg(FAINT) },
-        ));
         return spans;
     }
 
@@ -480,20 +485,15 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         help_entry("Del Bksp", KW, "clear step"),
         Line::raw(""),
         help_heading("DRUM ENTRY  (drum track)"),
-        Line::from(vec![
-            Span::raw("  "),
-            widgets::keycap("k"),
-            Span::styled(" kick  ", fg(ORANGE)),
-            widgets::keycap("h"),
-            Span::styled(" closed hat  ", fg(CYAN)),
-            widgets::keycap("o"),
-            Span::styled(" open hat", fg(YELLOW)),
-        ]),
+    ]);
+    // Derived from the kit, so a new drum shows up here without edits.
+    lines.extend(DRUM_GLYPHS.chunks(DRUM_HELP_PER_LINE).map(drum_help_line));
+    lines.extend([
         Line::raw(""),
         Line::styled("press any key to close", fg(DIM)).centered(),
     ]);
     let height = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX);
-    let rect = widgets::popup(frame, area, 62, height);
+    let rect = widgets::popup(frame, area, HELP_W, height);
     frame.render_widget(
         Paragraph::new(lines).block(panel("KEY REFERENCE", true)),
         rect,
@@ -501,6 +501,22 @@ fn draw_help(frame: &mut Frame, area: Rect) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Width of the key-reference popup, borders included.
+const HELP_W: u16 = 62;
+
+/// Drums listed per line of the key reference.
+const DRUM_HELP_PER_LINE: usize = 4;
+
+/// One help line listing the keys of `glyphs`.
+fn drum_help_line(glyphs: &[(&'static str, &'static str, Color)]) -> Line<'static> {
+    let mut spans = vec![Span::raw("  ")];
+    for &(key, name, color) in glyphs {
+        spans.push(widgets::keycap(key));
+        spans.push(Span::styled(format!(" {name}  "), fg(color)));
+    }
+    Line::from(spans)
+}
 
 /// Compute the first visible step so that the cursor row stays centred.
 fn scroll_offset(cursor: usize, len: usize, visible: usize) -> usize {
@@ -564,6 +580,23 @@ mod tests {
         }
         for step in 0..state.song.pattern.len {
             assert_eq!(step_line(&state, step, false).width(), GRID_W);
+        }
+    }
+
+    /// The key reference lists every drum, and each line fits the popup.
+    #[test]
+    fn drum_help_lists_the_whole_kit_within_the_popup() {
+        let lines: Vec<_> = DRUM_GLYPHS
+            .chunks(DRUM_HELP_PER_LINE)
+            .map(drum_help_line)
+            .collect();
+        let text: String = lines.iter().map(ToString::to_string).collect();
+        for (key, name, _) in DRUM_GLYPHS {
+            assert!(text.contains(&format!(" {key} ")), "key {key} missing");
+            assert!(text.contains(name), "{name} missing");
+        }
+        for line in &lines {
+            assert!(line.width() <= usize::from(HELP_W - 2), "{line}");
         }
     }
 }

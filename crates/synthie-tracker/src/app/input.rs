@@ -18,17 +18,23 @@
 //!
 //! ## Drum track keys (when cursor is on the drum column)
 //!
-//! | Key | Action             |
-//! |-----|--------------------|
-//! | `k` | Toggle kick        |
+//! | Key | Action               |
+//! |-----|----------------------|
+//! | `k` | Toggle kick          |
+//! | `s` | Toggle snare         |
 //! | `h` | Toggle closed hi-hat |
-//! | `o` | Toggle open hi-hat |
+//! | `o` | Toggle open hi-hat   |
+//! | `c` | Toggle crash         |
+//! | `x` | Toggle clap          |
+//! | `1` | Toggle low tom       |
+//! | `2` | Toggle mid tom       |
+//! | `3` | Toggle high tom      |
 
-use synthie::params::MidiNote;
+use synthie::params::{DrumHit, MidiNote};
 use synthie_ui::{Key, KeyCode, KeyKind, ModalAction};
 
 use crate::app::CAN_QUIT;
-use crate::app::state::{DrumKind, TrackerState};
+use crate::app::state::TrackerState;
 use crate::tracker::DRUM_TRACK;
 
 /// Map a key code to a semitone offset within the piano layout.
@@ -155,12 +161,25 @@ fn handle_note_key(code: KeyCode, state: &mut TrackerState) {
     }
 }
 
-fn handle_drum_key(code: KeyCode, state: &mut TrackerState) {
+/// The drum toggled by `code` on the drum track.
+fn drum_for_key(code: KeyCode) -> Option<DrumHit> {
     match code {
-        KeyCode::Char('k') => state.toggle_drum(DrumKind::Kick),
-        KeyCode::Char('h') => state.toggle_drum(DrumKind::HiHatClosed),
-        KeyCode::Char('o') => state.toggle_drum(DrumKind::HiHatOpen),
-        _ => {}
+        KeyCode::Char('k') => Some(DrumHit::Kick),
+        KeyCode::Char('s') => Some(DrumHit::Snare),
+        KeyCode::Char('h') => Some(DrumHit::HiHatClosed),
+        KeyCode::Char('o') => Some(DrumHit::HiHatOpen),
+        KeyCode::Char('c') => Some(DrumHit::Crash),
+        KeyCode::Char('x') => Some(DrumHit::Clap),
+        KeyCode::Char('1') => Some(DrumHit::TomLow),
+        KeyCode::Char('2') => Some(DrumHit::TomMid),
+        KeyCode::Char('3') => Some(DrumHit::TomHigh),
+        _ => None,
+    }
+}
+
+fn handle_drum_key(code: KeyCode, state: &mut TrackerState) {
+    if let Some(hit) = drum_for_key(code) {
+        state.toggle_drum(hit);
     }
 }
 
@@ -170,5 +189,22 @@ fn handle_synth_key(code: KeyCode, state: &mut TrackerState) {
     } else if let Some(semi) = key_to_semitone(code) {
         let midi = make_midi(state.octave, semi);
         state.enter_note(midi);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::ui::DRUM_GLYPHS;
+    use crate::tracker::KIT;
+
+    /// The drum column header and the help show these keys, so each must
+    /// toggle the drum in its column.
+    #[test]
+    fn every_drum_column_label_is_its_key() {
+        for (&hit, (key, name, _)) in KIT.iter().zip(DRUM_GLYPHS) {
+            let key = KeyCode::Char(key.chars().next().unwrap());
+            assert_eq!(drum_for_key(key), Some(hit), "{name}");
+        }
     }
 }
