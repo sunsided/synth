@@ -6,7 +6,9 @@
 
 pub mod player;
 
-use synthie::params::{DrumHit, MidiNote};
+use synthie::params::{DrumHit, MidiNote, Patch};
+use synthie::pattern::{self, Action};
+use synthie::presets::sid::default_patches;
 
 /// Maximum number of steps (rows) in a pattern: eight bars of 16th notes.
 pub const STEPS: usize = 128;
@@ -133,85 +135,141 @@ impl Default for Song {
     }
 }
 
-// ─── Demo song ───────────────────────────────────────────────────────────────
+// ─── Loading pattern songs ───────────────────────────────────────────────────
 
-/// The Lazy Jones hook (David Whittaker, 1984), the riff that later became
-/// Kernkraft 400: one monophonic line of straight 8th notes in which melody
-/// and bass alternate.  One entry per 8th note, MIDI note numbers.
-const LAZY_JONES_LINE: [u8; 32] = [
-    47, 71, 74, 76, 78, 59, 47, 59, // B2  B4 D5 E5 F#5  B3 B2 B3
-    47, 71, 74, 76, 78, 79, 78, 74, // B2  B4 D5 E5 F#5 G5 F#5 D5
-    76, 64, 52, 64, 74, 66, 78, 71, // E5 E4  E3  E4 D5 F#4 F#5 B4
-    47, 59, 47, 59, 47, 59, 47, 59, // B2 B3 B2 B3 B2 B3 B2 B3
-];
+/// Why a pattern song does not fit the tracker grid.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum LoadError {
+    /// The song has no rows, or more than [`STEPS`].
+    Length(usize),
+    /// A note, note-off or patch change on a channel the tracker has no
+    /// track for.
+    Channel(u8),
+    /// Two lanes write the same step of the same track.
+    Overlap { track: usize, step: usize },
+    /// A patch change after the first row; the tracker has one patch per
+    /// track.
+    PatchChange { track: usize, step: usize },
+    /// A patch that is not in the preset bank.
+    UnknownPatch(u16),
+    /// A chip arpeggio, which the grid cannot hold.
+    Arpeggio { track: usize, step: usize },
+}
 
-/// Notes from this pitch up go to the lead track, the rest to the bass.
-const LEAD_SPLIT: u8 = 64;
-
-/// Sub-bass of the second pass: one note per beat on the off-beat 8th.
-const LAZY_JONES_SUB: [u8; 16] = [
-    35, 35, 35, 35, 35, 35, 35, 35, // B1
-    40, 40, // E2
-    42, 42, // F#2
-    35, 35, 35, 35, // B1
-];
-
-/// Length of one pass through the hook, in steps (four bars).
-const PASS: usize = 64;
-
-/// Return the startup demo: the Lazy Jones / Kernkraft 400 hook at 140 BPM
-/// as one 128-step pattern (two four-bar passes).
-///
-/// Layout:
-/// * Track 0 – Arp Lead: the melody notes of the line
-/// * Track 1 – C64 Bass: the bass notes of the line, filling the melody's gaps
-/// * Track 2 – C64 Bass: B1 / E2 / F#2 off-beat sub-bass, second pass only
-/// * Track 3 – PWM Lead: left empty to play along
-/// * Drums: four-on-the-floor kick, off-beat open hats, 16th closed hats,
-///   kick fill into each pass
-#[must_use]
-pub fn demo_song() -> Song {
-    let mut song = Song {
-        bpm: 140.0,
-        pattern: Pattern::default(),
-        track_patches: [1, 0, 0, 3],
-    };
-    let p = &mut song.pattern;
-    let mut put = |track: usize, step: usize, n: u8| {
-        p.synth[track][step] = Step::Note(MidiNote(n));
-        p.synth[track][step + 1] = Step::Off; // every note lasts one 8th
-    };
-
-    for pass in 0..STEPS / PASS {
-        for (i, &n) in LAZY_JONES_LINE.iter().enumerate() {
-            let track = usize::from(n < LEAD_SPLIT);
-            put(track, pass * PASS + i * 2, n);
-        }
-    }
-    for (beat, &n) in LAZY_JONES_SUB.iter().enumerate() {
-        put(2, PASS + beat * 4 + 2, n);
-    }
-
-    // Notes span two steps, so a note-off directly followed by a new note on
-    // the same track is redundant: drop it for a legato line.
-    for track in &mut p.synth {
-        for step in 0..STEPS - 1 {
-            if track[step] == Step::Off && matches!(track[step + 1], Step::Note(_)) {
-                track[step] = Step::Empty;
+impl core::fmt::Display for LoadError {
+    fn fmt(&self, f: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
+        match self {
+            Self::Length(n) => write!(f, "song has {n} rows; the tracker holds 1..={STEPS}"),
+            Self::Channel(ch) => write!(f, "channel {ch} has no tracker track"),
+            Self::Overlap { track, step } => {
+                write!(f, "two lanes write track {track}, step {step}")
+            }
+            Self::PatchChange { track, step } => {
+                write!(
+                    f,
+                    "patch change on track {track} at step {step}; only step 0 can set it"
+                )
+            }
+            Self::UnknownPatch(i) => write!(f, "patch @{i} is not in the preset bank"),
+            Self::Arpeggio { track, step } => {
+                write!(
+                    f,
+                    "arpeggio on track {track}, step {step} has no tracker equivalent"
+                )
             }
         }
     }
+}
 
-    // Drums: four-on-the-floor, off-beat open hats, 16th closed hats on the
-    // "e" and "a", and a kick fill on the last beat of each pass.
-    for (step, drum) in p.drums.iter_mut().enumerate() {
-        let fill = step % PASS >= PASS - 2;
-        drum.set(DrumHit::Kick, step % 4 == 0 || fill);
-        drum.set(DrumHit::HiHatOpen, step % 4 == 2 && !fill);
-        drum.set(DrumHit::HiHatClosed, step % 2 == 1);
+impl std::error::Error for LoadError {}
+
+/// Load a pattern song into the tracker grid.
+///
+/// Rows become steps, so the song should be written in sixteenths: the
+/// tracker's BPM is the row rate divided by four. Each lane's notes and
+/// note-offs go to the track of its channel and its drum hits to the drum
+/// track; a patch change on the first row picks the track's preset from
+/// `presets` (by comparing parameters). Tracks without one keep the default
+/// assignment.
+///
+/// # Errors
+///
+/// Fails on anything the grid cannot hold; see [`LoadError`].
+pub fn from_pattern(song: &pattern::Song, presets: &[Patch]) -> Result<Song, LoadError> {
+    let len = song.len();
+    if !(1..=STEPS).contains(&len) {
+        return Err(LoadError::Length(len));
     }
+    let mut out = Song {
+        bpm: song.tempo.as_rows_per_minute() / 4.0,
+        ..Song::default()
+    };
+    out.pattern.len = len;
 
-    song
+    for lane in &song.lanes {
+        let track = lane.channel.as_usize();
+        let melodic = || {
+            if track < SYNTH_TRACKS {
+                Ok(track)
+            } else {
+                Err(LoadError::Channel(lane.channel.0))
+            }
+        };
+        for (step, cell) in lane.rows.iter().enumerate() {
+            if let Some(index) = cell.patch {
+                let track = melodic()?;
+                if step > 0 {
+                    return Err(LoadError::PatchChange { track, step });
+                }
+                let params = song
+                    .patches
+                    .get(usize::from(index))
+                    .ok_or(LoadError::UnknownPatch(index))?;
+                out.track_patches[track] = presets
+                    .iter()
+                    .position(|p| p.params == *params)
+                    .ok_or(LoadError::UnknownPatch(index))?;
+            }
+            let step_value = match cell.action {
+                Action::Hold => continue,
+                Action::Drums(hits) => {
+                    for hit in hits.iter() {
+                        out.pattern.drums[step].set(hit, true);
+                    }
+                    continue;
+                }
+                Action::Off => Step::Off,
+                Action::Note(note) => Step::Note(note),
+                Action::Arp { .. } => {
+                    return Err(LoadError::Arpeggio {
+                        track: melodic()?,
+                        step,
+                    });
+                }
+            };
+            let track = melodic()?;
+            let slot = &mut out.pattern.synth[track][step];
+            if *slot != Step::Empty {
+                return Err(LoadError::Overlap { track, step });
+            }
+            *slot = step_value;
+        }
+    }
+    Ok(out)
+}
+
+// ─── Demo song ───────────────────────────────────────────────────────────────
+
+/// The startup demo: [`synthie::songs::lazy_jones`], the Lazy Jones /
+/// Kernkraft 400 hook. The `lazy_jones` example plays the same song.
+///
+/// # Panics
+///
+/// Panics if the built-in song stops fitting the grid; a test pins it.
+#[must_use]
+pub fn demo_song() -> Song {
+    from_pattern(&synthie::songs::lazy_jones(), &default_patches())
+        .expect("the built-in demo song fits the tracker")
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
@@ -245,6 +303,18 @@ pub fn note_name(note: MidiNote) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The Lazy Jones line (David Whittaker, 1984): one monophonic line of
+    /// straight 8th notes in which melody and bass alternate. MIDI notes.
+    const LAZY_JONES_LINE: [u8; 32] = [
+        47, 71, 74, 76, 78, 59, 47, 59, // B2  B4 D5 E5 F#5  B3 B2 B3
+        47, 71, 74, 76, 78, 79, 78, 74, // B2  B4 D5 E5 F#5 G5 F#5 D5
+        76, 64, 52, 64, 74, 66, 78, 71, // E5 E4  E3  E4 D5 F#4 F#5 B4
+        47, 59, 47, 59, 47, 59, 47, 59, // B2 B3 B2 B3 B2 B3 B2 B3
+    ];
+
+    /// Length of one pass through the hook, in steps (four bars).
+    const PASS: usize = 64;
 
     fn notes(track: &[Step]) -> Vec<(usize, u8)> {
         track
@@ -285,5 +355,91 @@ mod tests {
                 .iter()
                 .all(|&(s, _)| s >= PASS)
         );
+    }
+
+    fn load(build: impl FnOnce(pattern::Song) -> pattern::Song) -> Result<Song, LoadError> {
+        let song = build(pattern::Song::new(pattern::Tempo::bpm(120.0, 4)));
+        from_pattern(&song, &default_patches())
+    }
+
+    fn lane(song: pattern::Song, ch: u8, cells: &str) -> pattern::Song {
+        song.lane(synthie::params::ChannelNo(ch), cells).unwrap()
+    }
+
+    #[test]
+    fn loads_notes_offs_drums_tempo_and_presets() {
+        let bass = default_patches()[0].params.clone();
+        let song = load(|s| lane(lane(s.patch(bass), 2, "C4@0 . - E4"), 3, "k . k+h .")).unwrap();
+        assert!((song.bpm - 120.0).abs() < f32::EPSILON);
+        assert_eq!(song.pattern.len, 4);
+        assert_eq!(song.track_patches, [0, 1, 0, 3]);
+        let track = &song.pattern.synth[2];
+        assert_eq!(
+            track[..4],
+            [
+                Step::Note(MidiNote(60)),
+                Step::Empty,
+                Step::Off,
+                Step::Note(MidiNote(64))
+            ]
+        );
+        assert!(song.pattern.drums[0].has(DrumHit::Kick));
+        assert!(song.pattern.drums[2].has(DrumHit::HiHatClosed));
+        assert!(song.pattern.synth[3].iter().all(|s| *s == Step::Empty));
+    }
+
+    #[test]
+    fn rejects_what_the_grid_cannot_hold() {
+        assert_eq!(load(|s| s).unwrap_err(), LoadError::Length(0));
+        let too_long = vec!["."; STEPS + 1].join(" ");
+        assert_eq!(
+            load(|s| lane(s, 0, &too_long)).unwrap_err(),
+            LoadError::Length(STEPS + 1)
+        );
+        assert_eq!(
+            load(|s| lane(s, 4, "C4")).unwrap_err(),
+            LoadError::Channel(4)
+        );
+        assert_eq!(
+            load(|s| lane(lane(s, 0, "C4"), 0, "D4")).unwrap_err(),
+            LoadError::Overlap { track: 0, step: 0 }
+        );
+        assert_eq!(
+            load(|s| lane(s, 0, "@0")).unwrap_err(),
+            LoadError::UnknownPatch(0)
+        );
+        let odd = synthie::params::SynthParams {
+            global: synthie::params::GlobalParams {
+                volume: 0.123,
+                glide_time: 0.0,
+            },
+            ..Default::default()
+        };
+        assert_eq!(
+            load(|s| lane(s.patch(odd), 0, "C4@0")).unwrap_err(),
+            LoadError::UnknownPatch(0)
+        );
+        let p = default_patches()[0].params.clone();
+        assert_eq!(
+            load(|s| lane(s.patch(p), 1, "C4 D4@0")).unwrap_err(),
+            LoadError::PatchChange { track: 1, step: 1 }
+        );
+        assert_eq!(
+            load(|s| lane(s, 0, ". C4^047")).unwrap_err(),
+            LoadError::Arpeggio { track: 0, step: 1 }
+        );
+    }
+
+    #[test]
+    fn the_demo_is_the_shared_lazy_jones_song() {
+        let song = demo_song();
+        assert!((song.bpm - 140.0).abs() < f32::EPSILON);
+        assert_eq!(song.track_patches, [1, 0, 0, 3]);
+        // Kick fill on the last two steps of each pass.
+        for pass in 0..STEPS / PASS {
+            let end = (pass + 1) * PASS;
+            assert!(song.pattern.drums[end - 2].has(DrumHit::Kick));
+            assert!(song.pattern.drums[end - 1].has(DrumHit::Kick));
+        }
     }
 }

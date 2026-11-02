@@ -68,14 +68,14 @@ Run any example with `cargo run -p synth --example <name> --release`.
 | `drums` | Rock beat on the drum machine: kick, snare, hats, crash, tom fill and claps |
 | `pattern` | Short chiptune song in the tracker-style pattern notation (`synthie::pattern`) |
 | `kira` | A sequenced loop played as a kira sound, with live hits, volume fades, pause and stop (needs `--features kira`) |
-| `lazy_jones` | Lazy Jones (David Whittaker, 1984) — the C64 hook that became Kernkraft 400 |
+| `lazy_jones` | Lazy Jones (David Whittaker, 1984) — the C64 hook that became Kernkraft 400; the same song the tracker opens with (`task example`) |
 | `kernkraft` | Kernkraft 400 (Zombie Nation, 1999) — full song structure, two channels |
 
 ## Synthie Tracker
 
 A step sequencer with up to 128 steps (eight bars of 16ths), 4 independent synth channels and a drum track (kick, snare, closed/open hi-hat, crash, three toms, clap), powered by the same `synthie` DSP engine. Notes sustain until the next note or a note-off (`===`) on the same track.
 
-It starts with the Lazy Jones / Kernkraft 400 hook loaded: the line's melody and bass split across two tracks, the off-beat sub-bass on the second pass, and four-on-the-floor drums. Press `Space` to play.
+It starts with the Lazy Jones / Kernkraft 400 hook loaded: the line's melody and bass split across two tracks, the off-beat sub-bass on the second pass, and four-on-the-floor drums. It is the same song as `synthie::songs::lazy_jones` and the `lazy_jones` example (`task example`). Press `Space` to play.
 
 ![Tracker screenshot](docs/screenshot-tracker.png)
 
