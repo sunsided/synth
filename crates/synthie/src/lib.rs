@@ -16,6 +16,7 @@ pub mod audio;
 mod math;
 pub mod param;
 pub mod params;
+pub mod pattern;
 pub mod presets;
 
 /// Convenience re-exports for common consumers.
