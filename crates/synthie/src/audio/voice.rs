@@ -222,7 +222,10 @@ impl Voice {
             if params.osc2.hard_sync && self.osc.just_wrapped() {
                 self.osc2.reset();
             }
-            let osc2_freq = detune_hz(final_freq, params.osc2.detune);
+            let osc2_freq = detune_hz(
+                final_freq,
+                params.osc2.detune + params.osc2.semitones * 100.0,
+            );
             let secondary =
                 self.osc2
                     .next_sample(osc2_freq, sample_rate, params.osc2.waveform, pw, 0.0);
@@ -319,7 +322,8 @@ mod tests {
         let mut params = SynthParams::default();
         params.osc.waveform = Waveform::Sawtooth;
         params.osc2.waveform = Waveform::Sawtooth;
-        params.osc2.detune = 700.0; // OSC2 ~5.3× faster than OSC1
+        params.osc2.detune = 0.0;
+        params.osc2.semitones = 7.0; // OSC2 a fifth (1.5×) above OSC1
         params.osc2.osc2_mix = 1.0; // 100% OSC2 so the reset is the sole signal
         params.osc2.hard_sync = true;
         params.env = EnvParams {
@@ -513,7 +517,8 @@ mod tests {
             p.osc.waveform = Waveform::Sawtooth;
             p.osc2.osc2_mix = 1.0;
             p.osc2.waveform = Waveform::Sawtooth;
-            p.osc2.detune = 700.0; // ~5x faster than OSC1, ensures phase difference
+            p.osc2.detune = 0.0;
+            p.osc2.semitones = 7.0; // a fifth above OSC1, ensures phase difference
             p.env = EnvParams {
                 attack: 0.0,
                 decay: 0.0,
@@ -566,7 +571,8 @@ mod tests {
         let mut params = SynthParams::default();
         params.osc2.osc2_mix = 1.0;
         params.osc2.waveform = Waveform::Sawtooth;
-        params.osc2.detune = 700.0;
+        params.osc2.detune = 0.0;
+        params.osc2.semitones = 7.0;
         params.osc2.ring_mod = RingModMode::Analog;
         params.env = EnvParams {
             attack: 0.0,
@@ -609,5 +615,70 @@ mod tests {
                 "sample {i}: Off mode is non-deterministic: {a} != {b}"
             );
         }
+    }
+
+    /// Fundamental of `params` playing A4, estimated from upward zero
+    /// crossings over one second.
+    #[allow(clippy::cast_precision_loss)]
+    fn measured_hz(params: &SynthParams) -> f32 {
+        let mut voice = Voice::new();
+        voice.note_on(MidiNote::A4, params, 44100.0);
+        // Skip the attack, then count crossings over one second.
+        for _ in 0..4410 {
+            voice.process(params, 44100.0);
+        }
+        let mut prev = voice.process(params, 44100.0);
+        let mut crossings = 0;
+        for _ in 0..44100 {
+            let s = voice.process(params, 44100.0);
+            if prev < 0.0 && s >= 0.0 {
+                crossings += 1;
+            }
+            prev = s;
+        }
+        crossings as f32
+    }
+
+    #[test]
+    fn osc2_semitones_tune_osc2_by_an_interval() {
+        use crate::params::{EnvParams, FilterMode, FilterParams};
+        // OSC2 alone (mix 1.0), sine, open filter: the output's pitch is OSC2's.
+        let mut params = SynthParams::default();
+        params.osc2.waveform = Waveform::Sine;
+        params.osc2.osc2_mix = 1.0;
+        params.osc2.detune = 0.0;
+        params.env = EnvParams {
+            attack: 0.001,
+            decay: 0.001,
+            sustain: 1.0,
+            release: 0.001,
+            env_reverse: false,
+        };
+        params.filter = FilterParams {
+            filter_mode: FilterMode::LowPass,
+            cutoff: 18_000.0,
+            resonance: 0.0,
+            drive: 0.0,
+        };
+        params.global.glide_time = 0.0;
+        params.lfo.lfo_depth = 0.0;
+
+        for (semitones, expected) in [(0.0, 440.0), (7.0, 659.26), (12.0, 880.0), (-12.0, 220.0)] {
+            params.osc2.semitones = semitones;
+            let hz = measured_hz(&params);
+            assert!(
+                (hz - expected).abs() <= 2.0,
+                "semitones {semitones}: expected ~{expected} Hz, measured {hz} Hz"
+            );
+        }
+
+        // Detune adds on top of the coarse offset: +7 st and +100 ct is +8 st.
+        params.osc2.semitones = 7.0;
+        params.osc2.detune = 100.0;
+        let hz = measured_hz(&params);
+        assert!(
+            (hz - 698.46).abs() <= 2.0,
+            "+7 st +100 ct: measured {hz} Hz"
+        );
     }
 }

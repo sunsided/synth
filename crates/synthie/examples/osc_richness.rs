@@ -79,6 +79,7 @@ static PHASES: &[OscPhase] = &[
         osc2: Osc2Params {
             waveform: Waveform::Sawtooth,
             detune: 0.0,
+            semitones: 0.0,
             osc2_mix: 0.0,
             hard_sync: false,
             ring_mod: RingModMode::Off,
@@ -91,6 +92,7 @@ static PHASES: &[OscPhase] = &[
         osc2: Osc2Params {
             waveform: Waveform::Sine,
             detune: 0.0,
+            semitones: 0.0,
             osc2_mix: 0.0,
             hard_sync: false,
             ring_mod: RingModMode::Off,
@@ -103,6 +105,7 @@ static PHASES: &[OscPhase] = &[
         osc2: Osc2Params {
             waveform: Waveform::Sawtooth,
             detune: 7.0,
+            semitones: 0.0,
             osc2_mix: 0.5,
             hard_sync: false,
             ring_mod: RingModMode::Off,
@@ -115,6 +118,7 @@ static PHASES: &[OscPhase] = &[
         osc2: Osc2Params {
             waveform: Waveform::Sawtooth,
             detune: 18.0,
+            semitones: 0.0,
             osc2_mix: 0.6,
             hard_sync: false,
             ring_mod: RingModMode::Off,
@@ -122,11 +126,12 @@ static PHASES: &[OscPhase] = &[
     },
     OscPhase {
         label: "hard-sync",
-        desc: "OSC2 +700 ct, synced to OSC1 – nasal, rasping timbre",
+        desc: "OSC2 +7 st, synced to OSC1 – nasal, rasping timbre",
         osc1_waveform: Waveform::Sawtooth,
         osc2: Osc2Params {
             waveform: Waveform::Sawtooth,
-            detune: 700.0,
+            detune: 0.0,
+            semitones: 7.0,
             osc2_mix: 0.7,
             hard_sync: true,
             ring_mod: RingModMode::Off,
@@ -139,6 +144,7 @@ static PHASES: &[OscPhase] = &[
         osc2: Osc2Params {
             waveform: Waveform::Sine,
             detune: 7.0,
+            semitones: 0.0,
             osc2_mix: 0.5,
             hard_sync: false,
             ring_mod: RingModMode::Off,

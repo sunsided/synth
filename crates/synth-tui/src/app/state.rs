@@ -66,7 +66,7 @@ impl Section {
     /// Number of adjustable parameters in this section (0 = list navigation only).
     pub fn param_count(self) -> usize {
         match self {
-            Section::Osc => 9, // wave, pw, det, noise | separator | wave2, det2, mix2, sync
+            Section::Osc => 10, // wave, pw, det, noise | separator | wave2, det2, semi2, mix2, sync
             Section::Filter => 4,
             Section::Env => 6, // attack, decay, sustain, release, env_reverse, glide
             Section::Lfo | Section::Fx => 3, // rate/reverb_mix, depth/reverb_size, target/reverb_damping
@@ -358,10 +358,14 @@ impl AppState {
             6 => {
                 self.params.osc2.detune = (self.params.osc2.detune + d * 5.0).clamp(-100.0, 100.0);
             }
-            7 => {
+            7 if d != 0.0 => {
+                self.params.osc2.semitones =
+                    (self.params.osc2.semitones.round() + d.signum()).clamp(-24.0, 24.0);
+            }
+            8 => {
                 self.params.osc2.osc2_mix = (self.params.osc2.osc2_mix + d * 0.05).clamp(0.0, 1.0);
             }
-            8 if d != 0.0 => {
+            9 if d != 0.0 => {
                 self.params.osc2.hard_sync = !self.params.osc2.hard_sync;
             }
             _ => {}
@@ -605,6 +609,11 @@ impl AppState {
                     "Det2",
                     format!("{:+.0}ct", p.osc2.detune),
                     lin(p.osc2.detune, -100.0, 100.0),
+                ),
+                ParamRow::new(
+                    "Semi2",
+                    format!("{:+.0}st", p.osc2.semitones),
+                    lin(p.osc2.semitones, -24.0, 24.0),
                 ),
                 ParamRow::new("Mix2", format!("{:.2}", p.osc2.osc2_mix), p.osc2.osc2_mix),
                 ParamRow::toggle("Sync", p.osc2.hard_sync),

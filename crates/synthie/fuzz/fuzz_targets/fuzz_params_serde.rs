@@ -132,12 +132,17 @@ fn assert_float_fields_finite(p: &SynthParams) {
 
     let Osc2Params {
         detune: osc2_detune,
+        semitones: osc2_semitones,
         osc2_mix,
         ..
     } = &p.osc2;
     assert!(
         osc2_detune.is_finite(),
         "osc2.detune is not finite: {osc2_detune}"
+    );
+    assert!(
+        osc2_semitones.is_finite(),
+        "osc2.semitones is not finite: {osc2_semitones}"
     );
     assert!(
         osc2_mix.is_finite(),
@@ -247,6 +252,10 @@ fn assert_params_equal(a: &SynthParams, b: &SynthParams) {
     assert_eq!(
         a.osc2.detune, b.osc2.detune,
         "osc2.detune diverged after round-trip"
+    );
+    assert_eq!(
+        a.osc2.semitones, b.osc2.semitones,
+        "osc2.semitones diverged after round-trip"
     );
     assert_eq!(
         a.osc2.osc2_mix, b.osc2.osc2_mix,

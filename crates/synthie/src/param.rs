@@ -172,6 +172,8 @@ params! {
         set |p, v| p.osc2.waveform = pick(Waveform::ALL, v);
     Osc2Detune = "osc2.detune", float(-100.0, 100.0),
         get |p| p.osc2.detune, set |p, v| p.osc2.detune = v;
+    Osc2Semitones = "osc2.semitones", float(-24.0, 24.0),
+        get |p| p.osc2.semitones, set |p, v| p.osc2.semitones = v;
     Osc2Mix = "osc2.osc2_mix", float(0.0, 1.0),
         get |p| p.osc2.osc2_mix, set |p, v| p.osc2.osc2_mix = v;
     Osc2HardSync = "osc2.hard_sync", TOGGLE,

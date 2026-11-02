@@ -2,7 +2,7 @@
 //! `RingModMode` variants so you can hear how each changes the timbre.
 //!
 //! Both oscillators use sine waves so the ring mod sidebands are cleanly
-//! audible. OSC2 is tuned a perfect fifth (+700 ct) above OSC1; at that
+//! audible. OSC2 is tuned a perfect fifth (+7 st) above OSC1; at that
 //! interval the analog mode produces sum/difference tones at 2.5x and 0.5x
 //! the fundamental, giving a characteristic bell-like quality.
 //!
@@ -129,7 +129,8 @@ fn base_patch() -> SynthParams {
         },
         osc2: Osc2Params {
             waveform: Waveform::Sine,
-            detune: 700.0,
+            detune: 0.0,
+            semitones: 7.0,
             osc2_mix: 0.7,
             hard_sync: false,
             ring_mod: RingModMode::Off,
@@ -153,7 +154,7 @@ fn main() -> Result<()> {
     let (_stream, event_tx, _scope_rx) = setup_audio()?;
 
     println!("=== Ring Modulation Demo ===");
-    println!("C major arpeggio  |  {BPM} BPM  |  sine+sine, OSC2 at +700 ct (perfect fifth)\n");
+    println!("C major arpeggio  |  {BPM} BPM  |  sine+sine, OSC2 at +7 st (perfect fifth)\n");
     println!("{:<8}  description", "mode");
     println!("{}", "-".repeat(58));
 

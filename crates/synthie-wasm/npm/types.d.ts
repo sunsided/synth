@@ -83,6 +83,8 @@ export interface SynthParams {
     waveform: "Pulse" | "Sawtooth" | "Triangle" | "Noise" | "PulseSaw" | "Sine";
     /** `osc2.detune`: -100 to 100. Default 7.0. */
     detune: number;
+    /** `osc2.semitones`: -24 to 24. Default 0.0. */
+    semitones: number;
     /** `osc2.osc2_mix`: 0 to 1. Default 0.0. */
     osc2_mix: number;
     /** `osc2.hard_sync`: On or off. Default false. */
@@ -178,6 +180,7 @@ export type ParamPath =
   | "delay.mix"
   | "osc2.waveform"
   | "osc2.detune"
+  | "osc2.semitones"
   | "osc2.osc2_mix"
   | "osc2.hard_sync"
   | "osc2.ring_mod"

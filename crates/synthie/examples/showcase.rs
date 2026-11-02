@@ -277,6 +277,7 @@ fn main() -> Result<()> {
             osc2: Osc2Params {
                 waveform: Waveform::Sawtooth,
                 detune: 7.0,
+                semitones: 0.0,
                 osc2_mix: 0.5,
                 hard_sync: false,
                 ring_mod: RingModMode::Off,
@@ -289,6 +290,7 @@ fn main() -> Result<()> {
             osc2: Osc2Params {
                 waveform: Waveform::Sawtooth,
                 detune: 18.0,
+                semitones: 0.0,
                 osc2_mix: 0.6,
                 hard_sync: false,
                 ring_mod: RingModMode::Off,
@@ -296,11 +298,12 @@ fn main() -> Result<()> {
         },
         Osc2Phase {
             label: "hard sync",
-            desc: "OSC2 +700 ct synced to OSC1 — nasal rasping timbre",
+            desc: "OSC2 +7 st synced to OSC1 — nasal rasping timbre",
             osc1: Waveform::Sawtooth,
             osc2: Osc2Params {
                 waveform: Waveform::Sawtooth,
-                detune: 700.0,
+                detune: 0.0,
+                semitones: 7.0,
                 osc2_mix: 0.7,
                 hard_sync: true,
                 ring_mod: RingModMode::Off,
@@ -308,11 +311,12 @@ fn main() -> Result<()> {
         },
         Osc2Phase {
             label: "ring mod",
-            desc: "sine×sine +fifth (700 ct) — bell-like sum/difference tones",
+            desc: "sine×sine +fifth (+7 st) — bell-like sum/difference tones",
             osc1: Waveform::Sine,
             osc2: Osc2Params {
                 waveform: Waveform::Sine,
-                detune: 700.0,
+                detune: 0.0,
+                semitones: 7.0,
                 osc2_mix: 0.7,
                 hard_sync: false,
                 ring_mod: RingModMode::Analog,
