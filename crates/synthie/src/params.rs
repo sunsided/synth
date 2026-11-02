@@ -303,6 +303,11 @@ pub struct Osc2Params {
     pub waveform: Waveform,
     /// Detune relative to OSC1 in cents, -100 .. 100.
     pub detune: f32,
+    /// Coarse tuning relative to OSC1 in semitones, -24 .. 24, applied on
+    /// top of [`detune`](Self::detune). `7.0` puts OSC2 a fifth above OSC1,
+    /// `12.0` an octave: one voice then plays a fixed two-note interval.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub semitones: f32,
     /// Blend of OSC2 into the output, 0..1.  At 0.0 OSC2 is bypassed.
     pub osc2_mix: f32,
     /// When true, OSC1 period boundary resets OSC2 phase (hard sync).
@@ -317,6 +322,7 @@ impl Default for Osc2Params {
         Self {
             waveform: Waveform::Sawtooth,
             detune: 7.0,
+            semitones: 0.0,
             osc2_mix: 0.0,
             hard_sync: false,
             ring_mod: RingModMode::Off,
@@ -839,6 +845,16 @@ mod tests {
         assert!((params.osc2.osc2_mix - def.osc2_mix).abs() < f32::EPSILON);
         assert_eq!(params.osc2.hard_sync, def.hard_sync);
         assert_eq!(params.osc2.ring_mod, def.ring_mod);
+    }
+
+    #[test]
+    fn osc2_semitones_defaults_to_zero_when_missing_from_json() {
+        // An `osc2` block from before coarse tuning existed.
+        let json = r#"{"waveform":"Sawtooth","detune":7.0,"osc2_mix":0.5,"hard_sync":false}"#;
+        let osc2: Osc2Params =
+            serde_json::from_str(json).expect("osc2 JSON must deserialise without semitones");
+        assert!(osc2.semitones.abs() < f32::EPSILON);
+        assert!((osc2.detune - 7.0).abs() < f32::EPSILON);
     }
 
     #[test]
