@@ -86,6 +86,11 @@ required-features = ["io"]
 name = "kernkraft"
 path = "examples/kernkraft.rs"
 required-features = ["io"]
+
+[[example]]
+name = "power_chords"
+path = "examples/power_chords.rs"
+required-features = ["io"]
 test = true
 
 [[example]]

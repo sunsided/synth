@@ -65,6 +65,7 @@ Run any example with `cargo run -p synth --example <name> --release`.
 | `tune` | Multi-channel chords, melody, and drums — general engine showcase |
 | `drums` | Rock beat on the drum machine: kick, snare, hats, crash, tom fill and claps |
 | `pattern` | Short chiptune song in the tracker-style pattern notation (`synthie::pattern`) |
+| `power_chords` | A power-chord riff played from a single lane with chord cells (`E2+B2+E3`, `E2^07c!`) |
 | `rock` | A rock riff on the Drive Guitar, Rock Lead and Tri Bass presets: power chords, lead, bass and drums |
 | `kira` | A sequenced loop played as a kira sound, with live hits, volume fades, pause and stop (needs `--features kira`) |
 | `lazy_jones` | Lazy Jones (David Whittaker, 1984) — the C64 hook that became Kernkraft 400; the same song the tracker opens with (`task example`) |
