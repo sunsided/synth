@@ -12,20 +12,12 @@
 use std::thread::sleep;
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use kira::{AudioManager, AudioManagerSettings, DefaultBackend, Tween};
 use synthie::kira::SynthSoundData;
-use synthie::params::{ChannelNo, DrumHit, SynthParams};
+use synthie::params::{ChannelNo, DrumHit};
 use synthie::pattern::{Song, SongPlayer, Tempo};
-use synthie::presets::sid::default_patches;
-
-fn preset(name: &str) -> Result<SynthParams> {
-    default_patches()
-        .into_iter()
-        .find(|p| p.name == name)
-        .map(|p| p.params)
-        .with_context(|| format!("preset {name:?} not found"))
-}
+use synthie::presets::sid::Preset;
 
 /// A two-bar loop in sixteenths at 128 bpm.
 fn song() -> Result<Song> {
@@ -48,7 +40,7 @@ fn main() -> Result<()> {
     let mut manager = AudioManager::<DefaultBackend>::new(AudioManagerSettings::default())?;
 
     let synth = SynthSoundData::new()
-        .with_patches([preset("C64 Bass")?, preset("PWM Lead")?])
+        .with_patches([Preset::C64Bass.params(), Preset::PwmLead.params()])
         .with_sequencer(SongPlayer::new(song()?));
     let mut handle = manager.play(synth)?;
 

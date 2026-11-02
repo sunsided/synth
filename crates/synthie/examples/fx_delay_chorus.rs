@@ -6,10 +6,10 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use synthie::audio::engine::setup_audio;
 use synthie::params::{AudioEvent, ChorusParams, DelayParams, MidiNote};
-use synthie::presets::sid::default_patches;
+use synthie::presets::sid::Preset;
 
 const BPM: f32 = 100.0;
 const BEATS_PER_BAR: f32 = 4.0;
@@ -218,11 +218,7 @@ static PHASES: &[FxPhase] = &[
 fn main() -> Result<()> {
     let (_stream, event_tx, _scope_rx) = setup_audio()?;
 
-    let base = default_patches()
-        .into_iter()
-        .find(|p| p.name == "PWM Lead")
-        .ok_or_else(|| anyhow!("preset 'PWM Lead' not found"))?
-        .params;
+    let base = Preset::PwmLead.params();
 
     println!("=== Delay / Chorus FX Demo ===");
     println!("PWM Lead  |  C–Am–F–G  |  {BPM} BPM  |  4 bars per phase\n");

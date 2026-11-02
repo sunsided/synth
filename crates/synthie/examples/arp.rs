@@ -13,10 +13,10 @@
 
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use synthie::audio::engine::setup_audio;
-use synthie::params::{ArpMode, ArpParams, AudioEvent, ChannelNo, DrumHit, MidiNote, SynthParams};
-use synthie::presets::sid::default_patches;
+use synthie::params::{ArpMode, ArpParams, AudioEvent, ChannelNo, DrumHit, MidiNote};
+use synthie::presets::sid::Preset;
 
 const BPM: f32 = 140.0;
 /// 16th-note step rate (4 steps per beat).
@@ -69,17 +69,8 @@ static SECTIONS: &[Section] = &[
 fn main() -> Result<()> {
     let (_stream, event_tx, _scope_rx) = setup_audio()?;
 
-    let patches = default_patches();
-    let find = |name: &str| -> Result<SynthParams> {
-        patches
-            .iter()
-            .find(|p| p.name == name)
-            .ok_or_else(|| anyhow!("preset '{name}' not found"))
-            .map(|p| p.params.clone())
-    };
-
-    let arp_lead = find("Arp Lead")?;
-    let c64_bass = find("C64 Bass")?;
+    let arp_lead = Preset::ArpLead.params();
+    let c64_bass = Preset::C64Bass.params();
 
     event_tx.send(AudioEvent::LoadPatchChannel(CH_BASS, Box::new(c64_bass)))?;
 

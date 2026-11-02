@@ -26,7 +26,7 @@ use synthie::params::{
     FilterMode, FilterParams, FxParams, GlobalParams, LfoParams, LfoShape, LfoTarget, MidiNote,
     ModEnvParams, Osc2Params, OscParams, RingModMode, SynthParams, Waveform,
 };
-use synthie::presets::sid::default_patches;
+use synthie::presets::sid::Preset;
 
 const BPM: f32 = 120.0;
 /// Hold slightly under 0.5 beats so consecutive 8th notes don't bleed together.
@@ -222,20 +222,11 @@ struct Osc2Phase {
 fn main() -> Result<()> {
     let (_stream, event_tx, _scope_rx) = setup_audio()?;
 
-    let patches = default_patches();
-    let find = |name: &str| -> Result<SynthParams> {
-        patches
-            .iter()
-            .find(|p| p.name == name)
-            .ok_or_else(|| anyhow!("preset '{name}' not found"))
-            .map(|p| p.params.clone())
-    };
-
     let send = |ev: AudioEvent| event_tx.send(ev).map_err(|e| anyhow!("{e}"));
 
     event_tx.send(AudioEvent::LoadPatchChannel(
         CH_BASS,
-        Box::new(find("C64 Bass")?),
+        Box::new(Preset::C64Bass.params()),
     ))?;
 
     println!("=== Synthie Showcase ===");
@@ -502,7 +493,7 @@ fn main() -> Result<()> {
         let arp_rate = BPM * 4.0 / 60.0; // 16th notes
         let arp_notes = [MidiNote(57), MidiNote(60), MidiNote(64), MidiNote(67)];
 
-        let arp_lead = find("Arp Lead")?;
+        let arp_lead = Preset::ArpLead.params();
 
         for (mode, desc) in [
             (ArpMode::Up, "ascending, then wrap to root"),
