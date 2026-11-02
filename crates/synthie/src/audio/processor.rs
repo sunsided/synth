@@ -13,7 +13,7 @@ use crate::param::Param;
 use crate::params::{AudioEvent, ChannelNo, MidiNote, SynthParams};
 
 /// Number of simultaneous voices per synthesis channel.
-const POLYPHONY: usize = 4;
+pub(crate) const POLYPHONY: usize = 4;
 
 /// Polyphony as `f32` for normalising the summed voice mix.
 const POLYPHONY_F32: f32 = 4.0;

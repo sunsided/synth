@@ -95,8 +95,10 @@ let song = Song::new(Tempo::bpm(152.0, 2))
 let player = SongPlayer::new(song); // hand to any host as a Sequencer
 ```
 
-See the `synthie::pattern` docs for the full notation (notes, holds, note-offs,
-drum hits, chip arpeggios, patch changes).
+Chord cells play several notes from one lane on the lane's channel, e.g. a
+power chord as `E2+B2+E3`, or as semitone offsets from the root, `E2^07c!`.
+See the `synthie::pattern` docs for the full notation (notes, chords, holds,
+note-offs, drum hits, chip arpeggios, patch changes).
 
 ## Feature Flags
 

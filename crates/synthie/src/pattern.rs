@@ -16,6 +16,8 @@
 //! |---|---|
 //! | `C4`, `F#3`, `Bb2` | Note on (C4 is middle C, MIDI 60). Releases the lane's previous note. |
 //! | `C4^047` | Chip arpeggio: cycle the notes at the given hex semitone offsets from the root (2-4 digits) on the channel's arpeggiator. Needs the `arp` feature. |
+//! | `E2+B2+E3` | Chord: start 2-4 notes together, one per voice of the channel. Releases the lane's previous note(s). |
+//! | `E2^07c!` | Interval chord: hold the notes at the given hex semitone offsets from the root (2-4 digits) together, like an arpeggio that does not cycle. |
 //! | `.` | Hold: nothing changes. |
 //! | `-` | Note off: release the lane's note. |
 //! | `k` `s` `h` `o` `c` `x` | Kick, snare, closed hi-hat, open hi-hat, crash, clap. |
@@ -25,9 +27,22 @@
 //! | `\|` | Bar line; ignored, for readability. |
 //!
 //! Each lane is monophonic like a sound-chip channel: a new note releases the
-//! lane's previous one. Chords need several lanes, which may share a channel
-//! (and its patch and four voices), or an arpeggio. Drum hits ring out on the
-//! drum machine independently of the lane.
+//! lane's previous one. Chords are the exception: a chord cell starts all its
+//! notes at once, and the lane's next note, chord or `-` releases all of them.
+//! A chord takes one of the channel's four voices per note, so it holds at
+//! most four; lanes that share its channel steal the oldest voices. `@n`
+//! works on chord cells too (`E2+B2+E3@1`). Drum hits ring out on the drum
+//! machine independently of the lane.
+//!
+//! ```
+//! use synthie::params::ChannelNo;
+//! use synthie::pattern::{Song, Tempo};
+//!
+//! // A power-chord riff (root, fifth, octave) from a single lane.
+//! let riff = Song::new(Tempo::bpm(140.0, 2))
+//!     .lane(ChannelNo(0), "E2+B2+E3 . G2+D3+G3 . | A2^07c! . . -")?;
+//! # Ok::<(), synthie::pattern::ParseError>(())
+//! ```
 //!
 //! ```
 //! use synthie::params::ChannelNo;
@@ -56,6 +71,9 @@ use crate::params::{AudioEvent, ChannelNo, DrumHit, MidiNote, SynthParams};
 
 /// Most notes an arpeggio cell can cycle through (the arpeggiator's limit).
 pub const MAX_ARP_NOTES: usize = 4;
+
+/// Most notes a chord cell can hold: one per voice of its channel.
+pub const MAX_CHORD_NOTES: usize = crate::audio::processor::POLYPHONY;
 
 /// How fast a song advances.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -165,6 +183,14 @@ pub enum Action {
         /// Number of notes, `2..=4`.
         count: u8,
     },
+    /// Note on for every note of `notes[..count]` at once, releasing the
+    /// lane's previous note(s).
+    Chord {
+        /// The chord tones; only `..count` are used.
+        notes: [MidiNote; MAX_CHORD_NOTES],
+        /// Number of notes, `2..=MAX_CHORD_NOTES`.
+        count: u8,
+    },
     /// One or more drum hits.
     Drums(DrumHits),
 }
@@ -208,8 +234,13 @@ impl Lane {
             if token == "|" {
                 continue;
             }
-            let cell =
-                parse_cell(token).map_err(|kind| ParseError::new(pattern, offset, token, kind))?;
+            let cell = parse_cell(token).map_err(|e| {
+                let (at, token) = match e.span {
+                    Some((start, len)) => (offset + start, &token[start..start + len]),
+                    None => (offset, token),
+                };
+                ParseError::new(pattern, at, token, e.kind)
+            })?;
             rows.push(cell);
         }
         Ok(Self { channel, rows })
@@ -231,7 +262,21 @@ fn tokens(pattern: &str) -> impl Iterator<Item = (usize, &str)> {
     })
 }
 
-fn parse_cell(token: &str) -> Result<Cell, ParseErrorKind> {
+/// A cell's parse error, optionally narrowed to part of the token (such as
+/// one note of a chord) by its byte offset and length within the token.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct CellError {
+    kind: ParseErrorKind,
+    span: Option<(usize, usize)>,
+}
+
+impl From<ParseErrorKind> for CellError {
+    fn from(kind: ParseErrorKind) -> Self {
+        Self { kind, span: None }
+    }
+}
+
+fn parse_cell(token: &str) -> Result<Cell, CellError> {
     let (body, patch) = match token.split_once('@') {
         Some((body, index)) => {
             let index = index
@@ -246,10 +291,16 @@ fn parse_cell(token: &str) -> Result<Cell, ParseErrorKind> {
         "" if patch.is_some() => Action::Hold,
         "." => Action::Hold,
         "-" => Action::Off,
-        _ if body.starts_with(|c: char| c.is_ascii_uppercase()) => parse_note_or_arp(body)?,
+        _ if body.starts_with(|c: char| c.is_ascii_uppercase()) => {
+            if body.contains('+') {
+                parse_chord(body)?
+            } else {
+                parse_note_or_arp(body)?
+            }
+        }
         _ => {
             if patch.is_some() {
-                return Err(ParseErrorKind::PatchOnDrums);
+                return Err(ParseErrorKind::PatchOnDrums.into());
             }
             Action::Drums(parse_drums(body)?)
         }
@@ -274,31 +325,81 @@ fn parse_drums(body: &str) -> Result<DrumHits, ParseErrorKind> {
         .collect()
 }
 
+/// A note, an arpeggio (`C4^047`) or an interval chord (`C4^047!`).
 fn parse_note_or_arp(body: &str) -> Result<Action, ParseErrorKind> {
     let Some((name, offsets)) = body.split_once('^') else {
         return parse_note(body).map(Action::Note);
     };
     let root = parse_note(name)?;
+    if let Some(offsets) = offsets.strip_suffix('!') {
+        let (notes, count) = offset_notes::<MAX_CHORD_NOTES>(root, offsets)
+            .ok_or(ParseErrorKind::InvalidChord)??;
+        if has_duplicates(&notes[..usize::from(count)]) {
+            return Err(ParseErrorKind::DuplicateChordNote);
+        }
+        return Ok(Action::Chord { notes, count });
+    }
     if !cfg!(feature = "arp") {
         return Err(ParseErrorKind::ArpUnsupported);
     }
-    if !(2..=MAX_ARP_NOTES).contains(&offsets.len()) {
-        return Err(ParseErrorKind::InvalidArp);
-    }
-    let mut notes = [root; MAX_ARP_NOTES];
-    for (slot, digit) in notes.iter_mut().zip(offsets.chars()) {
-        let offset = digit.to_digit(16).ok_or(ParseErrorKind::InvalidArp)?;
-        let midi = u32::from(root.0) + offset;
-        *slot = MidiNote(
-            u8::try_from(midi)
-                .ok()
-                .filter(|&m| m <= 127)
-                .ok_or(ParseErrorKind::NoteOutOfRange)?,
-        );
-    }
-    #[allow(clippy::cast_possible_truncation, reason = "2..=4 offsets")]
-    let count = offsets.len() as u8;
+    let (notes, count) =
+        offset_notes::<MAX_ARP_NOTES>(root, offsets).ok_or(ParseErrorKind::InvalidArp)??;
     Ok(Action::Arp { notes, count })
+}
+
+/// `root` plus each hex digit of `offsets` as semitones. `None` if `offsets`
+/// is not 2..=N hex digits, `Some(Err)` if a note leaves the MIDI range.
+fn offset_notes<const N: usize>(
+    root: MidiNote,
+    offsets: &str,
+) -> Option<Result<([MidiNote; N], u8), ParseErrorKind>> {
+    if !(2..=N).contains(&offsets.len()) {
+        return None;
+    }
+    let mut notes = [root; N];
+    for (slot, digit) in notes.iter_mut().zip(offsets.chars()) {
+        let midi = u32::from(root.0) + digit.to_digit(16)?;
+        match u8::try_from(midi).ok().filter(|&m| m <= 127) {
+            Some(m) => *slot = MidiNote(m),
+            None => return Some(Err(ParseErrorKind::NoteOutOfRange)),
+        }
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "at most N <= 4 offsets")]
+    let count = offsets.len() as u8;
+    Some(Ok((notes, count)))
+}
+
+fn has_duplicates(notes: &[MidiNote]) -> bool {
+    notes
+        .iter()
+        .enumerate()
+        .any(|(i, n)| notes[..i].contains(n))
+}
+
+/// A chord cell such as `E2+B2+E3`. Errors point at the offending note.
+fn parse_chord(body: &str) -> Result<Action, CellError> {
+    let mut notes = [MidiNote(0); MAX_CHORD_NOTES];
+    let mut count = 0;
+    let mut start = 0;
+    for name in body.split('+') {
+        let at = |kind| CellError {
+            kind,
+            span: Some((start, name.len())),
+        };
+        let note = parse_note(name).map_err(at)?;
+        if count == MAX_CHORD_NOTES {
+            return Err(at(ParseErrorKind::TooManyChordNotes));
+        }
+        if notes[..count].contains(&note) {
+            return Err(at(ParseErrorKind::DuplicateChordNote));
+        }
+        notes[count] = note;
+        count += 1;
+        start += name.len() + 1;
+    }
+    #[allow(clippy::cast_possible_truncation, reason = "at most MAX_CHORD_NOTES")]
+    let count = count as u8;
+    Ok(Action::Chord { notes, count })
 }
 
 /// Parse a note name such as `C4`, `F#3`, `Bb2` or `C-1` (C4 is MIDI 60).
@@ -351,6 +452,12 @@ pub enum ParseErrorKind {
     InvalidPatch,
     /// A patch change on a drum cell; drums have no patch.
     PatchOnDrums,
+    /// A chord with more notes than its channel has voices.
+    TooManyChordNotes,
+    /// A chord that names the same note twice.
+    DuplicateChordNote,
+    /// An interval chord suffix that is not 2-4 hex digits and `!`.
+    InvalidChord,
 }
 
 impl fmt::Display for ParseErrorKind {
@@ -365,6 +472,11 @@ impl fmt::Display for ParseErrorKind {
             Self::ArpUnsupported => "arpeggios need the `arp` feature",
             Self::InvalidPatch => "invalid patch change; expected `@` and a number, e.g. `@2`",
             Self::PatchOnDrums => "drum cells cannot change the patch",
+            Self::TooManyChordNotes => "too many chord notes; a channel plays at most 4 at once",
+            Self::DuplicateChordNote => "chord repeats a note",
+            Self::InvalidChord => {
+                "invalid interval chord; expected 2-4 hex semitone offsets and `!`, e.g. `E2^07c!`"
+            }
         })
     }
 }
@@ -494,6 +606,7 @@ enum Sounding {
     #[default]
     Nothing,
     Note(ChannelNo, MidiNote),
+    Chord(ChannelNo, [MidiNote; MAX_CHORD_NOTES], u8),
     #[cfg(feature = "arp")]
     Arp(ChannelNo, [MidiNote; MAX_ARP_NOTES], u8),
 }
@@ -567,6 +680,11 @@ impl SongPlayer {
         match core::mem::take(lane) {
             Sounding::Nothing => {}
             Sounding::Note(ch, note) => out.push(AudioEvent::NoteOffChannel(ch, note)),
+            Sounding::Chord(ch, notes, count) => {
+                for &note in &notes[..usize::from(count)] {
+                    out.push(AudioEvent::NoteOffChannel(ch, note));
+                }
+            }
             #[cfg(feature = "arp")]
             Sounding::Arp(ch, notes, count) => {
                 for &note in &notes[..usize::from(count)] {
@@ -594,6 +712,13 @@ impl SongPlayer {
                     Self::release(state, out);
                     out.push(AudioEvent::NoteOnChannel(ch, note));
                     *state = Sounding::Note(ch, note);
+                }
+                Action::Chord { notes, count } => {
+                    Self::release(state, out);
+                    for &note in &notes[..usize::from(count)] {
+                        out.push(AudioEvent::NoteOnChannel(ch, note));
+                    }
+                    *state = Sounding::Chord(ch, notes, count);
                 }
                 #[cfg(feature = "arp")]
                 Action::Arp { notes, count } => {
@@ -661,7 +786,7 @@ mod tests {
     }
 
     fn cell(token: &str) -> Result<Cell, ParseErrorKind> {
-        parse_cell(token)
+        parse_cell(token).map_err(|e| e.kind)
     }
 
     #[test]
@@ -754,6 +879,88 @@ mod tests {
     #[test]
     fn arpeggios_need_the_arp_feature() {
         assert_eq!(cell("C4^047"), Err(ParseErrorKind::ArpUnsupported));
+    }
+
+    #[test]
+    fn chord_cells() {
+        let n = MidiNote;
+        assert_eq!(
+            cell("E2+B2+E3"),
+            Ok(Cell {
+                patch: None,
+                action: Action::Chord {
+                    notes: [n(40), n(47), n(52), n(0)],
+                    count: 3
+                }
+            })
+        );
+        assert_eq!(
+            cell("E2+B2+E3@1"),
+            Ok(Cell {
+                patch: Some(1),
+                action: Action::Chord {
+                    notes: [n(40), n(47), n(52), n(0)],
+                    count: 3
+                }
+            })
+        );
+        assert_eq!(
+            cell("C4+E4+G4+B4").unwrap().action,
+            Action::Chord {
+                notes: [n(60), n(64), n(67), n(71)],
+                count: 4
+            }
+        );
+        assert_eq!(
+            cell("C4+E4+G4+B4+D5"),
+            Err(ParseErrorKind::TooManyChordNotes)
+        );
+        assert_eq!(cell("C4+C4"), Err(ParseErrorKind::DuplicateChordNote));
+        assert_eq!(cell("C4+"), Err(ParseErrorKind::InvalidNote));
+        assert_eq!(cell("C4+k"), Err(ParseErrorKind::InvalidNote));
+        assert_eq!(cell("C4+G#9+C10"), Err(ParseErrorKind::NoteOutOfRange));
+    }
+
+    #[test]
+    fn interval_chord_cells() {
+        let n = MidiNote;
+        assert_eq!(
+            cell("E2^07c!").unwrap().action,
+            Action::Chord {
+                notes: [n(40), n(47), n(52), n(40)],
+                count: 3
+            }
+        );
+        assert_eq!(
+            cell("A3^07!@2"),
+            Ok(Cell {
+                patch: Some(2),
+                action: Action::Chord {
+                    notes: [n(57), n(64), n(57), n(57)],
+                    count: 2
+                }
+            })
+        );
+        assert_eq!(cell("C4^0!"), Err(ParseErrorKind::InvalidChord));
+        assert_eq!(cell("C4^04790!"), Err(ParseErrorKind::InvalidChord));
+        assert_eq!(cell("C4^0z!"), Err(ParseErrorKind::InvalidChord));
+        assert_eq!(cell("C4^00!"), Err(ParseErrorKind::DuplicateChordNote));
+        assert_eq!(cell("G9^07!"), Err(ParseErrorKind::NoteOutOfRange));
+    }
+
+    #[test]
+    fn chord_errors_point_at_the_bad_note() {
+        let err = Lane::parse(CH0, "E2 . G2+D3+H3 .").unwrap_err();
+        assert_eq!((err.column, err.offset, err.token.as_str()), (12, 11, "H3"));
+        assert_eq!(err.kind, ParseErrorKind::InvalidNote);
+
+        let err = Lane::parse(CH0, "C4+E4+G4+B4+D5@1").unwrap_err();
+        assert_eq!((err.column, err.token.as_str()), (13, "D5"));
+        assert_eq!(err.kind, ParseErrorKind::TooManyChordNotes);
+
+        let err = Lane::parse(CH0, ". C4+E4+C4").unwrap_err();
+        assert_eq!((err.column, err.token.as_str()), (9, "C4"));
+        assert_eq!(err.kind, ParseErrorKind::DuplicateChordNote);
     }
 
     #[test]
@@ -858,6 +1065,62 @@ mod tests {
             )]
         );
         assert!(rows[2].is_empty(), "unknown patches are ignored");
+    }
+
+    #[test]
+    fn chords_start_and_release_together() {
+        let song = Song::new(Tempo::bpm(120.0, 2))
+            .lane(CH0, "E2+B2+E3 . G2+D3 C4 E2^07! -")
+            .unwrap();
+        let rows = play(&mut SongPlayer::new(song), 6);
+        let n = MidiNote;
+        let on = |m| AudioEvent::NoteOnChannel(CH0, n(m));
+        let off = |m| AudioEvent::NoteOffChannel(CH0, n(m));
+        assert_events!(
+            rows,
+            vec![
+                vec![on(40), on(47), on(52)],
+                vec![],
+                vec![off(40), off(47), off(52), on(43), on(50)],
+                vec![off(43), off(50), on(60)],
+                vec![off(60), on(40), on(47)],
+                vec![off(40), off(47)],
+            ]
+        );
+    }
+
+    #[test]
+    fn one_shot_songs_release_held_chords() {
+        let song = Song::new(Tempo::bpm(120.0, 2))
+            .one_shot()
+            .lane(CH0, "C4+G4")
+            .unwrap();
+        let mut player = SongPlayer::new(song);
+        play(&mut player, 1);
+        let mut out = Vec::new();
+        player.tick(44_100.0, &mut out);
+        assert_events!(
+            out,
+            vec![
+                AudioEvent::NoteOffChannel(CH0, MidiNote(60)),
+                AudioEvent::NoteOffChannel(CH0, MidiNote(67)),
+            ]
+        );
+    }
+
+    #[test]
+    fn a_full_chord_sounds_every_voice() {
+        use crate::audio::processor::SynthProcessor;
+        use crate::audio::sequencer::SequencedProcessor;
+
+        let song = Song::new(Tempo::bpm(120.0, 2))
+            .lane(CH0, "C4+E4+G4+B4 .")
+            .unwrap();
+        let mut synth =
+            SequencedProcessor::new(SynthProcessor::<1>::new(44_100.0), SongPlayer::new(song));
+        let mut out = vec![0.0f32; 512];
+        synth.process_block(&[], &mut out, 1);
+        assert_eq!(synth.processor().active_voices(), MAX_CHORD_NOTES);
     }
 
     #[cfg(feature = "arp")]

@@ -154,6 +154,8 @@ pub enum LoadError {
     UnknownPatch(u16),
     /// A chip arpeggio, which the grid cannot hold.
     Arpeggio { track: usize, step: usize },
+    /// A chord cell; a track plays one note per step.
+    Chord { track: usize, step: usize },
 }
 
 impl core::fmt::Display for LoadError {
@@ -175,6 +177,12 @@ impl core::fmt::Display for LoadError {
                 write!(
                     f,
                     "arpeggio on track {track}, step {step} has no tracker equivalent"
+                )
+            }
+            Self::Chord { track, step } => {
+                write!(
+                    f,
+                    "chord on track {track}, step {step}; a track plays one note per step"
                 )
             }
         }
@@ -242,6 +250,12 @@ pub fn from_pattern(song: &pattern::Song, presets: &[Patch]) -> Result<Song, Loa
                 Action::Note(note) => Step::Note(note),
                 Action::Arp { .. } => {
                     return Err(LoadError::Arpeggio {
+                        track: melodic()?,
+                        step,
+                    });
+                }
+                Action::Chord { .. } => {
+                    return Err(LoadError::Chord {
                         track: melodic()?,
                         step,
                     });
@@ -427,6 +441,10 @@ mod tests {
         assert_eq!(
             load(|s| lane(s, 0, ". C4^047")).unwrap_err(),
             LoadError::Arpeggio { track: 0, step: 1 }
+        );
+        assert_eq!(
+            load(|s| lane(s, 2, ". . E2+B2")).unwrap_err(),
+            LoadError::Chord { track: 2, step: 2 }
         );
     }
 

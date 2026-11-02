@@ -271,6 +271,13 @@ tasks:
     cmds:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example kernkraft -- {{.CLI_ARGS}}
 
+  example:power-chords:
+    desc: Run the power-chords example (a riff from one lane of chord cells, 140 BPM, E)
+    aliases:
+      - power-chords
+    cmds:
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example power_chords -- {{.CLI_ARGS}}
+
   example:bitcrusher:
     desc: Run the bitcrusher FX demo (A4 sawtooth cycling through bit depth and decimation settings)
     aliases:
