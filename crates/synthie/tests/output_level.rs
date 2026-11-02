@@ -73,11 +73,7 @@ fn scene() -> impl Strategy<Value = Scene> {
     (
         prop::array::uniform4(0usize..64),
         prop::collection::vec((channels, 24u8..=96), 1..=8),
-        prop::option::of(prop::sample::select(vec![
-            DrumHit::Kick,
-            DrumHit::HiHatClosed,
-            DrumHit::HiHatOpen,
-        ])),
+        prop::option::of(prop::sample::select(DrumHit::ALL.to_vec())),
     )
         .prop_map(|(presets, notes, drum)| Scene {
             presets,
@@ -198,7 +194,7 @@ fn new_processors_use_the_documented_defaults() {
 /// Drums sit outside the voice pools, so normalization must not touch them.
 #[test]
 fn drums_ignore_voice_normalization() {
-    for hit in [DrumHit::Kick, DrumHit::HiHatClosed, DrumHit::HiHatOpen] {
+    for hit in DrumHit::ALL {
         let events = || [AudioEvent::Drum(hit)];
         let on = render(
             &mut processor(1.0, VoiceNormalization::Polyphony),

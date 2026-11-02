@@ -771,14 +771,46 @@ impl Default for ChannelNo {
 }
 
 /// Drum one-shot events.
+///
+/// Every hit is synthesized by the drum machine, which runs beside the voice
+/// pools, so drums never steal melodic voices.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[non_exhaustive]
 pub enum DrumHit {
     /// Trigger a synthesized kick drum hit.
     Kick,
+    /// Trigger a snare: a short noise rattle over a ~190 Hz tone body.
+    Snare,
     /// Trigger a short, bright closed hi-hat hit.
     HiHatClosed,
     /// Trigger a longer, ringing open hi-hat hit.
     HiHatOpen,
+    /// Trigger a long (about 2 s), washy, shimmering crash cymbal.
+    Crash,
+    /// Trigger a low tom (pitched kick-like sweep). The toms share one voice,
+    /// so a new tom hit cuts off the previous one.
+    TomLow,
+    /// Trigger a mid tom. See [`DrumHit::TomLow`].
+    TomMid,
+    /// Trigger a high tom. See [`DrumHit::TomLow`].
+    TomHigh,
+    /// Trigger a hand clap: a few rapid band-passed noise bursts.
+    Clap,
+}
+
+impl DrumHit {
+    /// Every drum hit, in kit order.
+    pub const ALL: [Self; 9] = [
+        Self::Kick,
+        Self::Snare,
+        Self::HiHatClosed,
+        Self::HiHatOpen,
+        Self::Crash,
+        Self::TomLow,
+        Self::TomMid,
+        Self::TomHigh,
+        Self::Clap,
+    ];
 }
 
 #[cfg(all(test, feature = "serde"))]

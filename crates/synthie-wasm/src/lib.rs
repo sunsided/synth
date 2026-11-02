@@ -70,8 +70,14 @@ struct Scheduled {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Drum {
     Kick = "kick",
+    Snare = "snare",
     HiHatClosed = "hihat-closed",
     HiHatOpen = "hihat-open",
+    Crash = "crash",
+    TomLow = "tom-low",
+    TomMid = "tom-mid",
+    TomHigh = "tom-high",
+    Clap = "clap",
 }
 
 /// A four-channel synthesizer with the built-in SID-style preset bank and a
@@ -240,8 +246,14 @@ impl Synth {
     pub fn drum(&mut self, hit: Drum, at: Option<f64>) -> Result<(), JsError> {
         let hit = match hit {
             Drum::Kick => DrumHit::Kick,
+            Drum::Snare => DrumHit::Snare,
             Drum::HiHatClosed => DrumHit::HiHatClosed,
             Drum::HiHatOpen => DrumHit::HiHatOpen,
+            Drum::Crash => DrumHit::Crash,
+            Drum::TomLow => DrumHit::TomLow,
+            Drum::TomMid => DrumHit::TomMid,
+            Drum::TomHigh => DrumHit::TomHigh,
+            Drum::Clap => DrumHit::Clap,
             Drum::__Invalid => return Ok(()),
         };
         self.schedule(AudioEvent::Drum(hit), at)
