@@ -643,6 +643,10 @@ impl Sequencer for SongPlayer {
         self.frame_error = frames - whole;
         whole as usize
     }
+
+    fn is_finished(&self) -> bool {
+        self.finished
+    }
 }
 
 #[cfg(test)]

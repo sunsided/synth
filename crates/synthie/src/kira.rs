@@ -32,6 +32,14 @@
 //! ([`SynthSoundData::with_sequencer`]): its events land on the exact frame
 //! it asks for, whatever block size kira renders with.
 //!
+//! # Ending
+//!
+//! A synth plays until it is stopped or its handle is dropped, unless its
+//! sequencer finishes ([`Sequencer::is_finished`]), like a
+//! [one-shot](crate::pattern::Song::one_shot) song: then the sound stops by
+//! itself once every voice, drum and effect tail has died away, and kira
+//! unloads it. Events sent after that are ignored.
+//!
 //! # Real-time safety
 //!
 //! kira does not tell sounds the sample rate up front, so the processor is
@@ -60,6 +68,10 @@ pub const DEFAULT_EVENT_CAPACITY: usize = 1024;
 
 /// Frames rendered per processor call; kira's blocks are split into these.
 const CHUNK: usize = 256;
+
+/// Peak level below which a block counts as silent (about -100 dBFS), so a
+/// finished sequencer's sound can end without cutting off effect tails.
+const SILENCE: f32 = 1e-5;
 
 /// A synth ready to be played by a kira `AudioManager`.
 ///
@@ -505,10 +517,12 @@ impl<S: Sequencer + Send + 'static, const N: usize> Sound for SynthSound<S, N> {
         let mut events = core::mem::take(&mut self.drained);
         let mut scratch = self.scratch;
         let synth = self.synth_for(sample_rate);
+        let mut peak = 0.0f32;
         for (chunk_index, frames) in out.chunks_mut(CHUNK).enumerate() {
             let buf = &mut scratch[..frames.len()];
             let pending: &[AudioEvent] = if chunk_index == 0 { &events } else { &[] };
             synth.process_block(pending, buf, 1);
+            peak = buf.iter().fold(peak, |m, s| m.max(s.abs()));
             for (i, (frame, &sample)) in frames.iter_mut().zip(buf.iter()).enumerate() {
                 // Ramp the gain linearly across the block, like kira's sounds.
                 let t = (chunk_index * CHUNK + i) as f32 / len;
@@ -516,6 +530,11 @@ impl<S: Sequencer + Send + 'static, const N: usize> Sound for SynthSound<S, N> {
                 let fade = Decibels(lerp(prev_gain.1.0, gain.1.0, t)).as_amplitude();
                 *frame = Frame::from_mono(sample * volume * fade);
             }
+        }
+        // A finished sequencer (a one-shot song) ends the sound once its
+        // voices, drums and effect tails have died away.
+        if synth.sequencer().is_finished() && synth.processor().is_idle() && peak < SILENCE {
+            self.state = PlaybackState::Stopped;
         }
         events.clear();
         self.drained = events;
@@ -706,6 +725,52 @@ mod tests {
         handle.resume(tween(1));
         render(sound.as_mut(), 512, 512);
         assert_eq!(handle.state(), PlaybackState::Stopped);
+    }
+
+    fn song_sound(one_shot: bool) -> (Box<dyn Sound>, SynthHandle) {
+        use crate::pattern::{Song, SongPlayer, Tempo};
+
+        // Four rows of 0.05 s: a note, a snare, a release.
+        let song = Song::new(Tempo::rows_per_minute(1_200.0))
+            .lane(ChannelNo(0), "C4 . - .")
+            .unwrap()
+            .lane(ChannelNo(1), ". s . .")
+            .unwrap();
+        let song = if one_shot { song.one_shot() } else { song };
+        SynthSoundData::new()
+            .with_sequencer(SongPlayer::new(song))
+            .into_sound()
+            .unwrap()
+    }
+
+    #[test]
+    fn a_one_shot_song_ends_the_sound_after_its_tails() {
+        let (mut sound, handle) = song_sound(true);
+        let out = render(sound.as_mut(), 8_820, 512); // the song's 0.2 s
+        assert!(out.iter().any(|&s| s != 0.0));
+        assert!(!sound.finished(), "ended before the release tail");
+        let mut blocks = 0;
+        while !sound.finished() {
+            render(sound.as_mut(), 512, 512);
+            blocks += 1;
+            assert!(blocks < 2_000, "one-shot song never ended");
+        }
+        assert_eq!(handle.state(), PlaybackState::Stopped);
+    }
+
+    #[test]
+    fn a_looping_song_keeps_playing() {
+        let (mut sound, handle) = song_sound(false);
+        render(sound.as_mut(), 44_100 * 3, 512);
+        assert!(!sound.finished());
+        assert_eq!(handle.state(), PlaybackState::Playing);
+    }
+
+    #[test]
+    fn a_synth_without_a_sequencer_never_ends_by_itself() {
+        let (mut sound, _handle) = SynthSoundData::new().into_sound().unwrap();
+        render(sound.as_mut(), 4_096, 512);
+        assert!(!sound.finished());
     }
 
     #[test]

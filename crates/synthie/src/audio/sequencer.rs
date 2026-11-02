@@ -50,6 +50,16 @@ pub trait Sequencer {
     /// `out` and return the number of frames until the next call. A return
     /// value of 0 is treated as 1.
     fn tick(&mut self, sample_rate: f32, out: &mut Vec<AudioEvent>) -> usize;
+
+    /// Whether the sequencer has ended for good and will never emit another
+    /// event, like a one-shot song after its last row.
+    ///
+    /// Hosts that own the sound, such as the kira backend, use it to let a
+    /// finished piece end once its voices have died away. Defaults to
+    /// `false`: the sequencer runs until it is stopped from outside.
+    fn is_finished(&self) -> bool {
+        false
+    }
 }
 
 /// The no-op sequencer: never emits events.
@@ -63,11 +73,19 @@ impl<S: Sequencer + ?Sized> Sequencer for &mut S {
     fn tick(&mut self, sample_rate: f32, out: &mut Vec<AudioEvent>) -> usize {
         (**self).tick(sample_rate, out)
     }
+
+    fn is_finished(&self) -> bool {
+        (**self).is_finished()
+    }
 }
 
 impl<S: Sequencer + ?Sized> Sequencer for Box<S> {
     fn tick(&mut self, sample_rate: f32, out: &mut Vec<AudioEvent>) -> usize {
         (**self).tick(sample_rate, out)
+    }
+
+    fn is_finished(&self) -> bool {
+        (**self).is_finished()
     }
 }
 
