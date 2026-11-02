@@ -485,14 +485,15 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         help_entry("Del Bksp", KW, "clear step"),
         Line::raw(""),
         help_heading("DRUM ENTRY  (drum track)"),
-        drum_help_line(&DRUM_GLYPHS[..4]),
-        drum_help_line(&[DRUM_GLYPHS[4], DRUM_GLYPHS[8]]),
-        drum_help_line(&DRUM_GLYPHS[5..8]),
+    ]);
+    // Derived from the kit, so a new drum shows up here without edits.
+    lines.extend(DRUM_GLYPHS.chunks(DRUM_HELP_PER_LINE).map(drum_help_line));
+    lines.extend([
         Line::raw(""),
         Line::styled("press any key to close", fg(DIM)).centered(),
     ]);
     let height = u16::try_from(lines.len() + 2).unwrap_or(u16::MAX);
-    let rect = widgets::popup(frame, area, 62, height);
+    let rect = widgets::popup(frame, area, HELP_W, height);
     frame.render_widget(
         Paragraph::new(lines).block(panel("KEY REFERENCE", true)),
         rect,
@@ -500,6 +501,12 @@ fn draw_help(frame: &mut Frame, area: Rect) {
 }
 
 // ─── Helpers ─────────────────────────────────────────────────────────────────
+
+/// Width of the key-reference popup, borders included.
+const HELP_W: u16 = 62;
+
+/// Drums listed per line of the key reference.
+const DRUM_HELP_PER_LINE: usize = 4;
 
 /// One help line listing the keys of `glyphs`.
 fn drum_help_line(glyphs: &[(&'static str, &'static str, Color)]) -> Line<'static> {
@@ -573,6 +580,23 @@ mod tests {
         }
         for step in 0..state.song.pattern.len {
             assert_eq!(step_line(&state, step, false).width(), GRID_W);
+        }
+    }
+
+    /// The key reference lists every drum, and each line fits the popup.
+    #[test]
+    fn drum_help_lists_the_whole_kit_within_the_popup() {
+        let lines: Vec<_> = DRUM_GLYPHS
+            .chunks(DRUM_HELP_PER_LINE)
+            .map(drum_help_line)
+            .collect();
+        let text: String = lines.iter().map(ToString::to_string).collect();
+        for (key, name, _) in DRUM_GLYPHS {
+            assert!(text.contains(&format!(" {key} ")), "key {key} missing");
+            assert!(text.contains(name), "{name} missing");
+        }
+        for line in &lines {
+            assert!(line.width() <= usize::from(HELP_W - 2), "{line}");
         }
     }
 }
