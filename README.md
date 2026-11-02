@@ -69,7 +69,7 @@ Run any example with `cargo run -p synth --example <name> --release`.
 | `pattern` | Short chiptune song in the tracker-style pattern notation (`synthie::pattern`) |
 | `kira` | A sequenced loop played as a kira sound, with live hits, volume fades, pause and stop (needs `--features kira`) |
 | `lazy_jones` | Lazy Jones (David Whittaker, 1984) — the C64 hook that became Kernkraft 400 |
-| `kernkraft` | Kernkraft 400 (Zombie Nation, 1999) — full song structure, two channels |
+| `kernkraft` | Kernkraft 400 (Zombie Nation, 1999) — the whole song in pattern notation: hook, breakdown, builds, six lanes plus drums |
 
 ## Synthie Tracker
 

@@ -1,231 +1,276 @@
-//! Plays the Zombie Nation / Kernkraft 400 structure (Zombie Nation, 1999).
+//! Kernkraft 400 (Zombie Nation, 1999), the whole song, after the hook of
+//! David Whittaker's Lazy Jones (C64, 1984).
 //!
-//! Source: assets/zombie.mid — 70 BPM half-time notation (Bb minor).
-//! Song sections: Intro → Hook × 4 → Interlude → Hook × 4.
+//! Transcribed from Arne Mulder's General MIDI sequence (Toplist Sequencing
+//! Team, 2000): 70 bpm in half time, Bb minor, 76 bars of sixteenths. Every
+//! MIDI track maps to one lane; doubled tracks and sound effects are left
+//! out, and 32nd-note rolls fall onto the sixteenth grid.
 //!
-//! Channel 0 – Arp Lead (melody, note ≥ 58 = A#3).
-//! Channel 1 – C64 Bass  (bass,   note < 58).
+//! | Bars | Section |
+//! |---|---|
+//! | 1-12 | Intro: sub-bass, kick and claps, octave ostinati |
+//! | 13-32 | Hook, with a snare build into sixteenth hats |
+//! | 33-40 | Breakdown riff over a G/Bb sub-bass |
+//! | 41-51 | Bb pedal build |
+//! | 52-75 | Hook again, to the final crash |
+//!
+//! The song runs on a [`SongPlayer`], so every note lands sample-accurately.
+//! Each lane has a channel of its own: lanes sharing a channel would release
+//! each other's notes whenever they play the same pitch.
+//!
+//! ```sh
+//! cargo run -p synthie --example kernkraft --release
+//! ```
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
-use anyhow::{Result, anyhow};
-use synthie::audio::engine::setup_audio;
-use synthie::params::{AudioEvent, ChannelNo, DrumHit, MidiNote};
+use anyhow::{Context, Result};
+use synthie::audio::engine::setup_audio_n_with_sequencer;
+use synthie::params::{ChannelNo, SynthParams};
+use synthie::pattern::{Song, SongPlayer, Tempo};
 use synthie::presets::sid::default_patches;
 
-const BPM: f32 = 70.0;
-const BEATS_PER_BAR: f32 = 4.0;
-const HOLD: f32 = 0.23; // just under a 16th note (0.25 beats at 70 BPM)
-const HOOK_PHRASE_BEATS: f32 = 8.0; // 2-bar hook phrase
-const HOOK_REPS: u8 = 4; // repetitions per hook section
-const INTRO_BEATS: u8 = 16; // 4 bars
-const INTERLUDE_BEATS: u8 = 8; // 2 bars
+/// Synthesis channels: one per melodic lane, plus spares.
+const CHANNELS: usize = 8;
 
-// Channel indices
-const MELODY: u8 = 0;
-const BASS: u8 = 1;
+/// Bars in the song.
+const BARS: usize = 76;
 
-// Hook melody beats 48–56 (relative offset).
-// Notes ≥ 58 (A#3). Bb minor arpeggios shifting to Ebm and Fm.
-static HOOK_MELODY: &[(f32, u8)] = &[
-    (0.25, 58), // A#3 — Bbm arpeggio start
-    (0.50, 61), // C#4
-    (0.75, 63), // D#4
-    (1.00, 65), // F4  — arpeggio peak
-    (2.25, 58), // A#3 — Bbm repeat
-    (2.50, 61), // C#4
-    (2.75, 63), // D#4
-    (3.00, 65), // F4
-    (3.25, 66), // F#4 — variation note leading into chord change
-    (3.50, 65), // F4
-    (3.75, 61), // C#4
-    (4.00, 63), // D#4 — Ebm section
-    (5.00, 61), // C#4 — Fm section
-    (5.50, 65), // F4
-    (5.75, 58), // A#3 — resolution
+// ─── Melody and bass ─────────────────────────────────────────────────────────
+
+const REST: &str = ". . . . . . . . . . . . . . . .";
+/// Releases a note held over from the previous bar.
+const OFF: &str = "- . . . . . . . . . . . . . . .";
+
+/// The Lazy Jones hook: a Bbm arpeggio twice, then Eb and F.
+const HOOK_LEAD_1: &str = ". Bb3 C#4 Eb4 F4 - . . . Bb3 C#4 Eb4 F4 F#4 F4 C#4";
+const HOOK_LEAD_2: &str = "Eb4 - . . C#4 - F4 Bb3 - . . . . . . .";
+
+/// Octave-jumping bass under the hook, following the chords.
+const HOOK_BASS_1: &str = "Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2";
+const HOOK_BASS_2: &str = "Eb2 Eb3 Eb2 Eb3 F2 F3 F2 F3 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2";
+
+/// The intro ostinato, upper octave first, against [`COUNTER`].
+const OSTINATO: &str = "Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1 Bb2 Bb1";
+const COUNTER: &str = HOOK_BASS_1;
+
+const SUB: &str = "Bb0 Bb1 Bb0 Bb1 Bb0 Bb1 Bb0 Bb1 Bb0 Bb1 Bb0 Bb1 Bb0 Bb1 Bb0 Bb1";
+/// Breakdown sub-bass: G pushing into Bb.
+const SUB_G: &str = "G1 G1 Bb1 Bb1 Bb1 Bb1 Bb1 Bb1 G1 G1 Bb1 Bb1 Bb1 Bb1 Bb1 Bb1";
+const SUB_G_END: &str = "G1 G1 Bb1 Bb1 Bb1 Bb1 Bb1 Bb1 - . . . . . . .";
+const PEDAL: &str = "Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0 Bb0";
+
+/// The breakdown riff.
+const STAB_1: &str = "G2 F#2 - . . . . . G2 F#2 - . . . . .";
+const STAB_2: &str = "G2 F#2 - . . . . . G2 F#2 D2 C2 - . . .";
+
+// ─── Drums ───────────────────────────────────────────────────────────────────
+
+const KICK_8THS: &str = "k . k . k . k . k . k . k . k .";
+const KICK_HALF: &str = "k . k . k . k . . . . . . . . .";
+const GROOVE: &str = "k . k h k+x . k . k . k h k+x . k .";
+const BREAK: &str = ". . . h x . . . . . . h x . . .";
+const KICK_ROLL: &str = "k k k k+h k+x k k k k k k k+h k+x k k k";
+const CRASH: &str = "c . . . . . . . . . . . . . . .";
+const CRASH_KICKS: &str = "k+c . k . k . k . k . k . k . k .";
+
+const SNARE_1: &str = ". . s s . . s . . . s s . . s .";
+const SNARE_2: &str = ". . s s . . s . . s s s . s s s";
+const KICK_SNARE_1: &str = "k . k+s s k . k+s . k . k+s s k . k+s .";
+const KICK_SNARE_2: &str = "k . k+s s k . k+s . k s k+s s k s k+s s";
+const HATS_1: &str = "k h k+s s+h k h k+s h k h k+s s+h k h k+s h";
+const HATS_2: &str = "k h k+s s+h k h k+s h k s+h k+s s+h k s+h k+s s+h";
+const HATS_FILL: &str = "k h k+s s+h k h k+s h k s+h k+s k+s+h k k+s+h k+s k+s+h";
+const SIXTEENTHS_1: &str = "k+h h k+s+h s+h k+h h k+s+h h k+h h k+s+h s+h k+h h k+s+h h";
+const SIXTEENTHS_2: &str = "k+h h k+s+h s+h k+h h k+s+h h k+h s+h k+s+h s+h k+h s+h k+s+h s+h";
+const RIFF_BEAT: &str = "k+h h k+h h k+h+x h k+h h k+h h k+h h k+h+x h k+h h";
+const PEDAL_BEAT: &str = "k . . k+h k . . . k . . k+h k . . .";
+const PEDAL_CRASH: &str = "k+c . . k+h k . . . k . . k+h k . . .";
+
+/// The hook's drums: silence, a crash, then a 16-bar snare build.
+const HOOK_DRUMS: [(usize, &str); 19] = [
+    (2, REST),
+    (1, CRASH),
+    (1, REST),
+    (1, SNARE_1),
+    (1, SNARE_2),
+    (1, SNARE_1),
+    (1, SNARE_2),
+    (1, KICK_SNARE_1),
+    (1, KICK_SNARE_2),
+    (1, KICK_SNARE_1),
+    (1, KICK_SNARE_2),
+    (1, HATS_1),
+    (1, HATS_2),
+    (1, HATS_1),
+    (1, HATS_FILL),
+    (1, SIXTEENTHS_1),
+    (1, SIXTEENTHS_2),
+    (1, SIXTEENTHS_1),
+    (1, SIXTEENTHS_2),
 ];
 
-// Hook bass beats 48–56.
-// Notes < 58. Alternating A#1/A#2 ostinato; shifts to D#2/D#3 (Ebm) then F2/F3 (Fm).
-static HOOK_BASS: &[(f32, u8)] = &[
-    (0.00, 34), // A#1
-    (0.25, 46), // A#2
-    (0.50, 34), // A#1
-    (0.75, 46), // A#2
-    (1.00, 34), // A#1
-    (1.25, 46), // A#2
-    (1.50, 34), // A#1
-    (1.75, 46), // A#2
-    (2.00, 34), // A#1
-    (2.25, 46), // A#2
-    (2.50, 34), // A#1
-    (2.75, 46), // A#2
-    (3.00, 34), // A#1
-    (3.25, 46), // A#2
-    (3.50, 34), // A#1
-    (3.75, 46), // A#2
-    (4.00, 39), // D#2 — Ebm
-    (4.25, 51), // D#3
-    (4.50, 39), // D#2
-    (4.75, 51), // D#3
-    (5.00, 41), // F2  — Fm
-    (5.25, 53), // F3
-    (5.50, 41), // F2
-    (5.75, 53), // F3
-    (6.00, 34), // A#1 — Bbm return
-    (6.25, 46), // A#2
-    (6.50, 34), // A#1
-    (6.75, 46), // A#2
-    (7.00, 34), // A#1
-    (7.25, 46), // A#2
-    (7.50, 34), // A#1
-    (7.75, 46), // A#2
-];
+// ─── Arrangement ─────────────────────────────────────────────────────────────
 
-#[derive(Clone, Copy)]
-enum ScheduledKind {
-    NoteOn(ChannelNo, MidiNote),
-    NoteOff(ChannelNo, MidiNote),
-    Drum(DrumHit),
+/// Join `(bars, pattern)` sections into one lane; checks the length.
+fn lane(sections: &[(usize, &str)]) -> String {
+    let bars: usize = sections.iter().map(|&(n, _)| n).sum();
+    assert_eq!(bars, BARS, "lane is {bars} bars long");
+    sections
+        .iter()
+        .flat_map(|&(n, bar)| std::iter::repeat_n(bar, n))
+        .collect::<Vec<_>>()
+        .join(" | ")
 }
 
-#[derive(Clone, Copy)]
-struct TimedEvent {
-    at: Duration,
-    kind: ScheduledKind,
+/// `pairs` repetitions of a two-bar phrase.
+fn phrase(pairs: usize, first: &'static str, second: &'static str) -> Vec<(usize, &'static str)> {
+    std::iter::repeat_n([(1, first), (1, second)], pairs)
+        .flatten()
+        .collect()
 }
 
-fn beats(n: f32) -> Duration {
-    Duration::from_secs_f32(n * 60.0 / BPM)
+fn lead() -> String {
+    let mut s = vec![(12, REST)];
+    s.extend(phrase(10, HOOK_LEAD_1, HOOK_LEAD_2));
+    s.push((19, REST));
+    s.extend(phrase(12, HOOK_LEAD_1, HOOK_LEAD_2));
+    s.push((1, REST));
+    lane(&s)
 }
 
-fn push_note(events: &mut Vec<TimedEvent>, at: f32, ch: u8, midi: u8) {
-    let ch = ChannelNo(ch);
-    let note = MidiNote(midi);
-    events.push(TimedEvent {
-        at: beats(at),
-        kind: ScheduledKind::NoteOn(ch, note),
-    });
-    events.push(TimedEvent {
-        at: beats(at + HOLD),
-        kind: ScheduledKind::NoteOff(ch, note),
-    });
+fn bass() -> String {
+    let mut s = vec![(5, REST), (7, OSTINATO)];
+    s.extend(phrase(10, HOOK_BASS_1, HOOK_BASS_2));
+    s.extend([(1, OFF), (11, REST), (7, OSTINATO)]);
+    s.extend(phrase(12, HOOK_BASS_1, HOOK_BASS_2));
+    s.push((1, OFF));
+    lane(&s)
 }
 
-/// Alternating A#1/A#2 bass ostinato on every 16th note for `num_beats` beats.
-fn bass_ostinato(events: &mut Vec<TimedEvent>, start: f32, num_beats: u8) {
-    let slots = u16::from(num_beats) * 4; // 16th-note slots
-    for slot in 0u16..slots {
-        let t = start + f32::from(slot) * 0.25;
-        let midi: u8 = if slot % 2 == 0 { 34 } else { 46 }; // A#1 / A#2
-        push_note(events, t, BASS, midi);
+fn counter() -> String {
+    lane(&[
+        (7, REST),
+        (5, COUNTER),
+        (1, OFF),
+        (33, REST),
+        (5, COUNTER),
+        (1, OFF),
+        (24, REST),
+    ])
+}
+
+fn sub() -> String {
+    lane(&[
+        (1, REST),
+        (11, SUB),
+        (1, OFF),
+        (19, REST),
+        (7, SUB_G),
+        (1, SUB_G_END),
+        (11, SUB),
+        (1, OFF),
+        (24, REST),
+    ])
+}
+
+fn pedal() -> String {
+    lane(&[(40, REST), (11, PEDAL), (1, OFF), (24, REST)])
+}
+
+fn stab() -> String {
+    let mut s = vec![(32, REST)];
+    s.extend(phrase(4, STAB_1, STAB_2));
+    s.push((36, REST));
+    lane(&s)
+}
+
+fn drums() -> String {
+    let mut s = vec![
+        (1, REST),
+        (2, KICK_8THS),
+        (5, GROOVE),
+        (1, BREAK),
+        (2, GROOVE),
+        (1, KICK_ROLL),
+    ];
+    s.extend(HOOK_DRUMS);
+    s.extend([
+        (4, RIFF_BEAT),
+        (1, CRASH_KICKS),
+        (2, KICK_8THS),
+        (1, KICK_HALF),
+        (1, PEDAL_CRASH),
+        (10, PEDAL_BEAT),
+    ]);
+    s.extend(HOOK_DRUMS);
+    s.extend([(1, CRASH), (3, REST), (1, CRASH)]);
+    lane(&s)
+}
+
+/// Switch the lane to patch `index` on its first row: `.` becomes `@n`,
+/// a note `X` becomes `X@n`.
+fn with_patch(pattern: &str, index: usize) -> String {
+    let (first, rest) = pattern.split_once(' ').unwrap_or((pattern, ""));
+    let first = if first == "." {
+        String::new()
+    } else {
+        first.to_string()
+    };
+    format!("{first}@{index} {rest}")
+}
+
+fn preset(name: &str) -> Result<SynthParams> {
+    default_patches()
+        .into_iter()
+        .find(|p| p.name == name)
+        .map(|p| p.params)
+        .with_context(|| format!("preset {name:?} not found"))
+}
+
+fn song() -> Result<Song> {
+    let lanes = [
+        ("Arp Lead", lead()),
+        ("C64 Bass", bass()),
+        ("C64 Bass", counter()),
+        ("Slide Bass", sub()),
+        ("Slide Bass", pedal()),
+        ("Metal Pulse", stab()),
+    ];
+    let mut song = Song::new(Tempo::bpm(70.0, 4)).one_shot();
+    for (i, (patch, pattern)) in lanes.into_iter().enumerate() {
+        let ch = ChannelNo(u8::try_from(i)?);
+        song = song
+            .patch(preset(patch)?)
+            .lane(ch, &with_patch(&pattern, i))?;
     }
-}
-
-/// One repetition of the 8-beat hook phrase starting at `start`.
-fn push_hook_phrase(events: &mut Vec<TimedEvent>, start: f32) {
-    for &(off, midi) in HOOK_MELODY {
-        push_note(events, start + off, MELODY, midi);
-    }
-    for &(off, midi) in HOOK_BASS {
-        push_note(events, start + off, BASS, midi);
-    }
-}
-
-/// Kick on every beat + 16th-note hi-hats for `num_bars` bars starting at `start`.
-fn push_drums(events: &mut Vec<TimedEvent>, start: f32, num_bars: u8) {
-    for (_, bar) in (0..usize::from(num_bars)).zip(0u8..) {
-        let bar_start = start + f32::from(bar) * BEATS_PER_BAR;
-        for beat in 0u8..4 {
-            events.push(TimedEvent {
-                at: beats(bar_start + f32::from(beat)),
-                kind: ScheduledKind::Drum(DrumHit::Kick),
-            });
-        }
-        for sixteenth in 0u8..16 {
-            events.push(TimedEvent {
-                at: beats(bar_start + f32::from(sixteenth) * 0.25),
-                kind: ScheduledKind::Drum(DrumHit::HiHatClosed),
-            });
-        }
-    }
-}
-
-fn build_song() -> Vec<TimedEvent> {
-    let mut events = Vec::new();
-    let intro_f = f32::from(INTRO_BEATS);
-
-    // Intro: bass ostinato only (melody enters with the hook)
-    bass_ostinato(&mut events, 0.0, INTRO_BEATS);
-    push_drums(&mut events, 0.0, INTRO_BEATS / 4);
-
-    // Hook 1
-    let hook1_start = intro_f;
-    for rep in 0u8..HOOK_REPS {
-        let start = hook1_start + f32::from(rep) * HOOK_PHRASE_BEATS;
-        push_hook_phrase(&mut events, start);
-        push_hook_phrase(&mut events, start); // Track 2 (identical duplicate — for testing)
-    }
-    push_drums(&mut events, hook1_start, HOOK_REPS * 2); // 2 bars per phrase
-
-    // Interlude: bass ostinato
-    let interlude_start = hook1_start + f32::from(HOOK_REPS) * HOOK_PHRASE_BEATS;
-    bass_ostinato(&mut events, interlude_start, INTERLUDE_BEATS);
-    push_drums(&mut events, interlude_start, INTERLUDE_BEATS / 4);
-
-    // Hook 2
-    let hook2_start = interlude_start + f32::from(INTERLUDE_BEATS);
-    for rep in 0u8..HOOK_REPS {
-        let start = hook2_start + f32::from(rep) * HOOK_PHRASE_BEATS;
-        push_hook_phrase(&mut events, start);
-        push_hook_phrase(&mut events, start); // Track 2 (identical duplicate — for testing)
-    }
-    push_drums(&mut events, hook2_start, HOOK_REPS * 2);
-
-    events.sort_by_key(|e| e.at);
-    events
+    // Drum hits ignore the lane's channel.
+    Ok(song.lane(ChannelNo(7), &drums())?)
 }
 
 fn main() -> Result<()> {
-    let (_stream, event_tx, _scope_rx) = setup_audio()?;
-
-    let patches = default_patches();
-    let find = |name: &str| {
-        patches
-            .iter()
-            .find(|p| p.name == name)
-            .ok_or_else(|| anyhow!("preset '{name}' not found"))
-    };
-
-    event_tx.send(AudioEvent::LoadPatch(Box::new(
-        find("Arp Lead")?.params.clone(),
-    )))?;
-    event_tx.send(AudioEvent::LoadPatchChannel(
-        ChannelNo(1),
-        Box::new(find("C64 Bass")?.params.clone()),
-    ))?;
-
-    let events = build_song();
-    let started = Instant::now();
-
-    for event in events {
-        let deadline = started + event.at;
-        let now = Instant::now();
-        if deadline > now {
-            std::thread::sleep(deadline.duration_since(now));
-        }
-        let audio_event = match event.kind {
-            ScheduledKind::NoteOn(ch, note) => AudioEvent::NoteOnChannel(ch, note),
-            ScheduledKind::NoteOff(ch, note) => AudioEvent::NoteOffChannel(ch, note),
-            ScheduledKind::Drum(hit) => AudioEvent::Drum(hit),
-        };
-        event_tx.send(audio_event)?;
-    }
-
-    // Let the last notes ring out
-    std::thread::sleep(beats(2.0));
-    event_tx.send(AudioEvent::Panic)?;
-    std::thread::sleep(Duration::from_millis(120));
-
+    let song = song()?;
+    let seconds = song.duration_secs() + 3.0;
+    let (_stream, _events, _scope) = setup_audio_n_with_sequencer::<CHANNELS, _, _>(
+        cpal::BufferSize::Default,
+        SongPlayer::new(song),
+        |err| eprintln!("audio stream error: {err}"),
+    )?;
+    std::thread::sleep(Duration::from_secs_f32(seconds));
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn the_song_parses_and_every_lane_is_76_bars() {
+        let song = super::song().unwrap();
+        assert_eq!(song.lanes.len(), 7);
+        for lane in &song.lanes {
+            assert_eq!(lane.rows.len(), super::BARS * 16);
+        }
+        // The patch change rides on the first row instead of adding one.
+        assert_eq!(song.lanes[0].rows[0].patch, Some(0));
+        assert_eq!(song.lanes[5].rows[0].patch, Some(5));
+    }
 }
