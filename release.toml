@@ -3,9 +3,10 @@
 #   cargo release patch            # dry run: shows what would happen
 #   cargo release patch --execute  # bump, commit, publish, tag, push
 #
-# One version for the whole workspace (`version.workspace = true`). Only
-# `synthie` is published to crates.io; the other crates are `publish = false`
-# and opt out with `[package.metadata.release] release = false` in their own
+# One version for the whole workspace (`version.workspace = true`). `synthie`
+# and `synthie-ui` (the shared terminal look, also used by synthie-trombone)
+# are published to crates.io; the other crates are `publish = false` and opt
+# out with `[package.metadata.release] release = false` in their own
 # manifests, so there is exactly one tag per release.
 #
 # Pushing the `v{{version}}` tag runs .github/workflows/release.yml, which

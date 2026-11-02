@@ -6,7 +6,9 @@ authors.workspace = true
 description       = "Shared neon/retro look and widgets for the synthie terminal front-ends"
 repository.workspace = true
 license.workspace = true
-publish           = false
+readme            = "README.md"
+keywords          = ["tui", "ratatui", "synthesizer", "theme", "widgets"]
+categories        = ["command-line-interface", "gui"]
 
 [features]
 default   = ["crossterm"]
@@ -28,7 +30,3 @@ web-time          = "1"
 
 [lints]
 workspace = true
-
-[package.metadata.release]
-# Not published; versioned with the workspace. `synthie` cuts the release.
-release = false
