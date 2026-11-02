@@ -260,14 +260,7 @@ pub fn scope(frame: &mut Frame, area: Rect, data: &[(f64, f64)], block: Block) {
 /// Footer row: key-cap hints on the left and, if non-empty, a status
 /// message on the right.  Hints are clipped rather than overlapped.
 pub fn footer(frame: &mut Frame, area: Rect, hints: &[(&str, &str)], status: &str) {
-    let status_w = if status.is_empty() {
-        0
-    } else {
-        u16::try_from(status.chars().count() + 4).unwrap_or(u16::MAX)
-    };
-    let [left, right] =
-        ratatui::layout::Layout::horizontal([Constraint::Min(0), Constraint::Length(status_w)])
-            .areas(area);
+    let [left, right] = footer_areas(area, status);
     frame.render_widget(Paragraph::new(key_hints(hints)), left);
     if !status.is_empty() {
         frame.render_widget(
@@ -279,6 +272,74 @@ pub fn footer(frame: &mut Frame, area: Rect, hints: &[(&str, &str)], status: &st
             right,
         );
     }
+}
+
+/// The hint and status parts of a [`footer`] drawn into `area`.
+fn footer_areas(area: Rect, status: &str) -> [Rect; 2] {
+    let status_w = if status.is_empty() {
+        0
+    } else {
+        u16::try_from(status.chars().count() + 4).unwrap_or(u16::MAX)
+    };
+    ratatui::layout::Layout::horizontal([Constraint::Min(0), Constraint::Length(status_w)])
+        .areas(area)
+}
+
+/// Where a click landed on one of a [`footer`]'s key hints.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct HintHit {
+    /// Index of the hint in the `hints` slice.
+    pub index: usize,
+    /// For a click on the key cap: the glyph under the cursor and the number
+    /// of glyphs on the cap, e.g. `(1, 2)` for the `↓` of `↑↓`. `None` for a
+    /// click on the hint's label.
+    pub cap_glyph: Option<(u16, u16)>,
+}
+
+/// The key hint at cell `(col, row)` of a [`footer`] drawn into `area` with
+/// the same `hints` and `status`, if any.
+///
+/// Measures the same spans [`key_hints`] renders, so hit areas match what is
+/// on screen, including hints clipped by the status message. The gaps
+/// between hints do not count.
+#[must_use]
+pub fn footer_hint_at(
+    area: Rect,
+    hints: &[(&str, &str)],
+    status: &str,
+    col: u16,
+    row: u16,
+) -> Option<HintHit> {
+    let [left, _] = footer_areas(area, status);
+    if row != left.y || col < left.x || col >= left.right() {
+        return None;
+    }
+    let col = usize::from(col - left.x);
+    // The line starts with one space of padding.
+    let mut x = 1;
+    for (index, &(key, action)) in hints.iter().enumerate() {
+        let cap = keycap(key).width();
+        let label = Span::raw(format!(" {action}")).width(); // without the gap
+        if (x..x + cap).contains(&col) {
+            let glyphs = u16::try_from(Span::raw(key).width())
+                .unwrap_or(u16::MAX)
+                .max(1);
+            // Clicks on the cap's padding count as its first or last glyph.
+            let glyph = u16::try_from(col.saturating_sub(x + 1)).unwrap_or(u16::MAX);
+            return Some(HintHit {
+                index,
+                cap_glyph: Some((glyph.min(glyphs - 1), glyphs)),
+            });
+        }
+        if (x + cap..x + cap + label).contains(&col) {
+            return Some(HintHit {
+                index,
+                cap_glyph: None,
+            });
+        }
+        x += cap + Span::raw(format!(" {action}  ")).width();
+    }
+    None
 }
 
 /// Peak readout spans: `-6.0 dB` plus a red `CLIP` LED near full scale.
@@ -334,16 +395,65 @@ pub fn quit_dialog(frame: &mut Frame, area: Rect) {
         Line::raw(""),
         Line::styled("Leave SYNTHIE?", bold(FG)).centered(),
         Line::raw(""),
-        Line::from(vec![
-            keycap("Y"),
-            Span::styled(" quit    ", fg(DIM)),
-            keycap("N"),
-            Span::styled(" stay", fg(DIM)),
-        ])
-        .centered(),
+        quit_buttons(),
     ];
-    let rect = popup(frame, area, 34, 7);
+    let rect = popup(frame, area, QUIT_W, QUIT_H);
     frame.render_widget(Paragraph::new(lines).block(panel("QUIT?", true)), rect);
+}
+
+/// Size of the [`quit_dialog`] box.
+const QUIT_W: u16 = 34;
+const QUIT_H: u16 = 7;
+/// Row of the buttons inside the [`quit_dialog`] box, border included.
+const QUIT_BUTTONS_ROW: u16 = 4;
+/// Gap between the two buttons of the [`quit_dialog`].
+const QUIT_GAP: &str = "    ";
+
+/// The `Y quit    N stay` line of the [`quit_dialog`].
+fn quit_buttons() -> Line<'static> {
+    Line::from(vec![
+        keycap("Y"),
+        Span::styled(" quit", fg(DIM)),
+        Span::raw(QUIT_GAP),
+        keycap("N"),
+        Span::styled(" stay", fg(DIM)),
+    ])
+    .centered()
+}
+
+/// Which button of a [`quit_dialog`] drawn into `area` is at cell
+/// `(col, row)`: `Some(true)` for "quit" (its `Y` cap or label),
+/// `Some(false)` for "stay", `None` anywhere else.
+#[must_use]
+pub fn quit_dialog_button_at(area: Rect, col: u16, row: u16) -> Option<bool> {
+    let rect = area.centered(
+        Constraint::Length(QUIT_W.min(area.width)),
+        Constraint::Length(QUIT_H.min(area.height)),
+    );
+    // Inside the border; ratatui centres a line with the spare cells
+    // split evenly, the odd one going to the right.
+    let inner_w = rect.width.saturating_sub(2);
+    let line = quit_buttons();
+    let line_w = u16::try_from(line.width()).unwrap_or(u16::MAX);
+    if row != rect.y + QUIT_BUTTONS_ROW || line_w > inner_w {
+        return None;
+    }
+    let start = rect.x + 1 + (inner_w - line_w) / 2;
+    let widths: Vec<u16> = line
+        .spans
+        .iter()
+        .map(|s| u16::try_from(s.width()).unwrap_or(u16::MAX))
+        .collect();
+    let quit_end = start + widths[0] + widths[1];
+    let stay_start = quit_end + widths[2];
+    let stay_end = stay_start + widths[3] + widths[4];
+    if (start..quit_end).contains(&col) {
+        Some(true)
+    } else if (stay_start..stay_end).contains(&col) {
+        Some(false)
+    } else {
+        None
+    }
 }
 
 /// Vim-style command line, e.g. `:q█`, for the footer row.
@@ -378,7 +488,9 @@ pub fn modal(frame: &mut Frame, area: Rect, footer: Rect, modal: &crate::Modal) 
 
 #[cfg(test)]
 mod tests {
-    use super::scope_range;
+    use super::{
+        HintHit, Rect, footer, footer_hint_at, quit_dialog, quit_dialog_button_at, scope_range,
+    };
 
     #[test]
     fn scope_range_zooms_in_on_quiet_signals() {
@@ -387,5 +499,111 @@ mod tests {
         assert!((scope_range(0.1) - 0.125).abs() < f64::EPSILON);
         assert!((scope_range(0.06) - 1.0 / 16.0).abs() < f64::EPSILON);
         assert!((scope_range(0.0) - 1.0 / 16.0).abs() < f64::EPSILON);
+    }
+
+    /// Render a footer and return its single row as a string of cells.
+    fn rendered(width: u16, hints: &[(&str, &str)], status: &str) -> Vec<String> {
+        use ratatui::{Terminal, backend::TestBackend};
+        let mut term = Terminal::new(TestBackend::new(width, 1)).unwrap();
+        term.draw(|f| footer(f, f.area(), hints, status)).unwrap();
+        let buf = term.backend().buffer().clone();
+        (0..width)
+            .map(|x| buf[(x, 0)].symbol().to_string())
+            .collect()
+    }
+
+    fn col_of(cells: &[String], glyph: &str) -> u16 {
+        u16::try_from(cells.iter().position(|c| c == glyph).unwrap()).unwrap()
+    }
+
+    #[test]
+    fn footer_hits_match_what_is_drawn() {
+        let hints = [("Space", "play"), ("↑↓", "row"), ("+ -", "BPM")];
+        let area = Rect::new(0, 0, 60, 1);
+        let cells = rendered(60, &hints, "");
+        let hit = |glyph| footer_hint_at(area, &hints, "", col_of(&cells, glyph), 0);
+
+        assert_eq!(hit("S").unwrap().index, 0);
+        assert_eq!(hit("↑").unwrap().cap_glyph, Some((0, 2)));
+        assert_eq!(hit("↓").unwrap().cap_glyph, Some((1, 2)));
+        assert_eq!(hit("+").unwrap().cap_glyph, Some((0, 3)));
+        assert_eq!(hit("-").unwrap().cap_glyph, Some((2, 3)));
+        let row = hit("w").unwrap(); // the "w" of "row"
+        assert_eq!((row.index, row.cap_glyph), (1, None));
+
+        // The two-space gap after "play" and the leading pad hit nothing.
+        let y = col_of(&cells, "y");
+        assert_eq!(footer_hint_at(area, &hints, "", y + 1, 0), None);
+        assert_eq!(footer_hint_at(area, &hints, "", y + 2, 0), None);
+        assert_eq!(footer_hint_at(area, &hints, "", 0, 0), None);
+        // Other rows and columns past the hints miss.
+        assert_eq!(
+            footer_hint_at(area, &hints, "", col_of(&cells, "S"), 1),
+            None
+        );
+        assert_eq!(footer_hint_at(area, &hints, "", 59, 0), None);
+    }
+
+    #[test]
+    fn footer_hits_follow_the_area_and_respect_the_status_message() {
+        let hints = [("Space", "play"), ("Esc", "stop")];
+        // Offset area, as in the centred browser layout.
+        let area = Rect::new(10, 5, 40, 1);
+        let at = |col| footer_hint_at(area, &hints, "", col, 5);
+        assert_eq!(
+            at(11),
+            Some(HintHit {
+                index: 0,
+                cap_glyph: Some((0, 5))
+            })
+        );
+        assert_eq!(at(1), None);
+        // A long status message clips the second hint away.
+        let status = "x".repeat(24);
+        let esc_col = (10..50)
+            .find(|&c| at(c).is_some_and(|h| h.index == 1))
+            .unwrap();
+        assert_eq!(footer_hint_at(area, &hints, &status, esc_col, 5), None);
+    }
+
+    #[test]
+    fn quit_dialog_buttons_hit_where_they_are_drawn() {
+        use ratatui::{Terminal, backend::TestBackend};
+        // Even and odd sizes, and an offset area as in the browser layout.
+        for (w, h, area) in [
+            (120, 40, None),
+            (81, 25, None),
+            (34, 7, None),
+            (120, 40, Some(Rect::new(7, 3, 101, 33))),
+        ] {
+            let mut term = Terminal::new(TestBackend::new(w, h)).unwrap();
+            let mut drawn = Rect::default();
+            term.draw(|f| {
+                drawn = area.unwrap_or_else(|| f.area());
+                quit_dialog(f, drawn);
+            })
+            .unwrap();
+            let buf = term.backend().buffer().clone();
+            // Bottom-up: "Leave SYNTHIE?" above has a Y and an N too.
+            let find = |glyph: &str| {
+                (0..h)
+                    .rev()
+                    .flat_map(|y| (0..w).map(move |x| (x, y)))
+                    .find(|&(x, y)| buf[(x, y)].symbol() == glyph)
+                    .unwrap()
+            };
+            let (yx, yy) = find("Y");
+            let (nx, ny) = find("N");
+            let at = |x, y| quit_dialog_button_at(drawn, x, y);
+            assert_eq!(at(yx, yy), Some(true), "{w}x{h}");
+            assert_eq!(at(yx - 1, yy), Some(true), "Y cap padding, {w}x{h}");
+            assert_eq!(at(yx + 5, yy), Some(true), "\"quit\" label, {w}x{h}");
+            assert_eq!(at(yx - 2, yy), None, "left of the button, {w}x{h}");
+            assert_eq!(at(yx + 7, yy), None, "gap, {w}x{h}");
+            assert_eq!(at(nx, ny), Some(false), "{w}x{h}");
+            assert_eq!(at(nx + 5, ny), Some(false), "\"stay\" label, {w}x{h}");
+            assert_eq!(at(nx + 7, ny), None, "right of the button, {w}x{h}");
+            assert_eq!(at(yx, yy - 1), None, "row above, {w}x{h}");
+        }
     }
 }

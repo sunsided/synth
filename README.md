@@ -101,6 +101,8 @@ task tracker:web      # browser build with live reload (needs trunk)
 | `+` / `-` | BPM up / down |
 | `[` / `]` | Octave down / up |
 | `PgUp` / `PgDn` | Extend / shorten pattern |
+
+The key hints in the footer are clickable, in the terminal and in the browser: a click does what the key does, and on a two-key cap such as `↑↓` it presses the key you click. The quit dialog's `Y` / `N` buttons are clickable too.
 | `F1` | Toggle key-reference overlay |
 | `Ctrl+C` / `Ctrl+Q` / `F12` | Quit |
 

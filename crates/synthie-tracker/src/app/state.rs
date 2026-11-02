@@ -4,10 +4,12 @@
 //! [`Player`] handle.  All user actions go through mutation methods here;
 //! the UI and input modules read from and call into this struct.
 
+use std::cell::Cell;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 
 use crossbeam_channel::Sender;
+use ratatui::layout::Rect;
 use synthie::params::{AudioEvent, ChannelNo, DrumHit, MidiNote, Patch};
 use synthie::presets::sid::default_patches;
 use synthie_ui::Modal;
@@ -39,6 +41,12 @@ pub struct TrackerState {
     pub modal: Modal,
     /// Transient message shown in the footer (e.g. an unknown command).
     pub status_msg: String,
+    /// Where the UI and its footer were last drawn, for hit-testing clicks
+    /// on dialogs and key hints. Set while drawing, which only borrows the
+    /// state.
+    pub ui_area: Cell<Rect>,
+    /// See [`TrackerState::ui_area`].
+    pub footer_area: Cell<Rect>,
 
     /// Per-track trigger flash in 0‥1 (1 on a hit, decays each UI frame).
     pub activity: [f32; TOTAL_TRACKS],
@@ -78,6 +86,8 @@ impl TrackerState {
             show_help: false,
             modal: Modal::None,
             status_msg: String::new(),
+            ui_area: Cell::new(Rect::default()),
+            footer_area: Cell::new(Rect::default()),
             activity: [0.0; TOTAL_TRACKS],
             last_step: None,
             audio_ok,

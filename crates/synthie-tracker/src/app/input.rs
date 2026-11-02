@@ -35,6 +35,7 @@ use synthie_ui::{Key, KeyCode, KeyKind, ModalAction};
 
 use crate::app::CAN_QUIT;
 use crate::app::state::TrackerState;
+use crate::app::ui::{ToolbarAction, toolbar, toolbar_hints};
 use crate::tracker::DRUM_TRACK;
 
 /// Map a key code to a semitone offset within the piano layout.
@@ -152,6 +153,56 @@ pub fn handle_key(key: Key, state: &mut TrackerState) -> bool {
     false
 }
 
+/// Process a left click at cell `(col, row)`.  Returns `true` when the
+/// application should quit.
+///
+/// A click on a footer hint does what its key does; on a two-key cap such
+/// as `↑↓` it presses the key under the cursor, on the label the first one.
+/// Like a key, any click closes the help overlay. While a dialog is open,
+/// clicks go to it (the quit dialog's buttons work like `Y` and `N`) and
+/// nothing else.
+pub fn handle_click(col: u16, row: u16, state: &mut TrackerState) -> bool {
+    match state.modal.handle_click(state.ui_area.get(), col, row) {
+        ModalAction::Ignored => {}
+        ModalAction::Consumed => return false,
+        ModalAction::Quit => return true,
+        ModalAction::Message(msg) => {
+            state.status_msg = msg;
+            return false;
+        }
+    }
+    if state.show_help {
+        state.show_help = false;
+        return false;
+    }
+    let hit = synthie_ui::widgets::footer_hint_at(
+        state.footer_area.get(),
+        &toolbar_hints(),
+        &state.status_msg,
+        col,
+        row,
+    );
+    let Some(hit) = hit else {
+        return false;
+    };
+    let code = match toolbar()[hit.index].2 {
+        ToolbarAction::Key(code) => code,
+        ToolbarAction::Pair(first, second) => match hit.cap_glyph {
+            // Second half of the cap (the middle glyph of `+ -` counts as
+            // the first).
+            Some((glyph, glyphs)) if 2 * glyph >= glyphs => second,
+            _ => first,
+        },
+        ToolbarAction::ConfirmQuit => {
+            state.stop();
+            state.panic_all();
+            state.modal.confirm_quit();
+            return false;
+        }
+    };
+    handle_key(Key::press(code), state)
+}
+
 /// Handle a note-entry key.
 fn handle_note_key(code: KeyCode, state: &mut TrackerState) {
     if state.cursor_track == DRUM_TRACK {
@@ -206,5 +257,104 @@ mod tests {
             let key = KeyCode::Char(key.chars().next().unwrap());
             assert_eq!(drum_for_key(key), Some(hit), "{name}");
         }
+    }
+
+    /// A tracker drawn once into a 120 × 40 terminal, so the footer area
+    /// is known, plus the footer row as a string of cells.
+    fn drawn() -> (TrackerState, Vec<String>) {
+        use ratatui::{Terminal, backend::TestBackend};
+        use std::sync::Arc;
+        use std::sync::atomic::AtomicBool;
+
+        let (tx, _rx) = crossbeam_channel::unbounded();
+        let state = TrackerState::new(
+            tx,
+            crate::tracker::player::Player::new().0,
+            Arc::new(AtomicBool::new(true)),
+        );
+        let mut term = Terminal::new(TestBackend::new(120, 40)).unwrap();
+        term.draw(|f| crate::app::ui::draw(f, &state, &[], 0.0))
+            .unwrap();
+        let buf = term.backend().buffer().clone();
+        let row = (0..120)
+            .map(|x| buf[(x, 39)].symbol().to_string())
+            .collect();
+        (state, row)
+    }
+
+    /// Column of the first cell showing `glyph`, after `from`.
+    fn col(row: &[String], glyph: &str, from: usize) -> u16 {
+        let x = row[from..].iter().position(|c| c == glyph).unwrap() + from;
+        u16::try_from(x).unwrap()
+    }
+
+    #[test]
+    fn clicking_footer_hints_acts_like_their_keys() {
+        let (mut state, row) = drawn();
+        assert_eq!(state.footer_area.get().y, 39);
+
+        // Arrow caps press the arrow under the cursor.
+        assert!(!handle_click(col(&row, "↓", 0), 39, &mut state));
+        assert_eq!(state.cursor_row, 1);
+        handle_click(col(&row, "↑", 0), 39, &mut state);
+        assert_eq!(state.cursor_row, 0);
+        handle_click(col(&row, "→", 0), 39, &mut state);
+        assert_eq!(state.cursor_track, 1);
+        // The label presses the first key of the pair.
+        let track = col(&row, "t", col(&row, "→", 0).into());
+        handle_click(track, 39, &mut state);
+        assert_eq!(state.cursor_track, 0);
+
+        let bpm = state.song.bpm;
+        handle_click(col(&row, "+", 0), 39, &mut state);
+        assert!((state.song.bpm - bpm - 1.0).abs() < f32::EPSILON);
+        handle_click(col(&row, "-", col(&row, "+", 0).into()), 39, &mut state);
+        assert!((state.song.bpm - bpm).abs() < f32::EPSILON);
+
+        // F1 opens the help; any click closes it again without acting.
+        let f1 = col(&row, "F", 0);
+        handle_click(f1, 39, &mut state);
+        assert!(state.show_help);
+        handle_click(col(&row, "↓", 0), 39, &mut state);
+        assert!(!state.show_help);
+        assert_eq!(state.cursor_row, 0);
+
+        // Misses: the grid, and the gap after a hint.
+        handle_click(col(&row, "↓", 0), 20, &mut state);
+        assert_eq!(state.cursor_row, 0);
+    }
+
+    #[test]
+    fn clicking_quit_asks_first_and_the_dialog_buttons_answer() {
+        let (mut state, row) = drawn();
+        if !CAN_QUIT {
+            return;
+        }
+        let area = state.ui_area.get();
+        let button = |quit: bool| {
+            (area.top()..area.bottom())
+                .flat_map(|y| (area.left()..area.right()).map(move |x| (x, y)))
+                .find(|&(x, y)| {
+                    synthie_ui::widgets::quit_dialog_button_at(area, x, y) == Some(quit)
+                })
+                .unwrap()
+        };
+        // The `q` of the `:q` cap, not the one in Esc's "stop·quit" label.
+        let q = col(&row, "q", col(&row, ":", 0).into());
+        assert!(!handle_click(q, 39, &mut state), "must not quit outright");
+        assert_eq!(state.modal, synthie_ui::Modal::ConfirmQuit);
+
+        // The dialog swallows clicks elsewhere, footer included.
+        handle_click(col(&row, "↓", 0), 39, &mut state);
+        assert_eq!(state.cursor_row, 0);
+        assert_eq!(state.modal, synthie_ui::Modal::ConfirmQuit);
+
+        // "stay" closes it; "quit" quits.
+        let (x, y) = button(false);
+        assert!(!handle_click(x, y, &mut state));
+        assert_eq!(state.modal, synthie_ui::Modal::None);
+        handle_click(q, 39, &mut state);
+        let (x, y) = button(true);
+        assert!(handle_click(x, y, &mut state), "quit button");
     }
 }

@@ -8,7 +8,7 @@ use anyhow::Result;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyboardEnhancementFlags,
-        PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
+        MouseButton, MouseEventKind, PopKeyboardEnhancementFlags, PushKeyboardEnhancementFlags,
     },
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
@@ -18,7 +18,8 @@ use synthie::audio::engine::setup_audio_silenced_with_sequencer;
 use synthie_ui::ScopeBuf;
 
 use crate::SCOPE_CAPACITY;
-use crate::app::{input::handle_key, state::TrackerState, ui::draw};
+use crate::app::input::{handle_click, handle_key};
+use crate::app::{state::TrackerState, ui::draw};
 use crate::tracker::player::Player;
 
 pub fn main() -> Result<()> {
@@ -83,13 +84,19 @@ fn run(
         let level = scope.level();
         terminal.draw(|f| draw(f, state, &chart_data, level))?;
 
-        // Poll for a key event (16 ms ≈ 60 fps).  Between polls the playing-step
+        // Poll for input (16 ms ≈ 60 fps).  Between polls the playing-step
         // indicator updates via atomic reads, so the grid refreshes smoothly.
-        if event::poll(Duration::from_millis(16))?
-            && let Event::Key(key) = event::read()?
-            && handle_key(key.into(), state)
-        {
-            break;
+        if event::poll(Duration::from_millis(16))? {
+            let quit = match event::read()? {
+                Event::Key(key) => handle_key(key.into(), state),
+                Event::Mouse(mouse) if mouse.kind == MouseEventKind::Down(MouseButton::Left) => {
+                    handle_click(mouse.column, mouse.row, state)
+                }
+                _ => false,
+            };
+            if quit {
+                break;
+            }
         }
     }
 
