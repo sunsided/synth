@@ -1,5 +1,5 @@
 //! A short rock riff on the presets from Cheesed!: Drive Guitar power chords
-//! (root, fifth and octave lanes on one channel), a Rock Lead on top, Tri Bass
+//! (chord cells holding root, fifth and octave), a Rock Lead on top, Tri Bass
 //! underneath and drums.
 //!
 //! ```sh
@@ -15,28 +15,19 @@ use synthie::pattern::{Song, SongPlayer, Tempo};
 use synthie::presets::sid::Preset;
 
 fn song() -> Result<Song> {
-    let guitar = ChannelNo(0);
     // One row per eighth note at 132 bpm; four bars in E.
     let song = Song::new(Tempo::bpm(132.0, 2))
         .one_shot()
         .patch(Preset::DriveGuitar.params()) // @0
         .patch(Preset::RockLead.params()) // @1
         .patch(Preset::TriBass.params()) // @2
-        // Power chords: three lanes share the guitar channel's voices.
+        // Power chords (root, fifth, octave) as interval chord cells.
         .lane(
-            guitar,
-            "E2@0 E2 - E2 G2 . A2 . | E2 E2 - E2 D2 . C2 . |
-             E2 E2 - E2 G2 . A2 .   | C2 . D2 . E2 . . -",
-        )?
-        .lane(
-            guitar,
-            "B2 B2 - B2 D3 . E3 . | B2 B2 - B2 A2 . G2 . |
-             B2 B2 - B2 D3 . E3 . | G2 . A2 . B2 . . -",
-        )?
-        .lane(
-            guitar,
-            "E3 E3 - E3 G3 . A3 . | E3 E3 - E3 D3 . C3 . |
-             E3 E3 - E3 G3 . A3 . | C3 . D3 . E3 . . -",
+            ChannelNo(0),
+            "E2^07c!@0 E2^07c! - E2^07c! G2^07c! . A2^07c! . |
+             E2^07c! E2^07c! - E2^07c! D2^07c! . C2^07c! . |
+             E2^07c! E2^07c! - E2^07c! G2^07c! . A2^07c! . |
+             C2^07c! . D2^07c! . E2^07c! . . -",
         )?
         .lane(
             ChannelNo(1),
