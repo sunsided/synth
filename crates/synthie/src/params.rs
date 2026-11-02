@@ -240,6 +240,18 @@ pub struct OscParams {
     pub noise_mix: f32,
 }
 
+impl Default for OscParams {
+    /// A medium pulse wave, neither detuned nor noisy.
+    fn default() -> Self {
+        Self {
+            waveform: Waveform::Pulse,
+            pulse_width: 0.5,
+            detune: 0.0,
+            noise_mix: 0.0,
+        }
+    }
+}
+
 /// Ring modulation mode between OSC1 and OSC2.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -346,6 +358,19 @@ pub struct EnvParams {
     pub env_reverse: bool,
 }
 
+impl Default for EnvParams {
+    /// A quick attack, short decay to a high sustain, and a short release.
+    fn default() -> Self {
+        Self {
+            attack: 0.01,
+            decay: 0.1,
+            sustain: 0.8,
+            release: 0.3,
+            env_reverse: false,
+        }
+    }
+}
+
 /// Filter section parameters.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -358,6 +383,18 @@ pub struct FilterParams {
     pub resonance: f32,
     /// Pre-filter drive amount, 0 .. 1.
     pub drive: f32,
+}
+
+impl Default for FilterParams {
+    /// A gentle low-pass at 4 kHz without drive.
+    fn default() -> Self {
+        Self {
+            filter_mode: FilterMode::LowPass,
+            cutoff: 4000.0,
+            resonance: 0.3,
+            drive: 0.0,
+        }
+    }
 }
 
 /// Waveform shape for LFOs.
@@ -483,6 +520,17 @@ pub struct FxParams {
     pub reverb_damping: f32,
 }
 
+impl Default for FxParams {
+    /// A light reverb.
+    fn default() -> Self {
+        Self {
+            reverb_mix: 0.15,
+            reverb_size: 0.5,
+            reverb_damping: 0.5,
+        }
+    }
+}
+
 /// Bitcrusher section parameters.
 #[derive(Debug, Clone, PartialEq)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
@@ -556,11 +604,38 @@ pub struct GlobalParams {
     pub glide_time: f32,
 }
 
+impl Default for GlobalParams {
+    /// 70% volume and a short glide.
+    fn default() -> Self {
+        Self {
+            volume: 0.7,
+            glide_time: 0.05,
+        }
+    }
+}
+
 /// Full parameter snapshot shared between the UI and audio threads.
 ///
 /// The UI owns the authoritative copy; the audio thread receives a boxed clone
 /// via `AudioEvent::LoadPatch` on every user edit.
-#[derive(Debug, Clone, PartialEq)]
+///
+/// The default is a sensible starting patch: a medium pulse wave, a gentle
+/// filter and a light reverb, built from each section's own `Default`. To
+/// change a few fields of one section, start from that section's default:
+///
+/// ```
+/// use synthie::params::{OscParams, SynthParams, Waveform};
+///
+/// let params = SynthParams {
+///     osc: OscParams {
+///         waveform: Waveform::Sawtooth,
+///         ..OscParams::default()
+///     },
+///     ..SynthParams::default()
+/// };
+/// assert_eq!(params.env, SynthParams::default().env);
+/// ```
+#[derive(Debug, Clone, PartialEq, Default)]
 #[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
 pub struct SynthParams {
     /// Oscillator parameters.
@@ -600,57 +675,6 @@ pub struct SynthParams {
     pub arp: ArpParams,
     /// Global parameters.
     pub global: GlobalParams,
-}
-
-impl Default for SynthParams {
-    /// Sensible starting patch: medium pulse wave, gentle filter, light reverb.
-    fn default() -> Self {
-        Self {
-            osc: OscParams {
-                waveform: Waveform::Pulse,
-                pulse_width: 0.5,
-                detune: 0.0,
-                noise_mix: 0.0,
-            },
-            env: EnvParams {
-                attack: 0.01,
-                decay: 0.1,
-                sustain: 0.8,
-                release: 0.3,
-                env_reverse: false,
-            },
-            filter: FilterParams {
-                filter_mode: FilterMode::LowPass,
-                cutoff: 4000.0,
-                resonance: 0.3,
-                drive: 0.0,
-            },
-            lfo: LfoParams {
-                lfo_rate: 3.0,
-                lfo_depth: 0.0,
-                lfo_target: LfoTarget::Pitch,
-                lfo_shape: LfoShape::Sine,
-            },
-            fx: FxParams {
-                reverb_mix: 0.15,
-                reverb_size: 0.5,
-                reverb_damping: 0.5,
-            },
-            crusher: CrusherParams::default(),
-            chorus: ChorusParams::default(),
-            delay: DelayParams::default(),
-            osc2: Osc2Params::default(),
-            lfo2: LfoParams::default(),
-            filter_env: ModEnvParams::default(),
-            pitch_env: ModEnvParams::default(),
-            #[cfg(feature = "arp")]
-            arp: ArpParams::default(),
-            global: GlobalParams {
-                volume: 0.7,
-                glide_time: 0.05,
-            },
-        }
-    }
 }
 
 impl SynthParams {
@@ -928,4 +952,68 @@ pub enum AudioEvent {
     /// Enable or disable the arpeggiator on the given channel at runtime.
     #[cfg(feature = "arp")]
     ArpEnabled(ChannelNo, bool),
+}
+
+#[cfg(test)]
+mod default_tests {
+    use super::*;
+
+    /// The section defaults add up to the patch `SynthParams::default()`
+    /// spelled out field by field before they existed.
+    #[test]
+    fn section_defaults_keep_the_default_patch() {
+        let p = SynthParams::default();
+        assert_eq!(
+            p.osc,
+            OscParams {
+                waveform: Waveform::Pulse,
+                pulse_width: 0.5,
+                detune: 0.0,
+                noise_mix: 0.0,
+            }
+        );
+        assert_eq!(
+            p.env,
+            EnvParams {
+                attack: 0.01,
+                decay: 0.1,
+                sustain: 0.8,
+                release: 0.3,
+                env_reverse: false,
+            }
+        );
+        assert_eq!(
+            p.filter,
+            FilterParams {
+                filter_mode: FilterMode::LowPass,
+                cutoff: 4000.0,
+                resonance: 0.3,
+                drive: 0.0,
+            }
+        );
+        assert_eq!(
+            p.lfo,
+            LfoParams {
+                lfo_rate: 3.0,
+                lfo_depth: 0.0,
+                lfo_target: LfoTarget::Pitch,
+                lfo_shape: LfoShape::Sine,
+            }
+        );
+        assert_eq!(
+            p.fx,
+            FxParams {
+                reverb_mix: 0.15,
+                reverb_size: 0.5,
+                reverb_damping: 0.5,
+            }
+        );
+        assert_eq!(
+            p.global,
+            GlobalParams {
+                volume: 0.7,
+                glide_time: 0.05,
+            }
+        );
+    }
 }
