@@ -1,0 +1,22 @@
+# cargo-release configuration (https://github.com/crate-ci/cargo-release).
+#
+#   cargo release patch            # dry run: shows what would happen
+#   cargo release patch --execute  # bump, commit, publish, tag, push
+#
+# One version for the whole workspace (`version.workspace = true`). Only
+# `synthie` is published to crates.io; the other crates are `publish = false`
+# and opt out with `[package.metadata.release] release = false` in their own
+# manifests, so there is exactly one tag per release.
+#
+# Pushing the `v{{version}}` tag runs .github/workflows/release.yml, which
+# builds and publishes the npm package and creates the GitHub release.
+
+shared-version = true
+consolidate-commits = true
+allow-branch = ["main"]
+
+pre-release-commit-message = "Finish {{version}}"
+tag-name = "v{{version}}"
+tag-message = "Finish {{version}}"
+
+push-remote = "origin"
