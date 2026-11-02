@@ -119,6 +119,11 @@ path = "examples/ring_mod.rs"
 required-features = ["io"]
 
 [[example]]
+name = "rock"
+path = "examples/rock.rs"
+required-features = ["io"]
+
+[[example]]
 name = "showcase"
 path = "examples/showcase.rs"
 required-features = ["io", "arp"]
