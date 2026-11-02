@@ -28,3 +28,7 @@ web-time          = "1"
 
 [lints]
 workspace = true
+
+[package.metadata.release]
+# Not published; versioned with the workspace. `synthie` cuts the release.
+release = false

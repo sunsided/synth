@@ -123,5 +123,19 @@ name = "showcase"
 path = "examples/showcase.rs"
 required-features = ["io", "arp"]
 
+[package.metadata.release]
+# The fuzz crate is its own workspace with its own lockfile pinning this
+# crate; update it with the bump so the release commit carries it. Runs in
+# this crate's directory after the new version is written.
+pre-release-hook = [
+    "cargo",
+    "update",
+    "--offline",
+    "--manifest-path",
+    "fuzz/Cargo.toml",
+    "--package",
+    "synthie",
+]
+
 [lints]
 workspace = true
