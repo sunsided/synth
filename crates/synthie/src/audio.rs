@@ -13,4 +13,5 @@ pub mod filter;
 pub mod fx;
 pub mod osc;
 pub mod processor;
+pub mod sequencer;
 pub mod voice;
