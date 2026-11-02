@@ -58,10 +58,10 @@ jobs:
         run: cargo clippy --target wasm32-unknown-unknown -p synth-tui -p synthie-tracker -p synthie-wasm -- -D warnings
 
       - name: Check DSP-only build (std, no io)
-        run: cargo check -p synthie --no-default-features --features std
+        run: cargo clippy -p synthie --all-targets --no-default-features --features std -- -D warnings
 
       - name: Check DSP-only build (libm, no std/io)
-        run: cargo check -p synthie --no-default-features --features libm
+        run: cargo clippy -p synthie --all-targets --no-default-features --features libm -- -D warnings
 
   npm-package:
     name: npm package tests
