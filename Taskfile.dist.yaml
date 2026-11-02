@@ -257,7 +257,7 @@ tasks:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example tune -- {{.CLI_ARGS}}
 
   example:lazy-jones:
-    desc: Run the Lazy Jones example (B minor hook, 140 BPM, two-channel)
+    desc: Run the Lazy Jones example (the tracker's demo song, 140 BPM, B minor)
     aliases:
       - lazy
       - example

@@ -23,6 +23,7 @@ use ratatui::{
     text::{Line, Span},
     widgets::Paragraph,
 };
+use synthie_ui::KeyCode;
 use synthie_ui::theme::{
     self, BG, BG_CURSOR, BG_PLAYHEAD, BG_STRIPE, CYAN, DIM, FAINT, FG, GREEN, MAGENTA, ORANGE,
     PURPLE, RED, YELLOW, bold, fg,
@@ -95,6 +96,7 @@ pub fn draw_in(
     level: f32,
 ) {
     widgets::paint_background(frame);
+    state.ui_area.set(area);
 
     let [header, body, footer] = Layout::vertical([
         Constraint::Length(3),
@@ -414,33 +416,71 @@ fn draw_side(frame: &mut Frame, area: Rect, state: &TrackerState, data: &[(f64, 
 
 // ─── Status bar ──────────────────────────────────────────────────────────────
 
+/// What clicking a footer hint does.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ToolbarAction {
+    /// Press this key.
+    Key(KeyCode),
+    /// A cap with two keys, such as `↑↓`: press the one under the cursor
+    /// (the first one for a click on the label).
+    Pair(KeyCode, KeyCode),
+    /// Ask whether to quit.
+    ConfirmQuit,
+}
+
+/// One footer entry: key cap, label, and what a click does.
+pub type ToolbarEntry = (&'static str, &'static str, ToolbarAction);
+
+/// The footer's key hints.
+#[must_use]
+pub fn toolbar() -> &'static [ToolbarEntry] {
+    use KeyCode::{Char, Delete, Down, Esc, F, Left, Right, Tab, Up};
+    use ToolbarAction::{ConfirmQuit, Key, Pair};
+    const SHARED: [ToolbarEntry; 6] = [
+        ("Del", "clear", Key(Delete)),
+        ("↑↓", "row", Pair(Up, Down)),
+        ("←→", "track", Pair(Left, Right)),
+        ("Tab", "patch", Key(Tab)),
+        ("+ -", "BPM", Pair(Char('+'), Char('-'))),
+        ("F1", "help", Key(F(1))),
+    ];
+    const NATIVE: [ToolbarEntry; 9] = [
+        ("Space", "play", Key(Char(' '))),
+        ("Esc", "stop·quit", Key(Esc)),
+        SHARED[0],
+        SHARED[1],
+        SHARED[2],
+        SHARED[3],
+        SHARED[4],
+        SHARED[5],
+        (":q", "quit", ConfirmQuit),
+    ];
+    const WEB: [ToolbarEntry; 8] = [
+        ("Space", "play", Key(Char(' '))),
+        ("Esc", "stop", Key(Esc)),
+        SHARED[0],
+        SHARED[1],
+        SHARED[2],
+        SHARED[3],
+        SHARED[4],
+        SHARED[5],
+    ];
+    if CAN_QUIT { &NATIVE } else { &WEB }
+}
+
+/// The cap and label of every [`toolbar`] entry, as the footer draws them.
+#[must_use]
+pub fn toolbar_hints() -> Vec<(&'static str, &'static str)> {
+    toolbar()
+        .iter()
+        .map(|&(cap, label, _)| (cap, label))
+        .collect()
+}
+
 /// Key-cap hints plus the transient status message.
 fn draw_footer(frame: &mut Frame, area: Rect, state: &TrackerState) {
-    let hints: &[(&str, &str)] = if CAN_QUIT {
-        &[
-            ("Space", "play"),
-            ("Esc", "stop·quit"),
-            ("Del", "clear"),
-            ("↑↓", "row"),
-            ("←→", "track"),
-            ("Tab", "patch"),
-            ("+ -", "BPM"),
-            ("F1", "help"),
-            (":q", "quit"),
-        ]
-    } else {
-        &[
-            ("Space", "play"),
-            ("Esc", "stop"),
-            ("Del", "clear"),
-            ("↑↓", "row"),
-            ("←→", "track"),
-            ("Tab", "patch"),
-            ("+ -", "BPM"),
-            ("F1", "help"),
-        ]
-    };
-    widgets::footer(frame, area, hints, &state.status_msg);
+    state.footer_area.set(area);
+    widgets::footer(frame, area, &toolbar_hints(), &state.status_msg);
 }
 
 // ─── Help overlay ────────────────────────────────────────────────────────────

@@ -5,6 +5,8 @@
 //! detected from plain key presses; `:` opens a small command line in the
 //! footer instead, and the command runs on `Enter`, as in vim.
 
+use ratatui::layout::Rect;
+
 use crate::key::{Key, KeyCode, KeyKind};
 
 /// Modal input state; while not [`Modal::None`] it captures key presses.
@@ -47,6 +49,26 @@ impl Modal {
     /// Open an empty command line.
     pub fn open_command(&mut self) {
         *self = Modal::Command(String::new());
+    }
+
+    /// Route a left click at cell `(col, row)` through the open modal; `area`
+    /// is what the UI, and so the dialog, was drawn into.
+    ///
+    /// The quit dialog's buttons work like `Y` and `N`. Any other click is
+    /// consumed while a modal is open, since it covers the UI underneath.
+    pub fn handle_click(&mut self, area: Rect, col: u16, row: u16) -> ModalAction {
+        match self {
+            Modal::None => ModalAction::Ignored,
+            Modal::ConfirmQuit => match crate::widgets::quit_dialog_button_at(area, col, row) {
+                Some(true) => ModalAction::Quit,
+                Some(false) => {
+                    *self = Modal::None;
+                    ModalAction::Consumed
+                }
+                None => ModalAction::Consumed,
+            },
+            Modal::Command(_) => ModalAction::Consumed,
+        }
     }
 
     /// Route a key event through the open modal.
