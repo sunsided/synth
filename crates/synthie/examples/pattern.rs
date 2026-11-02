@@ -7,24 +7,16 @@
 
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use synthie::audio::engine::setup_audio_silenced_with_sequencer;
-use synthie::params::{ChannelNo, SynthParams};
+use synthie::params::ChannelNo;
 use synthie::pattern::{Song, SongPlayer, Tempo};
-use synthie::presets::sid::default_patches;
-
-fn preset(name: &str) -> Result<SynthParams> {
-    default_patches()
-        .into_iter()
-        .find(|p| p.name == name)
-        .map(|p| p.params)
-        .with_context(|| format!("preset {name:?} not found"))
-}
+use synthie::presets::sid::Preset;
 
 fn song() -> Result<Song> {
     // Chords on a single channel: the arpeggiator cycles the cell's notes
     // fast enough to blur into a chord, the classic chip trick.
-    let mut chords = preset("Tri Pad")?;
+    let mut chords = Preset::TriPad.params();
     chords.arp.rate = 50.0;
     chords.arp.gate = 1.0;
     chords.global.volume = 0.5;
@@ -32,8 +24,8 @@ fn song() -> Result<Song> {
     // One row per eighth note at 152 bpm; 8 bars of E minor.
     let song = Song::new(Tempo::bpm(152.0, 2))
         .one_shot()
-        .patch(preset("C64 Bass")?) // @0
-        .patch(preset("PWM Lead")?) // @1
+        .patch(Preset::C64Bass.params()) // @0
+        .patch(Preset::PwmLead.params()) // @1
         .patch(chords) // @2
         .lane(
             ChannelNo(0),

@@ -10,68 +10,16 @@ use std::time::Duration;
 
 use anyhow::Result;
 use synthie::audio::engine::setup_audio_silenced_with_sequencer;
-use synthie::params::{
-    ChannelNo, EnvParams, FilterMode, FilterParams, GlobalParams, Osc2Params, OscParams,
-    SynthParams, Waveform,
-};
+use synthie::params::ChannelNo;
 use synthie::pattern::{Song, SongPlayer, Tempo};
-
-/// A driven, slightly detuned sawtooth: close enough to a crunchy guitar.
-fn crunch() -> SynthParams {
-    let d = SynthParams::default();
-    SynthParams {
-        osc: OscParams {
-            waveform: Waveform::Sawtooth,
-            ..d.osc
-        },
-        osc2: Osc2Params {
-            waveform: Waveform::Sawtooth,
-            detune: 9.0,
-            osc2_mix: 0.4,
-            ..d.osc2
-        },
-        env: EnvParams {
-            attack: 0.003,
-            decay: 0.25,
-            sustain: 0.6,
-            release: 0.08,
-            ..d.env
-        },
-        filter: FilterParams {
-            filter_mode: FilterMode::LowPass,
-            cutoff: 2_800.0,
-            resonance: 0.2,
-            drive: 0.8,
-        },
-        global: GlobalParams {
-            volume: 0.45,
-            glide_time: 0.0,
-        },
-        ..d
-    }
-}
-
-fn bass() -> SynthParams {
-    let d = SynthParams::default();
-    SynthParams {
-        osc: OscParams {
-            waveform: Waveform::Triangle,
-            ..d.osc
-        },
-        global: GlobalParams {
-            volume: 0.6,
-            glide_time: 0.0,
-        },
-        ..d
-    }
-}
+use synthie::presets::sid::Preset;
 
 fn song() -> Result<Song> {
     // One row per eighth note at 140 bpm; four bars in E.
     let song = Song::new(Tempo::bpm(140.0, 2))
         .one_shot()
-        .patch(crunch()) // @0
-        .patch(bass()) // @1
+        .patch(Preset::DriveGuitar.params()) // @0
+        .patch(Preset::TriBass.params()) // @1
         .lane(
             ChannelNo(0),
             "E2+B2+E3@0 E2+B2+E3 - E2+B2+E3 - E2+B2+E3 G2+D3+G3 . |

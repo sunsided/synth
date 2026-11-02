@@ -4,9 +4,9 @@
 //! `cargo run -p synthie --example lazy_jones` plays exactly what the tracker
 //! opens with.
 
-use crate::params::{ChannelNo, SynthParams};
+use crate::params::ChannelNo;
 use crate::pattern::{ParseError, Song, Tempo};
-use crate::presets::sid::default_patches;
+use crate::presets::sid::Preset;
 
 // ─── Lazy Jones ──────────────────────────────────────────────────────────────
 
@@ -75,9 +75,9 @@ fn try_lazy_jones() -> Result<Song, ParseError> {
     let drums = [BEAT, BEAT, BEAT, FILL].repeat(2);
 
     Song::new(Tempo::bpm(140.0, 4))
-        .patch(preset("Arp Lead"))
-        .patch(preset("C64 Bass"))
-        .patch(preset("PWM Lead"))
+        .patch(Preset::ArpLead.params())
+        .patch(Preset::C64Bass.params())
+        .patch(Preset::PwmLead.params())
         .lane(ChannelNo(0), &with_patch(&lead, 0))?
         .lane(ChannelNo(1), &with_patch(&bass, 1))?
         .lane(ChannelNo(2), &with_patch(&sub, 1))?
@@ -93,13 +93,6 @@ fn with_patch(bars: &[&str], index: u16) -> String {
     let (first, rest) = lane.split_once(' ').unwrap_or((&lane, ""));
     let first = if first == "." { "" } else { first };
     format!("{first}@{index} {rest}")
-}
-
-fn preset(name: &str) -> SynthParams {
-    let patch = default_patches().into_iter().find(|p| p.name == name);
-    patch
-        .unwrap_or_else(|| panic!("built-in preset {name:?} is missing"))
-        .params
 }
 
 #[cfg(test)]
@@ -134,6 +127,6 @@ mod tests {
         assert_eq!(first(2).patch, Some(1));
         assert_eq!(first(3).patch, Some(2));
         assert_eq!(first(4).patch, None);
-        assert_eq!(song.patches[0], preset("Arp Lead"));
+        assert_eq!(song.patches[0], Preset::ArpLead.params());
     }
 }

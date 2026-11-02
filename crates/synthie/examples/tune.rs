@@ -1,9 +1,9 @@
 use std::time::{Duration, Instant};
 
-use anyhow::{Result, anyhow};
+use anyhow::Result;
 use synthie::audio::engine::setup_audio;
 use synthie::params::{AudioEvent, DrumHit};
-use synthie::presets::sid::default_patches;
+use synthie::presets::sid::Preset;
 
 const BPM: f32 = 110.0;
 const BARS: usize = 16;
@@ -113,11 +113,7 @@ fn build_tune() -> Vec<TimedEvent> {
 fn main() -> Result<()> {
     let (_stream, event_tx, _scope_rx) = setup_audio()?;
 
-    let patch = default_patches()
-        .into_iter()
-        .find(|patch| patch.name == "PWM Lead")
-        .ok_or_else(|| anyhow!("preset 'PWM Lead' not found"))?;
-    event_tx.send(AudioEvent::LoadPatch(Box::new(patch.params)))?;
+    event_tx.send(AudioEvent::LoadPatch(Box::new(Preset::PwmLead.params())))?;
 
     let events = build_tune();
     let started = Instant::now();

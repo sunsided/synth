@@ -32,7 +32,7 @@ A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as i
 - **LFO** with selectable targets: pitch (vibrato), pulse width, filter cutoff, or volume (tremolo)
 - **Reverb FX** with room size and high-frequency damping controls
 - **Global controls:** master volume and portamento (glide) time
-- **Preset system** with built-in SID-style patches and save/load support
+- **Preset system** with built-in SID-style patches (typed as `Preset`) and save/load support
 - **Optional `serde` support** for patch serialisation (enabled by default)
 
 ### Quick Start
@@ -40,20 +40,18 @@ A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as i
 Add as a path or git dependency, then:
 
 ```rust
-use synthie::prelude::*; // SynthParams, Patch, AudioEvent, MidiNote, setup_audio, …
+use synthie::prelude::*; // SynthParams, Preset, AudioEvent, MidiNote, setup_audio, …
 
 fn main() -> anyhow::Result<()> {
-    let patches = presets::sid::default_patches();
     let (_stream, tx, _rx) = setup_audio()?;
 
-    // Load first preset
-    let params = Box::new(patches[0].params.clone());
-    tx.send(AudioEvent::LoadPatch(params))?;
+    // Load a built-in preset on channel 0
+    tx.send(AudioEvent::LoadPatch(Box::new(Preset::C64Bass.params())))?;
 
     // Play middle C on channel 0
-    tx.send(AudioEvent::NoteOn(ChannelNo(0), MidiNote(60)))?;
+    tx.send(AudioEvent::NoteOn(MidiNote(60)))?;
     std::thread::sleep(std::time::Duration::from_secs(1));
-    tx.send(AudioEvent::NoteOff(ChannelNo(0), MidiNote(60)))?;
+    tx.send(AudioEvent::NoteOff(MidiNote(60)))?;
     Ok(())
 }
 ```
@@ -68,6 +66,7 @@ Run any example with `cargo run -p synth --example <name> --release`.
 | `drums` | Rock beat on the drum machine: kick, snare, hats, crash, tom fill and claps |
 | `pattern` | Short chiptune song in the tracker-style pattern notation (`synthie::pattern`) |
 | `power_chords` | A power-chord riff played from a single lane with chord cells (`E2+B2+E3`, `E2^07c!`) |
+| `rock` | A rock riff on the Drive Guitar, Rock Lead and Tri Bass presets: power chords, lead, bass and drums |
 | `kira` | A sequenced loop played as a kira sound, with live hits, volume fades, pause and stop (needs `--features kira`) |
 | `lazy_jones` | Lazy Jones (David Whittaker, 1984) — the C64 hook that became Kernkraft 400; the same song the tracker opens with (`task example`) |
 | `kernkraft` | Kernkraft 400 (Zombie Nation, 1999) — the whole song in pattern notation: hook, breakdown, builds, six lanes plus drums |

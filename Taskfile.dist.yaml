@@ -278,6 +278,13 @@ tasks:
     cmds:
       - cargo run -p synthie {{.PROFILE_FLAG}} --example power_chords -- {{.CLI_ARGS}}
 
+  example:rock:
+    desc: Run the rock example (Drive Guitar power chords, Rock Lead, Tri Bass; 132 BPM, E)
+    aliases:
+      - rock
+    cmds:
+      - cargo run -p synthie {{.PROFILE_FLAG}} --example rock -- {{.CLI_ARGS}}
+
   example:bitcrusher:
     desc: Run the bitcrusher FX demo (A4 sawtooth cycling through bit depth and decimation settings)
     aliases:

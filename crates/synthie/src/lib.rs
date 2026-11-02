@@ -38,4 +38,5 @@ pub mod prelude {
     pub use crate::audio::sequencer::{SequencedProcessor, Sequencer};
     pub use crate::params::*;
     pub use crate::presets;
+    pub use crate::presets::sid::Preset;
 }

@@ -24,11 +24,11 @@
 
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use synthie::audio::engine::setup_audio_n_with_sequencer;
-use synthie::params::{ChannelNo, SynthParams};
+use synthie::params::ChannelNo;
 use synthie::pattern::{Song, SongPlayer, Tempo};
-use synthie::presets::sid::default_patches;
+use synthie::presets::sid::Preset;
 
 /// Synthesis channels: one per melodic lane, plus spares.
 const CHANNELS: usize = 8;
@@ -220,28 +220,20 @@ fn with_patch(pattern: &str, index: usize) -> String {
     format!("{first}@{index} {rest}")
 }
 
-fn preset(name: &str) -> Result<SynthParams> {
-    default_patches()
-        .into_iter()
-        .find(|p| p.name == name)
-        .map(|p| p.params)
-        .with_context(|| format!("preset {name:?} not found"))
-}
-
 fn song() -> Result<Song> {
     let lanes = [
-        ("Arp Lead", lead()),
-        ("C64 Bass", bass()),
-        ("C64 Bass", counter()),
-        ("Slide Bass", sub()),
-        ("Slide Bass", pedal()),
-        ("Metal Pulse", stab()),
+        (Preset::ArpLead, lead()),
+        (Preset::C64Bass, bass()),
+        (Preset::C64Bass, counter()),
+        (Preset::SlideBass, sub()),
+        (Preset::SlideBass, pedal()),
+        (Preset::MetalPulse, stab()),
     ];
     let mut song = Song::new(Tempo::bpm(70.0, 4)).one_shot();
     for (i, (patch, pattern)) in lanes.into_iter().enumerate() {
         let ch = ChannelNo(u8::try_from(i)?);
         song = song
-            .patch(preset(patch)?)
+            .patch(patch.params())
             .lane(ch, &with_patch(&pattern, i))?;
     }
     // Drum hits ignore the lane's channel.
