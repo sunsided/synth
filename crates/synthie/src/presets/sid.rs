@@ -18,8 +18,8 @@ use core::fmt;
 use core::str::FromStr;
 
 use crate::params::{
-    EnvParams, FilterMode, FilterParams, FxParams, GlobalParams, LfoParams, LfoShape, LfoTarget,
-    OscParams, Patch, SynthParams, Waveform,
+    DelayParams, EnvParams, FilterMode, FilterParams, FxParams, GlobalParams, LfoParams, LfoShape,
+    LfoTarget, OscParams, Patch, SynthParams, Waveform,
 };
 
 /// A built-in preset of the SID bank.
@@ -47,8 +47,13 @@ pub enum Preset {
     RockLead,
     /// Plucked, bell-like triangle that dies away.
     MusicBox,
-    /// NES-style triangle bass with a little grit.
+    /// NES-style triangle bass, nearly clean.
     TriBass,
+    /// Sawtooth horn with a soft attack, wide vibrato and a little glide.
+    Brass,
+    /// Soft square lead with a single, quieter echo. The delay is a master
+    /// effect set by channel 0's patch, so the echo needs channel 0.
+    EchoLead,
 }
 
 impl Preset {
@@ -66,6 +71,8 @@ impl Preset {
         Preset::RockLead,
         Preset::MusicBox,
         Preset::TriBass,
+        Preset::Brass,
+        Preset::EchoLead,
     ];
 
     /// The display name, e.g. `"C64 Bass"`; [`FromStr`] parses it back.
@@ -84,6 +91,8 @@ impl Preset {
             Preset::RockLead => "Rock Lead",
             Preset::MusicBox => "Music Box",
             Preset::TriBass => "Tri Bass",
+            Preset::Brass => "Brass",
+            Preset::EchoLead => "Echo Lead",
         }
     }
 
@@ -439,8 +448,9 @@ impl Preset {
                 },
                 ..SynthParams::default()
             },
-            // From Cheesed!: a NES-style triangle bass, driven for a little
-            // grit, with a short release so lines stay tight.
+            // From Cheesed! and Cookie D'oh!: a NES-style triangle bass with a
+            // short release so lines stay tight. Barely driven, so a game can
+            // add its own grit (Cheesed! uses drive 0.5).
             Preset::TriBass => SynthParams {
                 osc: OscParams {
                     waveform: Waveform::Triangle,
@@ -456,7 +466,7 @@ impl Preset {
                 filter: FilterParams {
                     cutoff: 2000.0,
                     resonance: 0.2,
-                    drive: 0.5,
+                    drive: 0.1,
                     ..FilterParams::default()
                 },
                 lfo: NO_LFO,
@@ -467,6 +477,82 @@ impl Preset {
                 },
                 global: GlobalParams {
                     volume: 0.8,
+                    glide_time: 0.0,
+                },
+                ..SynthParams::default()
+            },
+            // From Cookie D'oh!'s sad trombone: a sawtooth horn with a soft
+            // attack, a slow decay to a high sustain, a wide 6.5 Hz vibrato
+            // and a short glide so it can slide between notes.
+            Preset::Brass => SynthParams {
+                osc: OscParams {
+                    waveform: Waveform::Sawtooth,
+                    ..OscParams::default()
+                },
+                env: EnvParams {
+                    attack: 0.03,
+                    decay: 0.5,
+                    sustain: 0.8,
+                    release: 0.125,
+                    ..EnvParams::default()
+                },
+                filter: FilterParams {
+                    cutoff: 2400.0,
+                    resonance: 0.2,
+                    drive: 0.1,
+                    ..FilterParams::default()
+                },
+                lfo: LfoParams {
+                    lfo_rate: 6.5,
+                    lfo_depth: 0.375,
+                    ..LfoParams::default()
+                },
+                fx: FxParams {
+                    reverb_mix: 0.15,
+                    reverb_size: 0.5,
+                    reverb_damping: 0.5,
+                },
+                global: GlobalParams {
+                    volume: 0.65,
+                    glide_time: 0.06,
+                },
+                ..SynthParams::default()
+            },
+            // From Cookie D'oh!'s cracktro: a soft square lead with a gentle
+            // 5 Hz vibrato and one quieter repeat (delay without feedback).
+            // The delay is a master effect taken from channel 0's patch, so
+            // play this on channel 0 for the echo; set `delay.time_ms` to
+            // suit the tempo.
+            Preset::EchoLead => SynthParams {
+                env: EnvParams {
+                    attack: 0.01,
+                    decay: 0.33,
+                    sustain: 0.5,
+                    release: 0.17,
+                    ..EnvParams::default()
+                },
+                filter: FilterParams {
+                    cutoff: 3500.0,
+                    resonance: 0.2,
+                    ..FilterParams::default()
+                },
+                lfo: LfoParams {
+                    lfo_rate: 5.0,
+                    lfo_depth: 0.17,
+                    ..LfoParams::default()
+                },
+                fx: FxParams {
+                    reverb_mix: 0.1,
+                    reverb_size: 0.4,
+                    reverb_damping: 0.5,
+                },
+                delay: DelayParams {
+                    time_ms: 450.0,
+                    feedback: 0.0,
+                    mix: 0.35,
+                },
+                global: GlobalParams {
+                    volume: 0.7,
                     glide_time: 0.0,
                 },
                 ..SynthParams::default()
@@ -558,10 +644,12 @@ mod tests {
                 | Preset::DriveGuitar
                 | Preset::RockLead
                 | Preset::MusicBox
-                | Preset::TriBass => {}
+                | Preset::TriBass
+                | Preset::Brass
+                | Preset::EchoLead => {}
             }
         }
-        assert_eq!(Preset::ALL.len(), 12, "a variant is missing from ALL");
+        assert_eq!(Preset::ALL.len(), 14, "a variant is missing from ALL");
         for (i, a) in Preset::ALL.iter().enumerate() {
             assert!(!Preset::ALL[..i].contains(a), "{a} is listed twice");
         }
