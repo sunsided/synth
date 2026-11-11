@@ -4,7 +4,7 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use anyhow::Result;
+use anyhow::{Context, Result};
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyboardEnhancementFlags,
@@ -20,6 +20,9 @@ use synthie_ui::ScopeBuf;
 use crate::SCOPE_CAPACITY;
 use crate::app::input::{handle_click, handle_key};
 use crate::app::{state::TrackerState, ui::draw};
+use crate::reference::Reference;
+use crate::tracker::Song;
+use crate::tracker::modfile;
 use crate::tracker::player::Player;
 
 pub fn main() -> Result<()> {
@@ -44,6 +47,9 @@ pub fn main() -> Result<()> {
             }
         })?;
 
+    // ── Load a MOD given on the command line, before taking the terminal ─────
+    let module = load_mod_args()?;
+
     // ── Set up the ratatui terminal ──────────────────────────────────────────
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -59,6 +65,14 @@ pub fn main() -> Result<()> {
 
     // ── Build application state ───────────────────────────────────────────────
     let mut state = TrackerState::new(event_tx, player, audio_ok);
+    if let Some((title, song, reference)) = module {
+        state.status_msg = format!(
+            "{title}: {} rows imported · Space plays synths, F2 the original",
+            song.pattern.len
+        );
+        state.song = song;
+        state.reference = Some(reference);
+    }
     let mut scope = ScopeBuf::new(scope_rx, SCOPE_CAPACITY);
 
     // ── Main event loop ───────────────────────────────────────────────────────
@@ -69,6 +83,26 @@ pub fn main() -> Result<()> {
 
     // Propagate any error from the event loop.
     result
+}
+
+/// `synthie-tracker [song.mod [order-position]]`: import the MOD into the
+/// grid and open its original sound for reference playback.
+fn load_mod_args() -> Result<Option<(String, Song, Reference)>> {
+    let mut args = std::env::args_os().skip(1);
+    let Some(path) = args.next() else {
+        return Ok(None);
+    };
+    let start = args
+        .next()
+        .map(|pos| pos.to_string_lossy().parse::<usize>())
+        .transpose()
+        .context("order position must be a number")?
+        .unwrap_or(0);
+    let bytes = std::fs::read(&path).with_context(|| format!("cannot read {}", path.display()))?;
+    let (title, song) = modfile::import(&bytes, start)
+        .with_context(|| format!("cannot import {}", path.display()))?;
+    let reference = Reference::new(&bytes)?;
+    Ok(Some((title, song, reference)))
 }
 
 /// Run the main event loop; returns when the user quits.

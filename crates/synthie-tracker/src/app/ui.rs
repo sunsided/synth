@@ -501,6 +501,13 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         help_heading("TRANSPORT"),
         help_entry("Space", KW, "play / stop"),
     ];
+    if CAN_QUIT {
+        lines.push(help_entry(
+            "F2",
+            KW,
+            "play / stop the loaded MOD's original",
+        ));
+    }
     lines.extend(quit);
     lines.extend([
         help_entry("+ -", KW, "BPM up / down"),

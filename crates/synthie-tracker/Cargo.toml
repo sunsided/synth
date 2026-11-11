@@ -25,6 +25,9 @@ synthie-ui        = { path = "../synthie-ui", default-features = false }
 crossterm  = { workspace = true }
 ratatui    = { workspace = true, features = ["crossterm"] }
 synthie-ui = { path = "../synthie-ui", features = ["crossterm"] }
+# Reference playback of loaded MOD files (original samples), for A/B testing.
+xmrs       = { version = "0.15", default-features = false, features = ["std", "import_mod"] }
+xmrsplayer = { version = "0.15", default-features = false, features = ["std", "import_mod"] }
 
 # Browser build (`trunk build`): Ratzilla renders, cpal plays through WebAudio.
 [target.'cfg(target_arch = "wasm32")'.dependencies]
