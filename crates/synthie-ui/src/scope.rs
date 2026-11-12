@@ -12,6 +12,11 @@ use std::collections::VecDeque;
 /// arrives; ≈ 20 dB/s fall-off at 60 fps, like a hardware PPM.
 const PEAK_DECAY: f32 = 0.93;
 
+/// Levels below this (-100 dB, under 16-bit resolution) read as silence.
+/// Without it the decay never reaches zero and the readout counts down
+/// through subnormal floats to about -900 dB.
+const SILENCE_FLOOR: f32 = 1e-5;
+
 /// Rolling waveform scope buffer.
 ///
 /// The audio thread sends batches of decimated samples via a bounded channel.
@@ -55,7 +60,8 @@ impl ScopeBuf {
                 self.buf.push_back(s);
             }
         }
-        self.level = peak.max(self.level * PEAK_DECAY).min(1.0);
+        let level = peak.max(self.level * PEAK_DECAY).min(1.0);
+        self.level = if level < SILENCE_FLOOR { 0.0 } else { level };
     }
 
     /// Iterate over the current waveform data (oldest → newest).
@@ -90,5 +96,25 @@ impl ScopeBuf {
     #[must_use]
     pub fn is_empty(&self) -> bool {
         self.buf.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn level_decays_to_exact_silence() {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let mut scope = ScopeBuf::new(rx, 16);
+        tx.send(vec![0.5, -0.8]).unwrap();
+        scope.update();
+        assert!((scope.level() - 0.8).abs() < f32::EPSILON);
+        // A reverb tail far below the floor doesn't hold the meter up.
+        tx.send(vec![1e-30]).unwrap();
+        for _ in 0..200 {
+            scope.update();
+        }
+        assert_eq!(scope.level(), 0.0);
     }
 }
