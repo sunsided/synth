@@ -106,10 +106,11 @@ fn run_loop(
             // Terminal resize and other events are no-ops; ratatui redraws on next frame.
             if let event::Event::Key(key) = event::read()? {
                 let key = Key::from(key);
+                // Ctrl+key is a shortcut (save, export), never a piano key.
                 let piano = fallback
                     .as_ref()
                     .and(input::key_to_semitone(key.code))
-                    .filter(|_| key.kind == KeyKind::Press);
+                    .filter(|_| key.kind == KeyKind::Press && !key.ctrl);
                 if let (Some(f), Some(semi)) = (&mut fallback, piano)
                     && state.piano_key_held(semi)
                 {
