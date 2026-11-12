@@ -20,12 +20,17 @@ const BLOCK: usize = 64;
 /// Below this level a sample counts as silence.
 const SILENCE: f32 = 1e-4;
 
+/// Longest render, so a non-finite or huge `max_seconds` can't exhaust memory.
+pub const MAX_RENDER_SECONDS: f32 = 600.0;
+
 /// Render `note` played with `params` for `hold_seconds`, then released,
 /// as mono samples at `sample_rate`.
 ///
 /// Rendering stops once the voice and the FX tails have died away (50 ms of
-/// silence after the release), or after `max_seconds`, whichever comes
-/// first; trailing silence is trimmed. A lone note plays at a voice's full
+/// silence after the release, plus the delay time when the delay is on, so
+/// the gap before an echo doesn't count), or after `max_seconds` (at most
+/// [`MAX_RENDER_SECONDS`]), whichever comes first; trailing silence is
+/// trimmed. A lone note plays at a voice's full
 /// level (no polyphony normalization), at the default master gain.
 #[must_use]
 #[allow(
@@ -44,9 +49,15 @@ pub fn render_note(
     let mut synth = SynthProcessor::<1>::new(rate);
     synth.set_voice_normalization(VoiceNormalization::Off);
 
-    let max = (max_seconds.max(0.0) * rate) as usize;
+    // NaN clamps to NaN and casts to 0: an empty render.
+    let max = (max_seconds.clamp(0.0, MAX_RENDER_SECONDS) * rate) as usize;
     let hold = (hold_seconds.max(0.0) * rate) as usize;
-    let tail = (0.05 * rate) as usize;
+    let echo_gap = if params.delay.mix > 0.0 {
+        params.delay.time_ms / 1000.0
+    } else {
+        0.0
+    };
+    let tail = ((0.05 + echo_gap) * rate) as usize;
     let mut out = Vec::new();
     let mut quiet = 0;
     let mut events = vec![
@@ -87,14 +98,20 @@ pub fn render_note(
 ///
 /// # Errors
 ///
-/// Returns any error from `out`, or `InvalidInput` if the data is too long
+/// Returns any error from `out`, or `InvalidInput` if `sample_rate` is 0 or
+/// too high for the header (over `u32::MAX / 2`), or the data is too long
 /// for a WAV file (over 4 GiB).
 pub fn write_wav(
     mut out: impl std::io::Write,
     samples: &[f32],
     sample_rate: u32,
 ) -> std::io::Result<()> {
-    let too_long = || std::io::Error::new(std::io::ErrorKind::InvalidInput, "too long for WAV");
+    let invalid = |msg| std::io::Error::new(std::io::ErrorKind::InvalidInput, msg);
+    let too_long = || invalid("too long for WAV");
+    let byte_rate = sample_rate
+        .checked_mul(2)
+        .filter(|_| sample_rate > 0)
+        .ok_or_else(|| invalid("sample rate out of range for WAV"))?;
     let data_len = u32::try_from(samples.len() * 2).map_err(|_| too_long())?;
     let riff_len = data_len.checked_add(36).ok_or_else(too_long)?;
 
@@ -105,7 +122,7 @@ pub fn write_wav(
     out.write_all(&1_u16.to_le_bytes())?; // PCM
     out.write_all(&1_u16.to_le_bytes())?; // mono
     out.write_all(&sample_rate.to_le_bytes())?;
-    out.write_all(&(sample_rate * 2).to_le_bytes())?; // byte rate
+    out.write_all(&byte_rate.to_le_bytes())?;
     out.write_all(&2_u16.to_le_bytes())?; // block align
     out.write_all(&16_u16.to_le_bytes())?; // bits per sample
     out.write_all(b"data")?;
@@ -134,6 +151,39 @@ mod tests {
         assert!(s.len() > 1_000 && s.len() < 60_000, "{} samples", s.len());
         assert!(s.last().unwrap().abs() >= SILENCE);
         assert!(s.iter().any(|x| x.abs() > 0.1));
+    }
+
+    #[test]
+    fn waits_out_the_gap_before_a_delay_echo() {
+        let mut p = generate(SfxKind::Blip, 1);
+        p.fx.reverb_mix = 0.0;
+        p.delay.mix = 0.5;
+        p.delay.feedback = 0.0;
+        p.delay.time_ms = 500.0;
+        let s = render_note(&p, MidiNote(72), 0.05, 44_100, 10.0);
+        // The echo starts 0.5 s after the blip and is kept.
+        assert!(s.len() > 22_050, "{} samples", s.len());
+        assert!(s[22_050..].iter().any(|x| x.abs() > 0.05));
+    }
+
+    #[test]
+    fn non_finite_lengths_are_bounded() {
+        let p = SynthParams::default();
+        assert_eq!(
+            render_note(&p, MidiNote::A4, 0.1, 8_000, f32::NAN),
+            Vec::<f32>::new()
+        );
+        // Held forever with no limit still stops at MAX_RENDER_SECONDS.
+        let s = render_note(&p, MidiNote::A4, f32::INFINITY, 100, f32::INFINITY);
+        assert_eq!(s.len(), 60_000);
+    }
+
+    #[test]
+    fn wav_rejects_unusable_sample_rates() {
+        for rate in [0, u32::MAX / 2 + 1] {
+            let err = write_wav(Vec::new(), &[0.0], rate).unwrap_err();
+            assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput, "{rate}");
+        }
     }
 
     #[test]
