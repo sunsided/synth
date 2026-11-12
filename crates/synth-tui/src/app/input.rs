@@ -176,3 +176,61 @@ pub fn handle_key(key: Key, state: &mut AppState) -> bool {
 
     false
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::app::state::Section;
+    use proptest::prelude::*;
+
+    fn key() -> impl Strategy<Value = Key> {
+        let code = prop_oneof![
+            4 => prop::sample::select(
+                "zsxdcvgbhnjmq2w3er5t6y7u:pP+-=_[],.12345678yYqwx! ".chars().collect::<Vec<_>>()
+            ).prop_map(KeyCode::Char),
+            1 => any::<char>().prop_map(KeyCode::Char),
+            3 => prop::sample::select(vec![
+                KeyCode::Enter, KeyCode::Esc, KeyCode::Backspace, KeyCode::Tab,
+                KeyCode::Up, KeyCode::Down, KeyCode::Left, KeyCode::Right,
+            ]),
+            1 => (1_u8..=12).prop_map(KeyCode::F),
+        ];
+        let kind = prop::sample::select(vec![KeyKind::Press, KeyKind::Repeat, KeyKind::Release]);
+        // No Ctrl: Ctrl+S and Ctrl+E write files.
+        (code, kind, any::<bool>()).prop_map(|(code, kind, shift)| Key {
+            code,
+            kind,
+            ctrl: false,
+            shift,
+        })
+    }
+
+    proptest! {
+        #![proptest_config(ProptestConfig::with_cases(128))]
+
+        /// Any key sequence keeps the UI consistent: the cursor stays on a
+        /// real row, the patch stays in range and no note is held twice.
+        #[test]
+        fn any_key_sequence_keeps_the_state_consistent(keys in prop::collection::vec(key(), 0..200)) {
+            let (tx, _rx) = crossbeam_channel::unbounded();
+            let mut state = AppState::new(tx);
+            for key in keys {
+                if handle_key(key, &mut state) {
+                    break;
+                }
+                let section = state.selected_section;
+                if section != Section::Presets {
+                    prop_assert!(state.selected_param < section.param_count());
+                }
+                prop_assert!(state.selected_preset < state.patches.len());
+                let mut sane = state.params.clone();
+                sane.sanitize();
+                prop_assert_eq!(&sane, &state.params);
+                let mut notes = state.held_notes.clone();
+                notes.sort_unstable();
+                notes.dedup();
+                prop_assert_eq!(notes.len(), state.held_notes.len());
+            }
+        }
+    }
+}
