@@ -56,3 +56,9 @@ name = "fuzz_patch_playback"
 path = "fuzz_targets/fuzz_patch_playback.rs"
 test = false
 doc = false
+
+[[bin]]
+name = "fuzz_pattern_parse"
+path = "fuzz_targets/fuzz_pattern_parse.rs"
+test = false
+doc = false

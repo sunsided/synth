@@ -2113,6 +2113,7 @@ dependencies = [
  "cpal",
  "crossbeam-channel",
  "crossterm",
+ "proptest",
  "ratatui",
  "ratzilla",
  "serde_json",

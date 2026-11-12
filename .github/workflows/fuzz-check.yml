@@ -47,3 +47,59 @@ jobs:
       - name: Build fuzz targets
         run: cargo +nightly fuzz build
         working-directory: crates/synthie
+
+  fuzz-run:
+    name: Fuzz ${{ matrix.target }}
+    runs-on: ubuntu-latest
+    # Setup plus 60 s of fuzzing takes 2-3 minutes; this bounds a stuck run.
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        target:
+          - fuzz_filter_stability
+          - fuzz_osc_safety
+          - fuzz_params_serde
+          - fuzz_patch_playback
+          - fuzz_pattern_parse
+          - fuzz_processor_output
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Install ALSA development libraries
+        run: sudo apt-get update && sudo apt-get install -y libasound2-dev
+
+      - name: Install nightly toolchain
+        uses: dtolnay/rust-toolchain@683b588c487a69d01f6c6ddf40f036ff682cc2c8 # v1
+        with:
+          toolchain: nightly
+
+      - uses: Swatinem/rust-cache@d1527c8f67ef9af357290475d4af4b0fab8f12e0 # v2.9.3
+        with:
+          save-if: ${{ github.ref == 'refs/heads/main' }} # zizmor: ignore[cache-poisoning]
+
+      - name: Install cargo-fuzz
+        uses: taiki-e/install-action@3a3daafd3b7f23b8f65d9f5ba2db203fb59b79e2 # v2.90.2
+        with:
+          tool: cargo-fuzz
+
+      # A short smoke run per target, from an empty corpus. A crash, or a
+      # single input taking over 30 s, fails the job; the input is uploaded
+      # below and also printed as Base64 in the log. The prebuilt cargo-fuzz
+      # is a musl binary and defaults to its own target, whose static libc
+      # the sanitizer rejects, so name the glibc target.
+      - name: Run ${{ matrix.target }} for 60 s
+        run: >-
+          cargo +nightly fuzz run --target x86_64-unknown-linux-gnu
+          "${{ matrix.target }}" -- -max_total_time=60 -timeout=30
+        working-directory: crates/synthie
+
+      - name: Upload the crashing input
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: crates/synthie/fuzz/artifacts/
+          if-no-files-found: ignore

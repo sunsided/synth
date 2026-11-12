@@ -35,6 +35,9 @@ ratzilla   = "0.3.1"
 synthie-ui = { path = "../synthie-ui", default-features = false, features = ["web"] }
 web-sys    = { version = "0.3", features = ["Storage", "Window"] }
 
+[dev-dependencies]
+proptest = { workspace = true }
+
 [lints]
 workspace = true
 
