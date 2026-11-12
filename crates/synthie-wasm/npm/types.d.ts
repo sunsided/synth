@@ -146,6 +146,22 @@ export interface SynthParams {
     /** `global.glide_time`: 0 to 10. Default 0.05. */
     glide_time: number;
   };
+  sfx: {
+    /** `sfx.slide`: -20 to 20. Default 0.0. */
+    slide: number;
+    /** `sfx.slide_accel`: -100 to 100. Default 0.0. */
+    slide_accel: number;
+    /** `sfx.min_freq`: 0 to 2000. Default 0.0. */
+    min_freq: number;
+    /** `sfx.jump_semitones`: -24 to 24. Default 0.0. */
+    jump_semitones: number;
+    /** `sfx.jump_time`: 0 to 2. Default 0.0. */
+    jump_time: number;
+    /** `sfx.pw_sweep`: -4 to 4. Default 0.0. */
+    pw_sweep: number;
+    /** `sfx.repeat_rate`: 0 to 50. Default 0.0. */
+    repeat_rate: number;
+  };
 }
 
 /** Path of a settable parameter, for `setParam`. */
@@ -203,7 +219,14 @@ export type ParamPath =
   | "arp.gate"
   | "arp.mode"
   | "global.volume"
-  | "global.glide_time";
+  | "global.glide_time"
+  | "sfx.slide"
+  | "sfx.slide_accel"
+  | "sfx.min_freq"
+  | "sfx.jump_semitones"
+  | "sfx.jump_time"
+  | "sfx.pw_sweep"
+  | "sfx.repeat_rate";
 
 /** One parameter, as described by `paramInfo()`. */
 export interface ParamInfo {

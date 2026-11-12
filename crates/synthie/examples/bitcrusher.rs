@@ -57,6 +57,7 @@ fn dry_sawtooth() -> SynthParams {
             reverb_damping: 0.5,
         },
         crusher: CrusherParams::default(),
+        sfx: synthie::params::SfxParams::default(),
         chorus: ChorusParams::default(),
         delay: DelayParams::default(),
         osc2: Osc2Params::default(),

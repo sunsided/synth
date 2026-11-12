@@ -23,7 +23,7 @@ use synthie_ui::{Key, KeyCode, KeyKind, ModalAction};
 
 /// Map a key code to a semitone offset (0 = C of the bottom row, 12 = C of
 /// the upper row).  Returns `None` for non-note keys.
-fn key_to_semitone(code: KeyCode) -> Option<u8> {
+pub(crate) fn key_to_semitone(code: KeyCode) -> Option<u8> {
     match code {
         // Bottom row (octave N)
         KeyCode::Char('z') => Some(0),  // C
@@ -71,6 +71,11 @@ pub fn handle_key(key: Key, state: &mut AppState) -> bool {
                 // Ctrl+S: save current params as user patch (quick save)
                 let name = format!("User {}", state.patches.len() + 1);
                 state.save_current_as_preset(&name);
+                return false;
+            }
+            #[cfg(not(target_arch = "wasm32"))]
+            KeyCode::Char('e') => {
+                state.export_wav();
                 return false;
             }
             _ => return false,
@@ -147,6 +152,9 @@ pub fn handle_key(key: Key, state: &mut AppState) -> bool {
         KeyCode::Enter if state.selected_section == crate::app::state::Section::Presets => {
             let idx = state.selected_preset;
             state.load_preset(idx);
+        }
+        KeyCode::Enter if state.selected_section == crate::app::state::Section::Sfx => {
+            state.run_sfx_action();
         }
 
         KeyCode::Char('+' | '=') => state.volume_up(),

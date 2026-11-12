@@ -21,6 +21,8 @@ pub mod param;
 pub mod params;
 pub mod pattern;
 pub mod presets;
+pub mod render;
+pub mod sfx;
 pub mod songs;
 
 /// Convenience re-exports for common consumers.
