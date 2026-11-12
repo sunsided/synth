@@ -51,6 +51,8 @@ jobs:
   fuzz-run:
     name: Fuzz ${{ matrix.target }}
     runs-on: ubuntu-latest
+    # Setup plus 60 s of fuzzing takes 2-3 minutes; this bounds a stuck run.
+    timeout-minutes: 15
     strategy:
       fail-fast: false
       matrix:
@@ -83,12 +85,21 @@ jobs:
         with:
           tool: cargo-fuzz
 
-      # A short smoke run per target, from an empty corpus. A crash fails the
-      # job; libFuzzer prints the crashing input as Base64 in the log. The
-      # prebuilt cargo-fuzz is a musl binary and defaults to its own target,
-      # whose static libc the sanitizer rejects, so name the glibc target.
+      # A short smoke run per target, from an empty corpus. A crash, or a
+      # single input taking over 30 s, fails the job; the input is uploaded
+      # below and also printed as Base64 in the log. The prebuilt cargo-fuzz
+      # is a musl binary and defaults to its own target, whose static libc
+      # the sanitizer rejects, so name the glibc target.
       - name: Run ${{ matrix.target }} for 60 s
         run: >-
           cargo +nightly fuzz run --target x86_64-unknown-linux-gnu
-          "${{ matrix.target }}" -- -max_total_time=60
+          "${{ matrix.target }}" -- -max_total_time=60 -timeout=30
         working-directory: crates/synthie
+
+      - name: Upload the crashing input
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: fuzz-artifacts-${{ matrix.target }}
+          path: crates/synthie/fuzz/artifacts/
+          if-no-files-found: ignore
