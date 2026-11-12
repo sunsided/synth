@@ -233,6 +233,21 @@ params! {
         get |p| p.global.volume, set |p, v| p.global.volume = v;
     GlideTime = "global.glide_time", float(0.0, 10.0),
         get |p| p.global.glide_time, set |p, v| p.global.glide_time = v;
+
+    SfxSlide = "sfx.slide", float(-20.0, 20.0),
+        get |p| p.sfx.slide, set |p, v| p.sfx.slide = v;
+    SfxSlideAccel = "sfx.slide_accel", float(-100.0, 100.0),
+        get |p| p.sfx.slide_accel, set |p, v| p.sfx.slide_accel = v;
+    SfxMinFreq = "sfx.min_freq", float(0.0, 2_000.0),
+        get |p| p.sfx.min_freq, set |p, v| p.sfx.min_freq = v;
+    SfxJumpSemitones = "sfx.jump_semitones", float(-24.0, 24.0),
+        get |p| p.sfx.jump_semitones, set |p, v| p.sfx.jump_semitones = v;
+    SfxJumpTime = "sfx.jump_time", float(0.0, 2.0),
+        get |p| p.sfx.jump_time, set |p, v| p.sfx.jump_time = v;
+    SfxPwSweep = "sfx.pw_sweep", float(-4.0, 4.0),
+        get |p| p.sfx.pw_sweep, set |p, v| p.sfx.pw_sweep = v;
+    SfxRepeatRate = "sfx.repeat_rate", float(0.0, 50.0),
+        get |p| p.sfx.repeat_rate, set |p, v| p.sfx.repeat_rate = v;
 }
 
 impl Param {

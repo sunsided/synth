@@ -9,7 +9,11 @@ use crate::audio::{
     filter::SvFilter,
     osc::{Lfo, Oscillator, detune_hz, midi_to_hz},
 };
-use crate::params::{MidiNote, RingModMode, SynthParams};
+use crate::params::{MidiNote, RingModMode, SfxParams, SynthParams};
+
+/// Furthest a slide can take a note, in octaves either way. Keeps a long
+/// slide from overflowing; the final frequency is clamped below Nyquist anyway.
+const MAX_SLIDE_OCTAVES: f32 = 10.0;
 
 /// Per-sample modulation accumulator.
 ///
@@ -42,6 +46,12 @@ impl ModBus {
     }
 }
 
+/// Whether a falling slide has taken `freq` below `min_freq` (0 = never),
+/// which ends the note.
+fn slid_below(freq: f32, slide_oct: f32, min_freq: f32) -> bool {
+    min_freq > 0.0 && slide_oct < 0.0 && freq * crate::math::powf(2.0_f32, slide_oct) < min_freq
+}
+
 /// Monophonic synthesiser voice combining oscillator, envelope, filter, and LFO.
 pub struct Voice {
     /// Whether the voice is currently producing sound.
@@ -72,6 +82,9 @@ pub struct Voice {
     pub pitch_env: Envelope,
     /// Per-sample portamento smoothing coefficient (0 = instant, ~1 = very slow).
     pub glide_coeff: f32,
+    /// Samples since note-on or the last sound-effect repeat; drives the
+    /// slide, pitch jump and pulse-width sweep in `params.sfx`.
+    sfx_samples: u32,
 }
 
 impl Default for Voice {
@@ -99,6 +112,7 @@ impl Voice {
             filter_env: Envelope::default(),
             pitch_env: Envelope::default(),
             glide_coeff: 0.0,
+            sfx_samples: 0,
         }
     }
 
@@ -124,6 +138,7 @@ impl Voice {
             self.crusher.reset();
         }
         self.active = true;
+        self.sfx_samples = 0;
         self.update_glide(params.global.glide_time, sample_rate);
         self.env.note_on(legato);
         self.filter_env.note_on(legato);
@@ -144,6 +159,28 @@ impl Voice {
         // value left in any of them would never clear. `Voice` holds no heap
         // data, so this does not allocate.
         *self = Self::new();
+    }
+
+    /// Advance the sound-effect clock by one sample, restarting it on each
+    /// repeat. Returns the seconds since note-on or the last repeat, the
+    /// slide's pitch offset and the pitch jump's offset, both in octaves.
+    fn sfx_step(&mut self, sfx: &SfxParams, sample_rate: f32) -> (f32, f32, f32) {
+        #[allow(clippy::cast_precision_loss)] // exact for ~6 minutes, then coarser
+        let mut t = self.sfx_samples as f32 / sample_rate;
+        if sfx.repeat_rate > 0.0 && t * sfx.repeat_rate >= 1.0 {
+            t = 0.0;
+            self.sfx_samples = 0;
+        }
+        self.sfx_samples = self.sfx_samples.saturating_add(1);
+        // Closed form of a slide whose rate changes linearly over time.
+        let slide_oct = (sfx.slide * t + 0.5 * sfx.slide_accel * t * t)
+            .clamp(-MAX_SLIDE_OCTAVES, MAX_SLIDE_OCTAVES);
+        let jump_oct = if t >= sfx.jump_time {
+            sfx.jump_semitones / 12.0
+        } else {
+            0.0
+        };
+        (t, slide_oct, jump_oct)
     }
 
     /// Render one sample.  Called from the audio callback – no allocation.
@@ -194,19 +231,28 @@ impl Voice {
         );
         bus.pitch += penv * params.pitch_env.depth * 10.0;
 
-        // --- Signal chain ---
+        let sfx = &params.sfx;
+        let (t, slide_oct, jump_oct) = self.sfx_step(sfx, sample_rate);
 
         // Glide (portamento)
         let gc = self.glide_coeff;
         self.current_freq = self.target_freq + (self.current_freq - self.target_freq) * gc;
         let freq = self.current_freq;
 
-        // Pitch modulation (vibrato + pitch env)
-        let modded_freq = freq * crate::math::powf(2.0_f32, bus.pitch * 0.1);
-        let final_freq = modded_freq;
+        if slid_below(freq, slide_oct, sfx.min_freq) {
+            self.env.reset();
+            self.active = false;
+            return 0.0;
+        }
 
-        // Pulse width modulation
-        let pw = (params.osc.pulse_width + bus.pw * 0.4).clamp(0.05, 0.95);
+        // Pitch modulation (vibrato, pitch env, slide, jump), kept below
+        // Nyquist so the oscillator's phase wraps at most once per sample.
+        let final_freq = (freq
+            * crate::math::powf(2.0_f32, bus.pitch * 0.1 + slide_oct + jump_oct))
+        .min(sample_rate * 0.45);
+
+        // Pulse width modulation and sweep
+        let pw = (params.osc.pulse_width + sfx.pw_sweep * t + bus.pw * 0.4).clamp(0.05, 0.95);
 
         // Oscillator 1
         let osc_out = self.osc.next_sample(
@@ -680,5 +726,158 @@ mod tests {
             (hz - 698.46).abs() <= 2.0,
             "+7 st +100 ct: measured {hz} Hz"
         );
+    }
+
+    /// Plain sine at full sustain through an open filter, so zero crossings
+    /// give the pitch and the output follows the oscillator closely.
+    fn sfx_base() -> SynthParams {
+        use crate::params::{EnvParams, FilterMode, FilterParams};
+        let mut p = SynthParams::default();
+        p.osc.waveform = Waveform::Sine;
+        p.env = EnvParams {
+            attack: 0.001,
+            decay: 0.001,
+            sustain: 1.0,
+            release: 0.001,
+            env_reverse: false,
+        };
+        p.filter = FilterParams {
+            filter_mode: FilterMode::LowPass,
+            cutoff: 18_000.0,
+            resonance: 0.0,
+            drive: 0.0,
+        };
+        p.global.glide_time = 0.0;
+        p.global.volume = 1.0;
+        p.lfo.lfo_depth = 0.0;
+        p
+    }
+
+    /// Render `seconds` of A4 with `params`.
+    #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+    fn render(params: &SynthParams, seconds: f32) -> Vec<f32> {
+        let mut voice = Voice::new();
+        voice.note_on(MidiNote::A4, params, 44100.0);
+        (0..(seconds * 44100.0) as usize)
+            .map(|_| voice.process(params, 44100.0))
+            .collect()
+    }
+
+    /// Pitch in Hz of `samples[from..to]` (seconds), from upward zero crossings.
+    #[allow(
+        clippy::cast_possible_truncation,
+        clippy::cast_sign_loss,
+        clippy::cast_precision_loss
+    )]
+    fn hz_between(samples: &[f32], from: f32, to: f32) -> f32 {
+        let window = &samples[(from * 44100.0) as usize..(to * 44100.0) as usize];
+        let crossings = window
+            .windows(2)
+            .filter(|w| w[0] < 0.0 && w[1] >= 0.0)
+            .count();
+        crossings as f32 / (to - from)
+    }
+
+    #[test]
+    fn slide_falls_and_accel_turns_it_around() {
+        let mut p = sfx_base();
+        p.sfx.slide = -1.0; // an octave down per second
+        let s = render(&p, 1.0);
+        let early = hz_between(&s, 0.0, 0.1);
+        let late = hz_between(&s, 0.9, 1.0);
+        assert!((early - 425.0).abs() < 15.0, "early {early}");
+        assert!((late - 226.0).abs() < 10.0, "late {late}");
+
+        // -2 oct/s plus +4 oct/s²: bottom at 0.5 s, back at A4 by 1.0 s.
+        p.sfx.slide = -2.0;
+        p.sfx.slide_accel = 4.0;
+        let s = render(&p, 1.1);
+        let bottom = hz_between(&s, 0.45, 0.55);
+        let back = hz_between(&s, 1.0, 1.1);
+        assert!(bottom < 330.0, "bottom {bottom}");
+        assert!(back > 430.0, "back {back}");
+    }
+
+    #[test]
+    fn min_freq_ends_a_falling_slide() {
+        let mut p = sfx_base();
+        p.sfx.slide = -4.0;
+        p.sfx.min_freq = 220.0; // one octave below A4: reached after 0.25 s
+        let mut voice = Voice::new();
+        voice.note_on(MidiNote::A4, &p, 44100.0);
+        let s: Vec<f32> = (0..22050).map(|_| voice.process(&p, 44100.0)).collect();
+        assert!(s[..10_000].iter().any(|x| x.abs() > 0.5), "sounds at first");
+        assert!(s[11_100..].iter().all(|&x| x == 0.0), "silent past 220 Hz");
+        assert!(!voice.active && !voice.env.is_active());
+
+        // A rising slide never trips it, even from below the cutoff.
+        p.sfx.slide = 1.0;
+        p.sfx.min_freq = 2000.0;
+        let s = render(&p, 0.5);
+        assert!(s[20_000..].iter().any(|x| x.abs() > 0.5));
+    }
+
+    #[test]
+    fn extreme_sfx_settings_stay_finite() {
+        for (slide, accel) in [(20.0, 100.0), (-20.0, -100.0), (20.0, -100.0)] {
+            let mut p = sfx_base();
+            p.osc.waveform = Waveform::Pulse;
+            p.sfx.slide = slide;
+            p.sfx.slide_accel = accel;
+            p.sfx.jump_semitones = 24.0;
+            p.sfx.pw_sweep = 4.0;
+            p.sfx.repeat_rate = 0.3;
+            let s = render(&p, 5.0);
+            assert!(s.iter().all(|x| x.is_finite()), "{slide} {accel}");
+        }
+    }
+
+    #[test]
+    fn pitch_jump_happens_once_at_jump_time() {
+        let mut p = sfx_base();
+        p.sfx.jump_semitones = 12.0;
+        p.sfx.jump_time = 0.1;
+        let s = render(&p, 0.5);
+        let before = hz_between(&s, 0.0, 0.1);
+        let after = hz_between(&s, 0.1, 0.5);
+        assert!((before - 440.0).abs() < 15.0, "before {before}");
+        assert!((after - 880.0).abs() < 10.0, "after {after}");
+    }
+
+    #[test]
+    #[allow(clippy::cast_precision_loss)]
+    fn pw_sweep_moves_the_duty_cycle_and_stops_at_the_limit() {
+        let mut p = sfx_base();
+        p.osc.waveform = Waveform::Pulse;
+        p.osc.pulse_width = 0.5;
+        p.sfx.pw_sweep = 0.8;
+        let s = render(&p, 2.0);
+        let duty = |from: usize, to: usize| {
+            s[from..to].iter().filter(|&&x| x > 0.0).count() as f32 / (to - from) as f32
+        };
+        let early = duty(500, 2_000);
+        let mid = duty(17_000, 19_000); // ~0.4 s: pw ~0.82
+        let late = duty(80_000, 88_000); // clamped at 0.95
+        assert!((early - 0.5).abs() < 0.1, "early {early}");
+        assert!(mid > early + 0.2, "mid {mid}");
+        assert!(late > 0.85 && late < 1.0, "late {late}, never stuck high");
+    }
+
+    #[test]
+    fn repeat_restarts_the_slide_without_clicks() {
+        let mut p = sfx_base();
+        p.sfx.slide = 1.0;
+        p.sfx.repeat_rate = 4.0;
+        let s = render(&p, 1.0);
+        let first = hz_between(&s, 0.0, 0.2);
+        let third = hz_between(&s, 0.5, 0.7);
+        assert!((first - third).abs() < 10.0, "{first} vs {third}");
+        assert!(hz_between(&s, 0.2, 0.25) > first, "rises within a cycle");
+        // Phase and envelope run on across repeats: a sine never jumps.
+        let max_step = s
+            .windows(2)
+            .map(|w| (w[1] - w[0]).abs())
+            .fold(0.0, f32::max);
+        assert!(max_step < 0.15, "step {max_step}");
     }
 }

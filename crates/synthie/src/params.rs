@@ -614,6 +614,35 @@ impl Default for GlobalParams {
     }
 }
 
+/// One-shot pitch and pulse-width movement for sound effects.
+///
+/// Every field defaults to 0, which turns its effect off. All of them run
+/// from note-on (and from each repeat, see `repeat_rate`), the way C64
+/// player routines step a note's frequency and pulse width every frame.
+#[derive(Debug, Clone, PartialEq, Default)]
+#[cfg_attr(feature = "serde", derive(Serialize, Deserialize))]
+pub struct SfxParams {
+    /// Continuous pitch change in octaves per second, -20..=20. Negative
+    /// falls (lasers, bombs), positive rises (power-ups, jumps).
+    pub slide: f32,
+    /// Change of `slide` per second (octaves/s²), -100..=100: speeds a sweep
+    /// up or levels it off.
+    pub slide_accel: f32,
+    /// Ends the note once a falling slide takes it below this frequency in
+    /// Hz, 0..=2000. 0 turns it off.
+    pub min_freq: f32,
+    /// Interval of the one-shot pitch jump in semitones, -24..=24.
+    pub jump_semitones: f32,
+    /// Seconds after note-on at which the pitch jump happens, 0..=2.
+    pub jump_time: f32,
+    /// Change of pulse width per second, -4..=4, starting from
+    /// `osc.pulse_width` and stopping at the pulse width's limits.
+    pub pw_sweep: f32,
+    /// How many times per second the slide, jump and pulse-width sweep
+    /// restart without retriggering the amplitude envelope, 0..=50. 0 is off.
+    pub repeat_rate: f32,
+}
+
 /// Full parameter snapshot shared between the UI and audio threads.
 ///
 /// The UI owns the authoritative copy; the audio thread receives a boxed clone
@@ -675,6 +704,9 @@ pub struct SynthParams {
     pub arp: ArpParams,
     /// Global parameters.
     pub global: GlobalParams,
+    /// Sound-effect pitch slide, pitch jump, pulse-width sweep and repeat.
+    #[cfg_attr(feature = "serde", serde(default))]
+    pub sfx: SfxParams,
 }
 
 impl SynthParams {
