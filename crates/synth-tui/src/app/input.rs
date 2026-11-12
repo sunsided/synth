@@ -23,7 +23,7 @@ use synthie_ui::{Key, KeyCode, KeyKind, ModalAction};
 
 /// Map a key code to a semitone offset (0 = C of the bottom row, 12 = C of
 /// the upper row).  Returns `None` for non-note keys.
-fn key_to_semitone(code: KeyCode) -> Option<u8> {
+pub(crate) fn key_to_semitone(code: KeyCode) -> Option<u8> {
     match code {
         // Bottom row (octave N)
         KeyCode::Char('z') => Some(0),  // C

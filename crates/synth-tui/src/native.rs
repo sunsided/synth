@@ -13,13 +13,22 @@ use ratatui::{Terminal, backend::CrosstermBackend};
 use std::{
     io::{self, Stdout},
     panic,
-    time::Duration,
+    time::{Duration, Instant},
 };
 use synthie::audio::engine::setup_audio_silenced;
-use synthie_ui::ScopeBuf;
+use synthie_ui::{Key, KeyKind, ScopeBuf};
 
 use crate::SCOPE_CAPACITY;
-use crate::app::{input, state::AppState, ui};
+use crate::app::{
+    input,
+    state::{AppState, PIANO_KEY_COUNT},
+    ui,
+};
+
+/// Without key-release events, a piano key counts as released this long
+/// after its last press or auto-repeat. Longer than common auto-repeat
+/// delays (500–660 ms), so holding a key keeps one note going.
+const RELEASE_FALLBACK: Duration = Duration::from_millis(700);
 
 /// Launch the terminal synthesiser application.
 ///
@@ -41,14 +50,15 @@ pub fn run_tui() -> Result<()> {
     let mut stdout = io::stdout();
     execute!(stdout, EnterAlternateScreen, EnableMouseCapture)?;
 
-    // Try to enable keyboard release events (for proper note-off).
-    // Supported in kitty, WezTerm, and newer xterm-compatible terminals.
-    // Failure is silent: notes will sustain until a new note is pressed.
-    let keyboard_enhance = execute!(
-        stdout,
-        PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
-    )
-    .is_ok();
+    // Key-release events give proper note-offs. Kitty, foot, Ghostty and
+    // WezTerm (with `enable_kitty_keyboard = true`) report them; elsewhere
+    // the release is timed out instead, see `ReleaseFallback`.
+    let keyboard_enhance = crossterm::terminal::supports_keyboard_enhancement().unwrap_or(false)
+        && execute!(
+            stdout,
+            PushKeyboardEnhancementFlags(KeyboardEnhancementFlags::REPORT_EVENT_TYPES)
+        )
+        .is_ok();
 
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
@@ -56,7 +66,8 @@ pub fn run_tui() -> Result<()> {
     let mut state = AppState::new(event_tx);
     let mut scope = ScopeBuf::new(scope_rx, SCOPE_CAPACITY);
 
-    let result = run_loop(&mut terminal, &mut state, &mut scope);
+    let fallback = (!keyboard_enhance).then(ReleaseFallback::default);
+    let result = run_loop(&mut terminal, &mut state, &mut scope, fallback);
 
     if keyboard_enhance {
         let _ = execute!(terminal.backend_mut(), PopKeyboardEnhancementFlags);
@@ -78,6 +89,7 @@ fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     state: &mut AppState,
     scope: &mut ScopeBuf,
+    mut fallback: Option<ReleaseFallback>,
 ) -> Result<()> {
     let tick = Duration::from_millis(16); // ~60 fps
 
@@ -92,12 +104,63 @@ fn run_loop(
         // Poll with a short timeout so the scope stays animated.
         if event::poll(tick)? {
             // Terminal resize and other events are no-ops; ratatui redraws on next frame.
-            if let event::Event::Key(key) = event::read()?
-                && input::handle_key(key.into(), state)
-            {
-                return Ok(());
+            if let event::Event::Key(key) = event::read()? {
+                let key = Key::from(key);
+                let piano = fallback
+                    .as_ref()
+                    .and(input::key_to_semitone(key.code))
+                    .filter(|_| key.kind == KeyKind::Press);
+                if let (Some(f), Some(semi)) = (&mut fallback, piano)
+                    && state.piano_key_held(semi)
+                {
+                    // Without release events, auto-repeat arrives as presses.
+                    f.touch(semi, Instant::now());
+                    continue;
+                }
+                if input::handle_key(key, state) {
+                    return Ok(());
+                }
+                if let (Some(f), Some(semi)) = (&mut fallback, piano)
+                    && state.piano_key_held(semi)
+                {
+                    f.touch(semi, Instant::now());
+                }
             }
         }
+        if let Some(f) = &mut fallback {
+            for semi in f.expired(Instant::now()) {
+                state.piano_key_up(semi);
+            }
+        }
+    }
+}
+
+/// Stands in for key-release events on terminals that don't report them:
+/// remembers when each piano key was last pressed (or auto-repeated) and
+/// reports it released once it has been quiet for [`RELEASE_FALLBACK`].
+#[derive(Default)]
+struct ReleaseFallback {
+    last_press: [Option<Instant>; PIANO_KEY_COUNT],
+}
+
+impl ReleaseFallback {
+    /// Piano key `semi` was pressed or auto-repeated at `now`.
+    fn touch(&mut self, semi: u8, now: Instant) {
+        if let Some(slot) = self.last_press.get_mut(usize::from(semi)) {
+            *slot = Some(now);
+        }
+    }
+
+    /// Piano keys quiet for long enough at `now`; each is reported once.
+    fn expired(&mut self, now: Instant) -> Vec<u8> {
+        let mut keys = Vec::new();
+        for (semi, slot) in (0_u8..).zip(&mut self.last_press) {
+            if slot.is_some_and(|t| now.duration_since(t) >= RELEASE_FALLBACK) {
+                *slot = None;
+                keys.push(semi);
+            }
+        }
+        keys
     }
 }
 
@@ -106,4 +169,25 @@ fn restore_terminal_raw() -> Result<()> {
     disable_raw_mode()?;
     execute!(io::stdout(), LeaveAlternateScreen, DisableMouseCapture)?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn release_fallback_times_out_quiet_keys_once() {
+        let t0 = Instant::now();
+        let mut f = ReleaseFallback::default();
+        f.touch(3, t0);
+        assert_eq!(f.expired(t0 + Duration::from_millis(600)), Vec::<u8>::new());
+        // An auto-repeat keeps the key held.
+        f.touch(3, t0 + Duration::from_millis(600));
+        assert_eq!(
+            f.expired(t0 + Duration::from_millis(1_200)),
+            Vec::<u8>::new()
+        );
+        assert_eq!(f.expired(t0 + Duration::from_millis(1_300)), [3]);
+        assert_eq!(f.expired(t0 + Duration::from_secs(5)), Vec::<u8>::new());
+    }
 }

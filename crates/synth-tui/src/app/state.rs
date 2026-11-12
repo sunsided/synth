@@ -249,6 +249,14 @@ impl AppState {
         self.note_on(midi);
     }
 
+    /// Whether piano key `key` is down (has started a note not yet released).
+    #[cfg(not(target_arch = "wasm32"))] // only the terminal needs the release fallback
+    pub fn piano_key_held(&self, key: u8) -> bool {
+        self.key_notes
+            .get(usize::from(key))
+            .is_some_and(Option::is_some)
+    }
+
     /// Piano key `key` came up: release the note it started.
     pub fn piano_key_up(&mut self, key: u8) {
         let started = self
