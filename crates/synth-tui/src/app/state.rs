@@ -188,8 +188,7 @@ impl AppState {
         Self {
             params: patches
                 .first()
-                .map(|p| p.params.clone())
-                .unwrap_or_default(),
+                .map_or_else(SynthParams::default, |p| p.params.clone()),
             selected_section: Section::Osc,
             selected_param: 0,
             held_notes: Vec::new(),

@@ -391,7 +391,7 @@ fn draw_side(frame: &mut Frame, area: Rect, state: &TrackerState, data: &[(f64, 
     let width = usize::from(inner.width);
     let bar_w = width.saturating_sub(8);
     let mut lines = vec![Line::raw("")];
-    for track in 0..TOTAL_TRACKS {
+    for (track, &activity) in state.activity.iter().enumerate() {
         let color = track_color(track);
         let label = if track == DRUM_TRACK {
             "DRM".to_string()
@@ -399,7 +399,7 @@ fn draw_side(frame: &mut Frame, area: Rect, state: &TrackerState, data: &[(f64, 
             format!("CH{}", track + 1)
         };
         let mut spans = vec![Span::styled(format!(" {label}  "), bold(color))];
-        spans.extend(bar(state.activity[track], bar_w, |_| color));
+        spans.extend(bar(activity, bar_w, |_| color));
         lines.push(Line::from(spans));
     }
     lines.push(Line::raw(""));
