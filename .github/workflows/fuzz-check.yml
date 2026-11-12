@@ -84,7 +84,11 @@ jobs:
           tool: cargo-fuzz
 
       # A short smoke run per target, from an empty corpus. A crash fails the
-      # job; libFuzzer prints the crashing input as Base64 in the log.
+      # job; libFuzzer prints the crashing input as Base64 in the log. The
+      # prebuilt cargo-fuzz is a musl binary and defaults to its own target,
+      # whose static libc the sanitizer rejects, so name the glibc target.
       - name: Run ${{ matrix.target }} for 60 s
-        run: cargo +nightly fuzz run "${{ matrix.target }}" -- -max_total_time=60
+        run: >-
+          cargo +nightly fuzz run --target x86_64-unknown-linux-gnu
+          "${{ matrix.target }}" -- -max_total_time=60
         working-directory: crates/synthie
