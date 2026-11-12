@@ -426,9 +426,13 @@ pub fn parse_note(name: &str) -> Result<MidiNote, ParseErrorKind> {
         _ => (0, rest),
     };
     let octave: i32 = octave.parse().map_err(|_| ParseErrorKind::InvalidNote)?;
-    let midi = (octave + 1) * 12 + semitone + accidental;
-    u8::try_from(midi)
-        .ok()
+    // Checked: a long octave like `A3333333333` must not overflow (or wrap
+    // into a valid note in release builds).
+    octave
+        .checked_add(1)
+        .and_then(|o| o.checked_mul(12))
+        .and_then(|m| m.checked_add(semitone + accidental))
+        .and_then(|m| u8::try_from(m).ok())
         .filter(|&m| m <= 127)
         .map(MidiNote)
         .ok_or(ParseErrorKind::NoteOutOfRange)
@@ -799,6 +803,19 @@ mod tests {
         assert_eq!(note("G9"), MidiNote(127));
         assert_eq!(parse_note("G#9"), Err(ParseErrorKind::NoteOutOfRange));
         assert_eq!(parse_note("Cb-1"), Err(ParseErrorKind::NoteOutOfRange));
+        // Found by fuzzing: overflowed `(octave + 1) * 12`.
+        assert_eq!(
+            parse_note("A333333333"),
+            Err(ParseErrorKind::NoteOutOfRange)
+        );
+        assert_eq!(
+            parse_note("C-2147483648"),
+            Err(ParseErrorKind::NoteOutOfRange)
+        );
+        assert_eq!(
+            parse_note("B2147483647"),
+            Err(ParseErrorKind::NoteOutOfRange)
+        );
         assert_eq!(parse_note("H4"), Err(ParseErrorKind::InvalidNote));
         assert_eq!(parse_note("C"), Err(ParseErrorKind::InvalidNote));
         assert_eq!(parse_note("C#"), Err(ParseErrorKind::InvalidNote));
