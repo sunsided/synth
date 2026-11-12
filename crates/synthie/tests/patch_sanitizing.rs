@@ -151,6 +151,74 @@ fn scramble_reaches_every_float_parameter() {
     }
 }
 
+/// The documented range of every float parameter, written out here so a
+/// wrong or drifted range in `Param::kind` is caught: the range checks
+/// above read `Param::kind`, the same source `sanitize` clamps with. Adding
+/// a parameter without listing it here fails too.
+#[test]
+fn param_ranges_match_the_documented_ranges() {
+    let mut documented = vec![
+        ("osc.pulse_width", 0.05, 0.95),
+        ("osc.detune", -100.0, 100.0),
+        ("osc.noise_mix", 0.0, 1.0),
+        ("env.attack", 0.001, 10.0),
+        ("env.decay", 0.001, 10.0),
+        ("env.sustain", 0.0, 1.0),
+        ("env.release", 0.001, 20.0),
+        ("filter.cutoff", 20.0, 18_000.0),
+        ("filter.resonance", 0.0, 0.99),
+        ("filter.drive", 0.0, 1.0),
+        ("lfo.lfo_rate", 0.0, 50.0),
+        ("lfo.lfo_depth", 0.0, 1.0),
+        ("fx.reverb_mix", 0.0, 1.0),
+        ("fx.reverb_size", 0.0, 1.0),
+        ("fx.reverb_damping", 0.0, 1.0),
+        ("crusher.bits", 1.0, 16.0),
+        ("crusher.rate", 1.0, 16.0),
+        ("chorus.rate", 0.1, 5.0),
+        ("chorus.depth_ms", 0.0, 10.0),
+        ("chorus.mix", 0.0, 1.0),
+        ("delay.time_ms", 1.0, 2_000.0),
+        ("delay.feedback", 0.0, 0.95),
+        ("delay.mix", 0.0, 1.0),
+        ("osc2.detune", -100.0, 100.0),
+        ("osc2.semitones", -24.0, 24.0),
+        ("osc2.osc2_mix", 0.0, 1.0),
+        ("lfo2.lfo_rate", 0.0, 50.0),
+        ("lfo2.lfo_depth", 0.0, 1.0),
+        ("global.volume", 0.0, 1.0),
+        ("global.glide_time", 0.0, 10.0),
+        ("sfx.slide", -20.0, 20.0),
+        ("sfx.slide_accel", -100.0, 100.0),
+        ("sfx.min_freq", 0.0, 2_000.0),
+        ("sfx.jump_semitones", -24.0, 24.0),
+        ("sfx.jump_time", 0.0, 2.0),
+        ("sfx.pw_sweep", -4.0, 4.0),
+        ("sfx.repeat_rate", 0.0, 50.0),
+    ];
+    for env in ["filter_env", "pitch_env"] {
+        for (field, lo, hi) in [
+            ("attack", 0.001, 10.0),
+            ("decay", 0.001, 10.0),
+            ("sustain", 0.0, 1.0),
+            ("release", 0.001, 20.0),
+            ("depth", -1.0, 1.0),
+        ] {
+            documented.push((Box::leak(format!("{env}.{field}").into_boxed_str()), lo, hi));
+        }
+    }
+    #[cfg(feature = "arp")]
+    documented.extend([("arp.rate", 0.0, 50.0), ("arp.gate", 0.0, 1.0)]);
+
+    let mut actual: Vec<_> = floats(&SynthParams::default())
+        .into_iter()
+        .map(|(path, _, lo, hi)| (path, lo, hi))
+        .collect();
+    documented.sort_by(|a, b| a.0.cmp(b.0));
+    actual.sort_by(|a, b| a.0.cmp(b.0));
+    assert_eq!(actual, documented);
+}
+
 #[test]
 fn sanitizing_leaves_every_built_in_preset_untouched() {
     for patch in default_patches() {
