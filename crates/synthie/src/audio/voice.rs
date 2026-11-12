@@ -271,7 +271,8 @@ impl Voice {
             let osc2_freq = detune_hz(
                 final_freq,
                 params.osc2.detune + params.osc2.semitones * 100.0,
-            );
+            )
+            .min(sample_rate * 0.45);
             let secondary =
                 self.osc2
                     .next_sample(osc2_freq, sample_rate, params.osc2.waveform, pw, 0.0);
