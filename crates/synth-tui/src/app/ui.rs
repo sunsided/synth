@@ -50,12 +50,13 @@ const LABEL_W: usize = 6;
 const VALUE_W: usize = 9;
 
 /// Parameter sections shown in the left column, top to bottom.
-const PARAM_SECTIONS: [Section; 6] = [
+const PARAM_SECTIONS: [Section; 7] = [
     Section::Osc,
     Section::Env,
     Section::Filter,
     Section::Lfo,
     Section::Mod,
+    Section::Sfx,
     Section::Fx,
 ];
 
@@ -478,6 +479,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         help_entry("P", KW, "jump to presets / back"),
         help_entry("Enter", KW, "load highlighted preset"),
         help_entry("1–8", KW, "quick-load preset (in Presets)"),
+        help_entry("Enter", KW, "generate / randomize / mutate (in SFX)"),
         Line::raw(""),
         help_heading("PERFORMANCE"),
         help_entry("[ ]", KW, "octave down / up  (also , .)"),
@@ -498,6 +500,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
     ];
     if CAN_QUIT {
         lines.extend([
+            help_entry("Ctrl+E", KW, "export current patch as <name>.wav"),
             help_entry(":q ⏎", KW, "quit right away  (also :wq, :x)"),
             help_entry("Ctrl+C", KW, "quit  (also Ctrl+Q, F12)"),
         ]);

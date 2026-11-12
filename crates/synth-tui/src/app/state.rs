@@ -4,6 +4,7 @@
 use crossbeam_channel::Sender;
 use synthie::params::{AudioEvent, MidiNote, Patch, SynthParams};
 use synthie::presets::sid;
+use synthie::sfx::{self, SfxKind};
 use synthie_ui::Modal;
 
 /// Top-level UI section, each corresponding to one panel of controls.
@@ -19,6 +20,8 @@ pub enum Section {
     Lfo,
     /// Full modulation editor: LFO1, LFO2, filter env, pitch env.
     Mod,
+    /// Sound-effect generator, slide, pitch jump, pulse-width sweep, repeat.
+    Sfx,
     /// Effects controls (reverb mix, size, damping).
     Fx,
     /// Preset list (browse and load patches).
@@ -33,6 +36,7 @@ impl Section {
         Section::Filter,
         Section::Lfo,
         Section::Mod,
+        Section::Sfx,
         Section::Fx,
         Section::Presets,
     ];
@@ -45,6 +49,7 @@ impl Section {
             Section::Filter => "FILTER",
             Section::Lfo => "LFO",
             Section::Mod => "MOD",
+            Section::Sfx => "SFX",
             Section::Fx => "FX",
             Section::Presets => "PRESETS",
         }
@@ -71,6 +76,7 @@ impl Section {
             Section::Env => 6, // attack, decay, sustain, release, env_reverse, glide
             Section::Lfo | Section::Fx => 3, // rate/reverb_mix, depth/reverb_size, target/reverb_damping
             Section::Mod => 21, // LFO1(4) + sep + LFO2(4) + sep + FiltEnv(5) + sep + PitchEnv(5)
+            Section::Sfx => 8, // generator, slide, accel, min freq, jump, jump time, pw sweep, repeat
             Section::Presets => 0, // list mode
         }
     }
@@ -82,6 +88,41 @@ impl Section {
             Section::Osc => idx == 4,
             Section::Mod => matches!(idx, 4 | 9 | 15),
             _ => false,
+        }
+    }
+}
+
+/// What Enter does in the SFX section.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum SfxAction {
+    /// A new random patch of this category.
+    Generate(SfxKind),
+    /// Every parameter random.
+    Randomize,
+    /// Nudge the current patch a little.
+    Mutate,
+}
+
+impl SfxAction {
+    /// Every action, in the order the selector cycles through them.
+    const ALL: [SfxAction; 9] = [
+        SfxAction::Generate(SfxKind::Pickup),
+        SfxAction::Generate(SfxKind::Laser),
+        SfxAction::Generate(SfxKind::Explosion),
+        SfxAction::Generate(SfxKind::PowerUp),
+        SfxAction::Generate(SfxKind::Hit),
+        SfxAction::Generate(SfxKind::Jump),
+        SfxAction::Generate(SfxKind::Blip),
+        SfxAction::Randomize,
+        SfxAction::Mutate,
+    ];
+
+    /// Display name in the selector.
+    fn name(self) -> &'static str {
+        match self {
+            SfxAction::Generate(kind) => kind.name(),
+            SfxAction::Randomize => "Random",
+            SfxAction::Mutate => "Mutate",
         }
     }
 }
@@ -122,6 +163,10 @@ pub struct AppState {
     pub modal: Modal,
     /// Transient status message shown in the status bar (e.g. "Loaded: …").
     pub status_msg: String,
+    /// Index into [`SfxAction::ALL`] of the SFX section's selector.
+    sfx_action: usize,
+    /// Seed of the next generated sound effect.
+    sfx_seed: u64,
     /// Channel to send `AudioEvent` messages to the audio thread.
     audio_tx: Sender<AudioEvent>,
 }
@@ -158,6 +203,9 @@ impl AppState {
             show_help: false,
             modal: Modal::None,
             status_msg: String::new(),
+            sfx_action: 0,
+            // Different sounds each session; no clock needed (wasm-safe).
+            sfx_seed: std::hash::BuildHasher::hash_one(&std::hash::RandomState::new(), 0_u8),
             audio_tx,
         }
     }
@@ -319,6 +367,7 @@ impl AppState {
             Section::Filter => self.adjust_filter(delta),
             Section::Lfo => self.adjust_lfo(delta),
             Section::Mod => self.adjust_mod(delta),
+            Section::Sfx => self.adjust_sfx(delta),
             Section::Fx => self.adjust_fx(delta),
             Section::Presets => self.adjust_preset(delta),
         }
@@ -529,6 +578,83 @@ impl AppState {
         }
     }
 
+    /// Apply `delta` to the focused sound-effect parameter.
+    fn adjust_sfx(&mut self, d: f32) {
+        let sfx = &mut self.params.sfx;
+        match self.selected_param {
+            0 if d != 0.0 => {
+                let n = SfxAction::ALL.len();
+                self.sfx_action = if d > 0.0 {
+                    (self.sfx_action + 1) % n
+                } else {
+                    (self.sfx_action + n - 1) % n
+                };
+            }
+            1 => sfx.slide = (sfx.slide + d * 0.25).clamp(-20.0, 20.0),
+            2 => sfx.slide_accel = (sfx.slide_accel + d).clamp(-100.0, 100.0),
+            3 => sfx.min_freq = (sfx.min_freq + d * 10.0).clamp(0.0, 2000.0),
+            4 if d != 0.0 => {
+                sfx.jump_semitones = (sfx.jump_semitones.round() + d.signum()).clamp(-24.0, 24.0);
+            }
+            5 => sfx.jump_time = (sfx.jump_time + d * 0.01).clamp(0.0, 2.0),
+            6 => sfx.pw_sweep = (sfx.pw_sweep + d * 0.1).clamp(-4.0, 4.0),
+            7 => sfx.repeat_rate = (sfx.repeat_rate + d * 0.5).clamp(0.0, 50.0),
+            _ => {}
+        }
+    }
+
+    /// Run the SFX section's selected action on the current patch: generate
+    /// a sound of the selected category, randomize, or mutate. Keeps the
+    /// master volume.
+    pub fn run_sfx_action(&mut self) {
+        self.sfx_seed = self.sfx_seed.wrapping_add(1);
+        let seed = self.sfx_seed;
+        let volume = self.params.global.volume;
+        let action = SfxAction::ALL[self.sfx_action];
+        self.params = match action {
+            SfxAction::Generate(kind) => sfx::generate(kind, seed),
+            SfxAction::Randomize => sfx::randomize(seed),
+            SfxAction::Mutate => sfx::mutate(&self.params, seed),
+        };
+        self.params.global.volume = volume;
+        if action != SfxAction::Mutate {
+            self.current_patch_name = format!("{} {:04x}", action.name(), seed & 0xffff);
+        }
+        self.push_params();
+        self.status_msg = format!("{}: {}", action.name(), self.current_patch_name);
+    }
+
+    /// Render the current patch as one note (the held note, or C of the
+    /// keyboard octave) and save it as `<patch name>.wav` in the working
+    /// directory.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub fn export_wav(&mut self) {
+        const RATE: u32 = 44_100;
+        let note = self.active_note().unwrap_or_else(|| {
+            MidiNote(u8::try_from(12 * (i32::from(self.octave) + 1)).unwrap_or(60))
+        });
+        let samples = synthie::render::render_note(&self.params, note, 1.0, RATE, 10.0);
+        let stem: String = self
+            .current_patch_name
+            .chars()
+            .map(|c| {
+                if c.is_ascii_alphanumeric() || c == '-' {
+                    c
+                } else {
+                    '_'
+                }
+            })
+            .collect();
+        let path = format!("{stem}.wav");
+        let result = std::fs::File::create(&path).and_then(|file| {
+            synthie::render::write_wav(std::io::BufWriter::new(file), &samples, RATE)
+        });
+        self.status_msg = match result {
+            Ok(()) => format!("Exported: {path}"),
+            Err(e) => format!("Export failed: {e}"),
+        };
+    }
+
     /// Apply `delta` to the focused FX parameter.
     fn adjust_fx(&mut self, d: f32) {
         match self.selected_param {
@@ -736,6 +862,44 @@ impl AppState {
                     lin(p.pitch_env.depth, -1.0, 1.0),
                 ),
             ],
+            Section::Sfx => vec![
+                ParamRow::text("Gen", SfxAction::ALL[self.sfx_action].name()),
+                ParamRow::new(
+                    "Slide",
+                    format!("{:+.2}o/s", p.sfx.slide),
+                    lin(p.sfx.slide, -20.0, 20.0),
+                ),
+                ParamRow::new(
+                    "Accel",
+                    format!("{:+.0}", p.sfx.slide_accel),
+                    lin(p.sfx.slide_accel, -100.0, 100.0),
+                ),
+                ParamRow::new(
+                    "MinF",
+                    format!("{:.0}Hz", p.sfx.min_freq),
+                    lin(p.sfx.min_freq, 0.0, 2000.0),
+                ),
+                ParamRow::new(
+                    "Jump",
+                    format!("{:+.0}st", p.sfx.jump_semitones),
+                    lin(p.sfx.jump_semitones, -24.0, 24.0),
+                ),
+                ParamRow::new(
+                    "JTime",
+                    format!("{:.2}s", p.sfx.jump_time),
+                    lin(p.sfx.jump_time, 0.0, 2.0),
+                ),
+                ParamRow::new(
+                    "PWSwp",
+                    format!("{:+.1}/s", p.sfx.pw_sweep),
+                    lin(p.sfx.pw_sweep, -4.0, 4.0),
+                ),
+                ParamRow::new(
+                    "Rpt",
+                    format!("{:.1}Hz", p.sfx.repeat_rate),
+                    lin(p.sfx.repeat_rate, 0.0, 50.0),
+                ),
+            ],
             Section::Fx => vec![
                 ParamRow::new("RvbMix", format!("{:.2}", p.fx.reverb_mix), p.fx.reverb_mix),
                 ParamRow::new(
@@ -870,5 +1034,25 @@ mod tests {
         s.octave_up();
         s.piano_key_up(0); // would be C5 in the new octave
         assert_eq!(s.held_notes, []);
+    }
+
+    #[test]
+    fn sfx_selector_generates_and_mutates_keeping_volume() {
+        let mut s = state();
+        s.params.global.volume = 0.3;
+        s.selected_section = Section::Sfx;
+        s.adjust_param(1.0); // Pickup -> Laser
+        s.run_sfx_action();
+        assert!(s.current_patch_name.starts_with("Laser "));
+        assert!(s.params.sfx.slide < 0.0);
+        assert!((s.params.global.volume - 0.3).abs() < f32::EPSILON);
+
+        let laser = s.params.clone();
+        s.adjust_param(-1.0); // back to Pickup …
+        s.adjust_param(-1.0); // … and around to Mutate
+        s.run_sfx_action();
+        assert_ne!(s.params, laser);
+        assert_eq!(s.params.osc.waveform, laser.osc.waveform);
+        assert!(s.current_patch_name.starts_with("Laser "));
     }
 }
