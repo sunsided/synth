@@ -145,9 +145,6 @@ pub struct AppState {
     key_notes: [Option<MidiNote>; PIANO_KEY_COUNT],
     /// Current keyboard octave (piano keys map to this octave and octave+1).
     pub octave: i8,
-    /// Envelope stage name for potential future status feedback (unused in display).
-    #[allow(dead_code)]
-    pub envelope_stage_name: String,
     /// Name of the currently loaded patch, shown in the title.
     pub current_patch_name: String,
     /// All available patches (built-in + any saved user patches).
@@ -194,7 +191,6 @@ impl AppState {
             held_notes: Vec::new(),
             key_notes: [None; PIANO_KEY_COUNT],
             octave: 4,
-            envelope_stage_name: "Idle".to_string(),
             current_patch_name,
             patches,
             selected_preset: 0,

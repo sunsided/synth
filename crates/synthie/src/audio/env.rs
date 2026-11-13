@@ -19,21 +19,6 @@ pub enum EnvStage {
     Release,
 }
 
-impl EnvStage {
-    /// Short display name for the current stage.
-    #[allow(dead_code)]
-    #[must_use]
-    pub fn name(self) -> &'static str {
-        match self {
-            EnvStage::Idle => "Idle",
-            EnvStage::Attack => "Attack",
-            EnvStage::Decay => "Decay",
-            EnvStage::Sustain => "Sustain",
-            EnvStage::Release => "Release",
-        }
-    }
-}
-
 /// ADSR envelope state.
 #[derive(Debug, Clone)]
 pub struct Envelope {
