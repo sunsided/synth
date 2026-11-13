@@ -5,7 +5,7 @@
 use crate::params::DelayParams;
 
 /// Maximum supported delay time in milliseconds. Determines ring buffer allocation.
-const MAX_DELAY_MS: f32 = 2000.0;
+pub(crate) const MAX_DELAY_MS: f32 = 2000.0;
 
 /// Single-tap feedback delay line.
 pub struct Delay {

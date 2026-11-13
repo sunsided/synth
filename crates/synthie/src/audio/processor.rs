@@ -5,7 +5,7 @@
 //! Full `no_std` support is planned but not yet implemented.
 
 use crate::audio::chorus::Chorus;
-use crate::audio::delay::Delay;
+use crate::audio::delay::{Delay, MAX_DELAY_MS};
 use crate::audio::drums::DrumMachine;
 use crate::audio::fx::Reverb;
 use crate::audio::voice::Voice;
@@ -62,9 +62,9 @@ pub const DEFAULT_MASTER_GAIN: f32 = 0.5;
 const SILENCE: f32 = 1e-5;
 
 /// How long the output must stay silent while idle before the FX chain
-/// sleeps. Longer than the longest delay echo (2 s), so a quiet gap between
-/// two audible echoes never counts as the end of the tail.
-const SLEEP_AFTER_SECONDS: f32 = 2.5;
+/// sleeps. Longer than the longest delay echo, so a quiet gap between two
+/// audible echoes never counts as the end of the tail.
+const SLEEP_AFTER_SECONDS: f32 = MAX_DELAY_MS / 1000.0 + 0.5;
 
 #[derive(Clone, Copy, Default)]
 struct VoiceSlot {
@@ -453,6 +453,9 @@ impl<const N: usize> SynthProcessor<N> {
         let delay_params = self.channels[0].params.delay.clone();
         // Silent frames at the end of `buf` so far.
         let mut quiet_run: u64 = 0;
+        // Judge silence before the master gain, so muting through the gain
+        // doesn't discard tails that come back when it is raised again.
+        let silence = SILENCE / master_gain.abs().max(1.0);
 
         for frame in buf.chunks_mut(hw_channels) {
             let mix: f32 = self
@@ -464,9 +467,15 @@ impl<const N: usize> SynthProcessor<N> {
                 + self.drums.process(sample_rate);
             let mix = self.chorus.process(mix, &chorus_params);
             let mix = self.delay.process(mix, &delay_params);
-            let sample = self.reverb.process(mix, reverb_mix) * master_gain;
+            let wet = self.reverb.process(mix, reverb_mix);
+            let sample = wet * master_gain;
 
             let sample = if sample.is_finite() {
+                if wet.abs() <= silence {
+                    quiet_run = quiet_run.saturating_add(1);
+                } else {
+                    quiet_run = 0;
+                }
                 sample.clamp(-1.0, 1.0)
             } else {
                 // Something overflowed despite sanitized patches. A NaN or
@@ -475,14 +484,10 @@ impl<const N: usize> SynthProcessor<N> {
                 // drop all state and start over from silence.
                 core::hint::cold_path();
                 self.panic();
+                // Like any panic, nothing is left to ring out.
+                quiet_run = self.sleep_after;
                 0.0
             };
-
-            if sample.abs() <= SILENCE {
-                quiet_run += 1;
-            } else {
-                quiet_run = 0;
-            }
 
             for ch in frame.iter_mut() {
                 *ch = sample;
@@ -804,6 +809,9 @@ mod tests {
         proc.channels[0].params.delay.mix = 0.5;
         let out = run(&mut proc, &[AudioEvent::NoteOn(NOTE)], 4096);
         assert!(out.iter().all(|s| s.is_finite()));
+        // Like any panic, the reset lets the FX chain sleep at once.
+        run(&mut proc, &[], 64);
+        assert!(proc.asleep);
 
         let events = [
             AudioEvent::LoadPatch(Box::default()),
@@ -893,14 +901,15 @@ mod tests {
         assert!(!proc.is_idle(), "the arpeggiator should still be running");
     }
 
-    /// A patch with long reverb and delay tails.
+    /// A patch with long reverb and delay tails, echoing at the longest
+    /// delay time: the widest silent gap the sleep hold must bridge.
     fn wet() -> AudioEvent {
         let mut p = SynthParams::default();
         p.fx.reverb_mix = 0.8;
         p.fx.reverb_size = 0.95;
         p.delay.mix = 0.5;
         p.delay.feedback = 0.5;
-        p.delay.time_ms = 600.0;
+        p.delay.time_ms = MAX_DELAY_MS;
         AudioEvent::LoadPatch(Box::new(p))
     }
 
@@ -919,7 +928,7 @@ mod tests {
     #[test]
     fn the_fx_chain_sleeps_only_after_the_tail_is_silent() {
         let mut proc = make();
-        let out = note_then_silence(&mut proc, 30.0);
+        let out = note_then_silence(&mut proc, 60.0);
         assert!(proc.asleep, "should sleep after 30 s of fading tail");
         let last_audible = out.iter().rposition(|s| s.abs() > SILENCE).unwrap();
         let hold = usize::try_from(proc.sleep_after).unwrap();
@@ -934,7 +943,7 @@ mod tests {
     #[test]
     fn a_note_wakes_the_fx_chain_in_the_same_block() {
         let mut proc = make();
-        note_then_silence(&mut proc, 30.0);
+        note_then_silence(&mut proc, 60.0);
         assert!(proc.asleep);
         let out = run(&mut proc, &[AudioEvent::NoteOn(NOTE)], 256);
         assert!(!proc.asleep);
@@ -952,7 +961,7 @@ mod tests {
             if !sleeps {
                 proc.sleep_after = u64::MAX;
             }
-            let mut out = note_then_silence(&mut proc, 30.0);
+            let mut out = note_then_silence(&mut proc, 60.0);
             assert_eq!(proc.asleep, sleeps);
             out.extend(run(&mut proc, &[AudioEvent::NoteOn(MidiNote::A4)], 22_050));
             out.extend(run(&mut proc, &[AudioEvent::NoteOff(MidiNote::A4)], 44_100));
@@ -965,6 +974,72 @@ mod tests {
             .map(|(a, b)| (a - b).abs())
             .fold(0.0_f32, f32::max);
         assert!(worst < 1e-4, "outputs differ by {worst} (above -80 dB)");
+    }
+
+    #[test]
+    fn silent_gaps_between_the_longest_echoes_dont_end_the_tail() {
+        // Dry echoes at the longest delay time: between two echoes the
+        // output is silent for most of 2 s, which must not count as the end.
+        let render = |sleeps: bool| {
+            let mut proc = make();
+            if !sleeps {
+                proc.sleep_after = u64::MAX;
+            }
+            let mut p = SynthParams::default();
+            p.fx.reverb_mix = 0.0;
+            p.env.release = 0.05;
+            p.delay.mix = 0.5;
+            p.delay.feedback = 0.5;
+            p.delay.time_ms = MAX_DELAY_MS;
+            let patch = AudioEvent::LoadPatch(Box::new(p));
+            let mut out = run(&mut proc, &[patch, AudioEvent::NoteOn(NOTE)], 2205);
+            out.extend(run(&mut proc, &[AudioEvent::NoteOff(NOTE)], 64));
+            for _ in 0..(12 * 44_100 / 64) {
+                out.extend(run(&mut proc, &[], 64));
+            }
+            out
+        };
+        let (slept, awake) = (render(true), render(false));
+        let worst = slept
+            .iter()
+            .zip(&awake)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            worst < 1e-4,
+            "an echo went missing: outputs differ by {worst}"
+        );
+    }
+
+    #[test]
+    fn muting_through_the_master_gain_keeps_the_tail() {
+        // A pause menu: mute for ten seconds, then unmute while the delay
+        // still echoes. Must sound like a processor that never sleeps.
+        let render = |sleeps: bool| {
+            let mut proc = make();
+            if !sleeps {
+                proc.sleep_after = u64::MAX;
+            }
+            let mut out = run(&mut proc, &[wet(), AudioEvent::NoteOn(NOTE)], 4410);
+            out.extend(run(&mut proc, &[AudioEvent::NoteOff(NOTE)], 64));
+            proc.set_master_gain(0.0);
+            for _ in 0..(10 * 44_100 / 64) {
+                run(&mut proc, &[], 64);
+            }
+            assert!(!proc.asleep, "the muted tail is still ringing");
+            proc.set_master_gain(DEFAULT_MASTER_GAIN);
+            out.extend(run(&mut proc, &[], 44_100));
+            out
+        };
+        let (slept, awake) = (render(true), render(false));
+        assert!(
+            awake.iter().skip(4474).any(|s| s.abs() > 1e-3),
+            "the tail is back"
+        );
+        assert_eq!(
+            slept.iter().map(|s| s.to_bits()).collect::<Vec<_>>(),
+            awake.iter().map(|s| s.to_bits()).collect::<Vec<_>>()
+        );
     }
 
     #[test]
