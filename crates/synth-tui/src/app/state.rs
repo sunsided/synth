@@ -2,6 +2,7 @@
 //! the bridge between the UI thread and the audio engine.
 
 use crossbeam_channel::Sender;
+use synthie::param::{Param, ParamKind};
 use synthie::params::{AudioEvent, MidiNote, Patch, SynthParams};
 use synthie::presets::sid;
 use synthie::sfx::{self, SfxKind};
@@ -365,245 +366,27 @@ impl AppState {
 
     /// Adjust the currently focused parameter by `delta` (+1.0 / -1.0 per step).
     pub fn adjust_param(&mut self, delta: f32) {
-        match self.selected_section {
-            Section::Osc => self.adjust_osc(delta),
-            Section::Env => self.adjust_env(delta),
-            Section::Filter => self.adjust_filter(delta),
-            Section::Lfo => self.adjust_lfo(delta),
-            Section::Mod => self.adjust_mod(delta),
-            Section::Sfx => self.adjust_sfx(delta),
-            Section::Fx => self.adjust_fx(delta),
-            Section::Presets => self.adjust_preset(delta),
+        match (self.selected_section, self.selected_param) {
+            (Section::Presets, _) => return self.adjust_preset(delta),
+            (Section::Sfx, 0) => self.cycle_sfx_action(delta),
+            (section, row) => {
+                if let Some((param, step)) = row_param(section, row) {
+                    let value = step.apply(param, param.get(&self.params), delta);
+                    // `Param::set` clamps to the engine's own range.
+                    param.set(&mut self.params, value);
+                }
+            }
         }
-        if self.selected_section != Section::Presets {
-            self.push_params();
-        }
+        self.push_params();
     }
 
-    /// Apply `delta` to the focused oscillator parameter.
-    fn adjust_osc(&mut self, d: f32) {
-        match self.selected_param {
-            0 => {
-                self.params.osc.waveform = if d > 0.0 {
-                    self.params.osc.waveform.next()
-                } else {
-                    self.params.osc.waveform.prev()
-                };
-            }
-            1 => {
-                self.params.osc.pulse_width =
-                    (self.params.osc.pulse_width + d * 0.05).clamp(0.05, 0.95);
-            }
-            2 => {
-                self.params.osc.detune = (self.params.osc.detune + d * 5.0).clamp(-100.0, 100.0);
-            }
-            3 => {
-                self.params.osc.noise_mix = (self.params.osc.noise_mix + d * 0.05).clamp(0.0, 1.0);
-            }
-            // 4 = separator row — no-op, falls through to wildcard
-            5 => {
-                self.params.osc2.waveform = if d > 0.0 {
-                    self.params.osc2.waveform.next()
-                } else {
-                    self.params.osc2.waveform.prev()
-                };
-            }
-            6 => {
-                self.params.osc2.detune = (self.params.osc2.detune + d * 5.0).clamp(-100.0, 100.0);
-            }
-            7 if d != 0.0 => {
-                self.params.osc2.semitones =
-                    (self.params.osc2.semitones.round() + d.signum()).clamp(-24.0, 24.0);
-            }
-            8 => {
-                self.params.osc2.osc2_mix = (self.params.osc2.osc2_mix + d * 0.05).clamp(0.0, 1.0);
-            }
-            9 if d != 0.0 => {
-                self.params.osc2.hard_sync = !self.params.osc2.hard_sync;
-            }
-            _ => {}
-        }
-    }
-
-    /// Apply `delta` to the focused envelope parameter.
-    fn adjust_env(&mut self, d: f32) {
-        match self.selected_param {
-            0 => self.params.env.attack = (self.params.env.attack + d * 0.01).clamp(0.001, 4.0),
-            1 => self.params.env.decay = (self.params.env.decay + d * 0.01).clamp(0.001, 4.0),
-            2 => self.params.env.sustain = (self.params.env.sustain + d * 0.05).clamp(0.0, 1.0),
-            3 => self.params.env.release = (self.params.env.release + d * 0.05).clamp(0.001, 8.0),
-            4 if d != 0.0 => {
-                self.params.env.env_reverse = !self.params.env.env_reverse;
-            }
-            5 => {
-                self.params.global.glide_time =
-                    (self.params.global.glide_time + d * 0.01).clamp(0.0, 2.0);
-            }
-            _ => {}
-        }
-    }
-
-    /// Apply `delta` to the focused filter parameter.
-    fn adjust_filter(&mut self, d: f32) {
-        match self.selected_param {
-            0 if d != 0.0 => {
-                self.params.filter.filter_mode = self.params.filter.filter_mode.next();
-            }
-            1 => {
-                self.params.filter.cutoff = (self.params.filter.cutoff
-                    * if d > 0.0 { 1.12 } else { 0.89 })
-                .clamp(20.0, 18000.0);
-            }
-            2 => {
-                self.params.filter.resonance =
-                    (self.params.filter.resonance + d * 0.05).clamp(0.0, 0.99);
-            }
-            3 => {
-                self.params.filter.drive = (self.params.filter.drive + d * 0.05).clamp(0.0, 1.0);
-            }
-            _ => {}
-        }
-    }
-
-    /// Apply `delta` to the focused LFO parameter.
-    fn adjust_lfo(&mut self, d: f32) {
-        match self.selected_param {
-            0 => {
-                self.params.lfo.lfo_rate = (self.params.lfo.lfo_rate
-                    * if d > 0.0 { 1.15 } else { 0.87 })
-                .clamp(0.01, 20.0);
-            }
-            1 => {
-                self.params.lfo.lfo_depth = (self.params.lfo.lfo_depth + d * 0.05).clamp(0.0, 1.0);
-            }
-            2 if d != 0.0 => {
-                self.params.lfo.lfo_target = self.params.lfo.lfo_target.next();
-            }
-            _ => {}
-        }
-    }
-
-    /// Apply `delta` to the focused modulation parameter (Mod section).
-    fn adjust_mod(&mut self, d: f32) {
-        match self.selected_param {
-            // LFO1
-            0 => {
-                self.params.lfo.lfo_rate = (self.params.lfo.lfo_rate
-                    * if d > 0.0 { 1.15 } else { 0.87 })
-                .clamp(0.01, 20.0);
-            }
-            1 => {
-                self.params.lfo.lfo_depth = (self.params.lfo.lfo_depth + d * 0.05).clamp(0.0, 1.0);
-            }
-            2 if d != 0.0 => {
-                self.params.lfo.lfo_shape = if d > 0.0 {
-                    self.params.lfo.lfo_shape.next()
-                } else {
-                    self.params.lfo.lfo_shape.prev()
-                };
-            }
-            3 if d != 0.0 => {
-                self.params.lfo.lfo_target = if d > 0.0 {
-                    self.params.lfo.lfo_target.next()
-                } else {
-                    self.params.lfo.lfo_target.prev()
-                };
-            }
-            // 4 = separator — no-op
-            // LFO2
-            5 => {
-                self.params.lfo2.lfo_rate = (self.params.lfo2.lfo_rate
-                    * if d > 0.0 { 1.15 } else { 0.87 })
-                .clamp(0.01, 20.0);
-            }
-            6 => {
-                self.params.lfo2.lfo_depth =
-                    (self.params.lfo2.lfo_depth + d * 0.05).clamp(0.0, 1.0);
-            }
-            7 if d != 0.0 => {
-                self.params.lfo2.lfo_shape = if d > 0.0 {
-                    self.params.lfo2.lfo_shape.next()
-                } else {
-                    self.params.lfo2.lfo_shape.prev()
-                };
-            }
-            8 if d != 0.0 => {
-                self.params.lfo2.lfo_target = if d > 0.0 {
-                    self.params.lfo2.lfo_target.next()
-                } else {
-                    self.params.lfo2.lfo_target.prev()
-                };
-            }
-            // 9 = separator — no-op
-            // Filter envelope
-            10 => {
-                self.params.filter_env.attack =
-                    (self.params.filter_env.attack + d * 0.01).clamp(0.001, 4.0);
-            }
-            11 => {
-                self.params.filter_env.decay =
-                    (self.params.filter_env.decay + d * 0.01).clamp(0.001, 4.0);
-            }
-            12 => {
-                self.params.filter_env.sustain =
-                    (self.params.filter_env.sustain + d * 0.05).clamp(0.0, 1.0);
-            }
-            13 => {
-                self.params.filter_env.release =
-                    (self.params.filter_env.release + d * 0.05).clamp(0.001, 8.0);
-            }
-            14 => {
-                self.params.filter_env.depth =
-                    (self.params.filter_env.depth + d * 0.05).clamp(-1.0, 1.0);
-            }
-            // 15 = separator — no-op
-            // Pitch envelope
-            16 => {
-                self.params.pitch_env.attack =
-                    (self.params.pitch_env.attack + d * 0.01).clamp(0.001, 4.0);
-            }
-            17 => {
-                self.params.pitch_env.decay =
-                    (self.params.pitch_env.decay + d * 0.01).clamp(0.001, 4.0);
-            }
-            18 => {
-                self.params.pitch_env.sustain =
-                    (self.params.pitch_env.sustain + d * 0.05).clamp(0.0, 1.0);
-            }
-            19 => {
-                self.params.pitch_env.release =
-                    (self.params.pitch_env.release + d * 0.05).clamp(0.001, 8.0);
-            }
-            20 => {
-                self.params.pitch_env.depth =
-                    (self.params.pitch_env.depth + d * 0.05).clamp(-1.0, 1.0);
-            }
-            _ => {}
-        }
-    }
-
-    /// Apply `delta` to the focused sound-effect parameter.
-    fn adjust_sfx(&mut self, d: f32) {
-        let sfx = &mut self.params.sfx;
-        match self.selected_param {
-            0 if d != 0.0 => {
-                let n = SfxAction::ALL.len();
-                self.sfx_action = if d > 0.0 {
-                    (self.sfx_action + 1) % n
-                } else {
-                    (self.sfx_action + n - 1) % n
-                };
-            }
-            1 => sfx.slide = (sfx.slide + d * 0.25).clamp(-20.0, 20.0),
-            2 => sfx.slide_accel = (sfx.slide_accel + d).clamp(-100.0, 100.0),
-            3 => sfx.min_freq = (sfx.min_freq + d * 10.0).clamp(0.0, 2000.0),
-            4 if d != 0.0 => {
-                sfx.jump_semitones = (sfx.jump_semitones.round() + d.signum()).clamp(-24.0, 24.0);
-            }
-            5 => sfx.jump_time = (sfx.jump_time + d * 0.01).clamp(0.0, 2.0),
-            6 => sfx.pw_sweep = (sfx.pw_sweep + d * 0.1).clamp(-4.0, 4.0),
-            7 => sfx.repeat_rate = (sfx.repeat_rate + d * 0.5).clamp(0.0, 50.0),
-            _ => {}
+    /// Cycle the SFX section's action selector.
+    fn cycle_sfx_action(&mut self, d: f32) {
+        let n = SfxAction::ALL.len();
+        if d > 0.0 {
+            self.sfx_action = (self.sfx_action + 1) % n;
+        } else if d < 0.0 {
+            self.sfx_action = (self.sfx_action + n - 1) % n;
         }
     }
 
@@ -657,22 +440,6 @@ impl AppState {
             Ok(()) => format!("Exported: {path}"),
             Err(e) => format!("Export failed: {e}"),
         };
-    }
-
-    /// Apply `delta` to the focused FX parameter.
-    fn adjust_fx(&mut self, d: f32) {
-        match self.selected_param {
-            0 => self.params.fx.reverb_mix = (self.params.fx.reverb_mix + d * 0.05).clamp(0.0, 1.0),
-            1 => {
-                self.params.fx.reverb_size =
-                    (self.params.fx.reverb_size + d * 0.05).clamp(0.0, 1.0);
-            }
-            2 => {
-                self.params.fx.reverb_damping =
-                    (self.params.fx.reverb_damping + d * 0.05).clamp(0.0, 1.0);
-            }
-            _ => {}
-        }
     }
 
     /// Move the preset selection cursor up or down.
@@ -980,6 +747,103 @@ fn log(v: f32, lo: f32, hi: f32) -> f32 {
     (v.max(lo) / lo).ln() / (hi / lo).ln()
 }
 
+/// How one key press moves a parameter.
+#[derive(Clone, Copy)]
+enum Step {
+    /// Add this much per press.
+    Add(f32),
+    /// Multiply by the first factor going up, the second going down.
+    Scale(f32, f32),
+    /// Round, then one whole unit per press (semitones).
+    Whole,
+    /// Next or previous choice, wrapping; flips a toggle.
+    Cycle,
+}
+
+impl Step {
+    /// `value` moved one step in the direction of `d`, before clamping.
+    fn apply(self, param: Param, value: f32, d: f32) -> f32 {
+        match self {
+            Step::Add(step) => value + d * step,
+            // Rates may be 0 in a loaded patch; a floor keeps them movable.
+            Step::Scale(up, down) => value.max(0.01) * if d > 0.0 { up } else { down },
+            Step::Whole => value.round() + d.signum(),
+            Step::Cycle => match param.kind() {
+                ParamKind::Choice(names) if d != 0.0 => {
+                    #[allow(clippy::cast_precision_loss)] // a handful of variants
+                    let n = names.len() as f32;
+                    (value + d.signum()).rem_euclid(n)
+                }
+                ParamKind::Toggle if d != 0.0 => 1.0 - value,
+                _ => value,
+            },
+        }
+    }
+}
+
+/// The parameter on `row` of `section`, and how a key press moves it.
+/// Separator rows, the SFX action selector and the preset list have none.
+fn row_param(section: Section, row: usize) -> Option<(Param, Step)> {
+    use Param as P;
+    use Step::{Add, Cycle, Scale, Whole};
+    const RATE: Step = Scale(1.15, 0.87);
+    Some(match (section, row) {
+        (Section::Osc, 0) => (P::OscWaveform, Cycle),
+        (Section::Osc, 1) => (P::OscPulseWidth, Add(0.05)),
+        (Section::Osc, 2) => (P::OscDetune, Add(5.0)),
+        (Section::Osc, 3) => (P::OscNoiseMix, Add(0.05)),
+        (Section::Osc, 5) => (P::Osc2Waveform, Cycle),
+        (Section::Osc, 6) => (P::Osc2Detune, Add(5.0)),
+        (Section::Osc, 7) => (P::Osc2Semitones, Whole),
+        (Section::Osc, 8) => (P::Osc2Mix, Add(0.05)),
+        (Section::Osc, 9) => (P::Osc2HardSync, Cycle),
+
+        (Section::Env, 0) => (P::EnvAttack, Add(0.01)),
+        (Section::Env, 1) => (P::EnvDecay, Add(0.01)),
+        (Section::Env, 2) => (P::EnvSustain, Add(0.05)),
+        (Section::Env, 3) => (P::EnvRelease, Add(0.05)),
+        (Section::Env, 4) => (P::EnvReverse, Cycle),
+        (Section::Env, 5) => (P::GlideTime, Add(0.01)),
+
+        (Section::Filter, 0) => (P::FilterMode, Cycle),
+        (Section::Filter, 1) => (P::FilterCutoff, Scale(1.12, 0.89)),
+        (Section::Filter, 2) => (P::FilterResonance, Add(0.05)),
+        (Section::Filter, 3) => (P::FilterDrive, Add(0.05)),
+
+        (Section::Lfo | Section::Mod, 0) => (P::LfoRate, RATE),
+        (Section::Lfo | Section::Mod, 1) => (P::LfoDepth, Add(0.05)),
+        (Section::Lfo, 2) | (Section::Mod, 3) => (P::LfoTarget, Cycle),
+        (Section::Mod, 2) => (P::LfoShape, Cycle),
+        (Section::Mod, 5) => (P::Lfo2Rate, RATE),
+        (Section::Mod, 6) => (P::Lfo2Depth, Add(0.05)),
+        (Section::Mod, 7) => (P::Lfo2Shape, Cycle),
+        (Section::Mod, 8) => (P::Lfo2Target, Cycle),
+        (Section::Mod, 10) => (P::FilterEnvAttack, Add(0.01)),
+        (Section::Mod, 11) => (P::FilterEnvDecay, Add(0.01)),
+        (Section::Mod, 12) => (P::FilterEnvSustain, Add(0.05)),
+        (Section::Mod, 13) => (P::FilterEnvRelease, Add(0.05)),
+        (Section::Mod, 14) => (P::FilterEnvDepth, Add(0.05)),
+        (Section::Mod, 16) => (P::PitchEnvAttack, Add(0.01)),
+        (Section::Mod, 17) => (P::PitchEnvDecay, Add(0.01)),
+        (Section::Mod, 18) => (P::PitchEnvSustain, Add(0.05)),
+        (Section::Mod, 19) => (P::PitchEnvRelease, Add(0.05)),
+        (Section::Mod, 20) => (P::PitchEnvDepth, Add(0.05)),
+
+        (Section::Sfx, 1) => (P::SfxSlide, Add(0.25)),
+        (Section::Sfx, 2) => (P::SfxSlideAccel, Add(1.0)),
+        (Section::Sfx, 3) => (P::SfxMinFreq, Add(10.0)),
+        (Section::Sfx, 4) => (P::SfxJumpSemitones, Whole),
+        (Section::Sfx, 5) => (P::SfxJumpTime, Add(0.01)),
+        (Section::Sfx, 6) => (P::SfxPwSweep, Add(0.1)),
+        (Section::Sfx, 7) => (P::SfxRepeatRate, Add(0.5)),
+
+        (Section::Fx, 0) => (P::ReverbMix, Add(0.05)),
+        (Section::Fx, 1) => (P::ReverbSize, Add(0.05)),
+        (Section::Fx, 2) => (P::ReverbDamping, Add(0.05)),
+        _ => return None,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -987,6 +851,42 @@ mod tests {
     fn state() -> AppState {
         let (tx, _rx) = crossbeam_channel::unbounded();
         AppState::new(tx)
+    }
+
+    #[test]
+    fn every_adjustable_row_moves_a_parameter() {
+        for &section in Section::ALL {
+            for row in 0..section.param_count() {
+                let selector = section == Section::Sfx && row == 0;
+                assert_eq!(
+                    row_param(section, row).is_some(),
+                    !section.is_display_row(row) && !selector,
+                    "{section:?} row {row}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn steps_keep_the_engine_range() {
+        let mut s = state();
+        s.selected_section = Section::Env;
+        s.selected_param = 5; // glide: the engine allows up to 10 s
+        s.params.global.glide_time = 5.0;
+        s.adjust_param(-1.0);
+        assert!((s.params.global.glide_time - 4.99).abs() < 1e-5);
+
+        s.selected_section = Section::Lfo;
+        s.selected_param = 0; // a rate of 0 must still move up
+        s.params.lfo.lfo_rate = 0.0;
+        s.adjust_param(1.0);
+        assert!(s.params.lfo.lfo_rate > 0.0);
+
+        s.selected_param = 2; // choices wrap both ways
+        let target = s.params.lfo.lfo_target;
+        s.adjust_param(1.0);
+        s.adjust_param(-1.0);
+        assert_eq!(s.params.lfo.lfo_target, target);
     }
 
     #[test]
