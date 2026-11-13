@@ -64,7 +64,7 @@ impl Sequencer for Busy {
     fn tick(&mut self, sample_rate: f32, out: &mut Vec<AudioEvent>) -> usize {
         self.step = self.step.wrapping_add(1);
         for ch in 0..4 {
-            let note = MidiNote(36 + (self.step + ch * 7) % 48);
+            let note = MidiNote(36 + self.step.wrapping_add(ch * 7) % 48);
             let ch = ChannelNo(ch);
             out.push(AudioEvent::NoteOffChannel(
                 ch,

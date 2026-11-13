@@ -167,7 +167,7 @@ impl Sequencer for Song {
         self.step = self.step.wrapping_add(1);
         for ch in 0..4 {
             let ch_no = ChannelNo(ch);
-            let note = MidiNote(36 + (self.step.wrapping_mul(5) + ch * 7) % 48);
+            let note = MidiNote(36 + self.step.wrapping_mul(5).wrapping_add(ch * 7) % 48);
             out.push(AudioEvent::NoteOffChannel(ch_no, MidiNote(note.0 ^ 1)));
             out.push(AudioEvent::NoteOnChannel(ch_no, note));
         }
