@@ -88,7 +88,8 @@ impl std::error::Error for ModError {}
 /// Rows follow playback order: pattern breaks (`Dxx`) and position jumps
 /// (`Bxx`) are taken. A note's period becomes a MIDI note (C-2 = 60), a
 /// volume-zero effect (`C00`) without a note becomes a note-off, and the
-/// first `Fxx` sets the tempo. Track presets keep their defaults.
+/// first `Fxx` sets the tempo. Drum samples go to the drum track, and each
+/// synth track gets a bass, pad or lead preset for what it plays.
 ///
 /// # Errors
 ///
@@ -103,11 +104,7 @@ pub fn import(bytes: &[u8], start: usize) -> Result<(String, Song), ModError> {
     }
     let song_len = usize::from(bytes[950]).clamp(1, 128);
     let order = &bytes[952..1080];
-    // ProTracker stores every pattern up to the highest in the whole table.
-    let patterns = usize::from(*order.iter().max().expect("128 entries")) + 1;
-    if bytes.len() < HEADER_LEN + patterns * PATTERN_LEN {
-        return Err(ModError::Truncated);
-    }
+    let patterns = pattern_count(bytes, order, song_len).ok_or(ModError::Truncated)?;
     if start >= song_len {
         return Err(ModError::StartPastEnd {
             start,
@@ -198,6 +195,31 @@ pub fn import(bytes: &[u8], start: usize) -> Result<(String, Song), ModError> {
     song.bpm =
         (6.0 * f32::from(bpm.unwrap_or(125)) / f32::from(speed.unwrap_or(6))).clamp(30.0, 300.0);
     Ok((title, song))
+}
+
+/// How many patterns the file stores. `ProTracker` stores every pattern up
+/// to the highest in the whole 128-entry order table, but some converted or
+/// edited files leave stray values in the unplayed tail and store only the
+/// played ones. Prefer the count whose patterns plus sample data fill the
+/// file, then the one whose patterns at least fit; `None` if neither does.
+fn pattern_count(bytes: &[u8], order: &[u8], song_len: usize) -> Option<usize> {
+    let highest = |order: &[u8]| usize::from(*order.iter().max().unwrap_or(&0)) + 1;
+    let candidates = [highest(order), highest(&order[..song_len])];
+    let sample_bytes: usize = bytes[20..20 + SAMPLES * 30]
+        .as_chunks::<30>()
+        .0
+        .iter()
+        .map(|h| usize::from(u16::from_be_bytes([h[22], h[23]])) * 2)
+        .sum();
+    let patterns_end = |n: usize| HEADER_LEN + n * PATTERN_LEN;
+    candidates
+        .into_iter()
+        .find(|&n| bytes.len() >= patterns_end(n) + sample_bytes)
+        .or_else(|| {
+            candidates
+                .into_iter()
+                .find(|&n| bytes.len() >= patterns_end(n))
+        })
 }
 
 /// Period, sample number, effect and parameter of a pattern cell. A sample
@@ -641,5 +663,33 @@ mod tests {
         b[HEADER_LEN..HEADER_LEN + 4].copy_from_slice(&[0xF1, 0xAC, 0xF0, 0]);
         let (_, song) = import(&b, 0).unwrap();
         assert_eq!(song.pattern.synth[0][0], Step::Note(MidiNote(60)));
+    }
+
+    #[test]
+    fn stray_order_entries_past_the_song_are_tolerated() {
+        // One played pattern, a stray 9 in the unplayed order tail, and only
+        // the played pattern stored: samples follow pattern 0, not pattern 9.
+        let mut b = module(1);
+        b[952 + 100] = 9;
+        add_sample(&mut b, 1, &wave(2_000, 50), false);
+        for row in [0, 4, 8, 12] {
+            let at = HEADER_LEN + row * SYNTH_TRACKS * 4;
+            b[at..at + 4].copy_from_slice(&[0x01, 0xAC, 0x10, 0]); // sample 1, C-2
+        }
+        let (_, song) = import(&b, 0).unwrap();
+        assert!(
+            song.pattern.drums[0].has(DrumHit::Kick),
+            "sample data found"
+        );
+
+        // A file that does store all ten patterns still uses all ten.
+        let mut full = module(1);
+        full[952 + 100] = 9;
+        full.resize(HEADER_LEN + 10 * PATTERN_LEN, 0);
+        assert_eq!(pattern_count(&full, &full[952..1080], 1), Some(10));
+        assert_eq!(
+            pattern_count(&full[..HEADER_LEN], &full[952..1080], 1),
+            None
+        );
     }
 }
