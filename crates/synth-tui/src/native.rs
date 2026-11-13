@@ -64,6 +64,7 @@ pub fn run_tui() -> Result<()> {
     let mut terminal = Terminal::new(backend)?;
 
     let mut state = AppState::new(event_tx);
+    state.load_user_presets(crate::preset_store::load());
     let mut scope = ScopeBuf::new(scope_rx, SCOPE_CAPACITY);
 
     let fallback = (!keyboard_enhance).then(ReleaseFallback::default);

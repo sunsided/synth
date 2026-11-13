@@ -13,26 +13,54 @@ pub fn save(patches: &[Patch]) -> Result<()> {
     write(&json)
 }
 
+/// The patches saved by [`save`]; empty if nothing was saved yet.
+///
+/// # Errors
+///
+/// Fails if the saved patches exist but cannot be read or parsed.
+pub fn load() -> Result<Vec<Patch>> {
+    match read()? {
+        Some(json) => serde_json::from_str(&json).context("deserialise patches"),
+        None => Ok(Vec::new()),
+    }
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 fn write(json: &str) -> Result<()> {
-    let path = native::user_presets_path();
-    std::fs::write(&path, json).with_context(|| format!("write {}", path.display()))
+    native::write(&native::user_presets_path(), json)
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn read() -> Result<Option<String>> {
+    native::read(&native::user_presets_path())
 }
 
 #[cfg(target_arch = "wasm32")]
 fn write(json: &str) -> Result<()> {
-    let storage = web_sys::window()
-        .and_then(|w| w.local_storage().ok().flatten())
-        .context("localStorage unavailable")?;
-    storage
+    web::storage()?
         .set_item(web::STORAGE_KEY, json)
         .map_err(|_| anyhow::anyhow!("localStorage is full or blocked"))
 }
 
 #[cfg(target_arch = "wasm32")]
+fn read() -> Result<Option<String>> {
+    web::storage()?
+        .get_item(web::STORAGE_KEY)
+        .map_err(|_| anyhow::anyhow!("localStorage is blocked"))
+}
+
+#[cfg(target_arch = "wasm32")]
 mod web {
+    use anyhow::{Context, Result};
+
     /// `localStorage` key holding the user presets as JSON.
     pub const STORAGE_KEY: &str = "synthie.user-presets";
+
+    pub fn storage() -> Result<web_sys::Storage> {
+        web_sys::window()
+            .and_then(|w| w.local_storage().ok().flatten())
+            .context("localStorage unavailable")
+    }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
@@ -40,7 +68,6 @@ mod native {
     use std::path::{Path, PathBuf};
 
     use anyhow::{Context, Result};
-    use synthie::params::Patch;
 
     /// Return the path used to persist user presets.
     /// Stored next to the executable (or current directory as fallback).
@@ -53,16 +80,37 @@ mod native {
         PathBuf::from("synth_presets.json")
     }
 
-    /// Load patches from disk. Returns an empty Vec if the file does not exist.
-    // TODO: call this on startup to merge saved user presets with the built-in bank.
-    #[allow(dead_code)]
-    pub fn load_patches(path: &Path) -> Result<Vec<Patch>> {
-        if !path.exists() {
-            return Ok(Vec::new());
+    pub fn write(path: &Path, json: &str) -> Result<()> {
+        std::fs::write(path, json).with_context(|| format!("write {}", path.display()))
+    }
+
+    /// The file's contents, or `None` if it does not exist.
+    pub fn read(path: &Path) -> Result<Option<String>> {
+        match std::fs::read_to_string(path) {
+            Ok(json) => Ok(Some(json)),
+            Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+            Err(e) => Err(e).with_context(|| format!("read {}", path.display())),
         }
-        let json =
-            std::fs::read_to_string(path).with_context(|| format!("read {}", path.display()))?;
-        let patches: Vec<Patch> = serde_json::from_str(&json).context("deserialise patches")?;
-        Ok(patches)
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use synthie::params::Patch;
+        use synthie::presets::sid::default_patches;
+
+        #[test]
+        fn saved_patches_read_back_unchanged() {
+            let path = std::env::temp_dir()
+                .join(format!("synthie-presets-test-{}.json", std::process::id()));
+            assert_eq!(read(&path).unwrap(), None, "a missing file is no error");
+
+            let patches = vec![Patch::new("Mine", default_patches()[2].params.clone())];
+            write(&path, &serde_json::to_string(&patches).unwrap()).unwrap();
+            let json = read(&path).unwrap().unwrap();
+            std::fs::remove_file(&path).unwrap();
+            let loaded: Vec<Patch> = serde_json::from_str(&json).unwrap();
+            assert_eq!(loaded, patches);
+        }
     }
 }

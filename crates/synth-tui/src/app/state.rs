@@ -165,6 +165,9 @@ pub struct AppState {
     sfx_action: usize,
     /// Seed of the next generated sound effect.
     sfx_seed: u64,
+    /// Why saving is off: the saved presets could not be read, and saving
+    /// would overwrite them.
+    save_blocked: Option<String>,
     /// Channel to send `AudioEvent` messages to the audio thread.
     audio_tx: Sender<AudioEvent>,
 }
@@ -202,6 +205,7 @@ impl AppState {
             sfx_action: 0,
             // Different sounds each session; no clock needed (wasm-safe).
             sfx_seed: std::hash::BuildHasher::hash_one(&std::hash::RandomState::new(), 0_u8),
+            save_blocked: None,
             audio_tx,
         }
     }
@@ -293,18 +297,43 @@ impl AppState {
     /// If a patch with the same name already exists it is overwritten; otherwise
     /// a new entry is appended.  Persists the bank as a best-effort operation.
     pub fn save_current_as_preset(&mut self, name: &str) {
-        let patch = Patch::new(name, self.params.clone());
         self.current_patch_name = name.to_string();
-        if let Some(existing) = self.patches.iter_mut().find(|p| p.name == name) {
-            existing.params = self.params.clone();
+        self.selected_preset = self.upsert_patch(Patch::new(name, self.params.clone()));
+        self.status_msg = if let Some(why) = &self.save_blocked {
+            format!("Kept {name} for this session only: {why}")
+        } else if let Err(e) = crate::preset_store::save(&self.patches) {
+            format!("Save failed: {e}")
+        } else {
+            format!("Saved: {name}")
+        };
+    }
+
+    /// Add the presets saved in earlier sessions to the bank, replacing
+    /// built-ins of the same name. If they could not be read, saving is
+    /// turned off so the next save does not overwrite them.
+    pub fn load_user_presets(&mut self, saved: anyhow::Result<Vec<Patch>>) {
+        match saved {
+            Ok(saved) => {
+                for patch in saved {
+                    self.upsert_patch(patch);
+                }
+            }
+            Err(e) => {
+                let why = format!("saved presets unreadable ({e:#})");
+                self.status_msg = format!("{why}; saving is off");
+                self.save_blocked = Some(why);
+            }
+        }
+    }
+
+    /// Replace the patch named like `patch`, or append it; returns its index.
+    fn upsert_patch(&mut self, patch: Patch) -> usize {
+        if let Some(i) = self.patches.iter().position(|p| p.name == patch.name) {
+            self.patches[i] = patch;
+            i
         } else {
             self.patches.push(patch);
-            self.selected_preset = self.patches.len() - 1;
-        }
-        if let Err(e) = crate::preset_store::save(&self.patches) {
-            self.status_msg = format!("Save failed: {e}");
-        } else {
-            self.status_msg = format!("Saved: {name}");
+            self.patches.len() - 1
         }
     }
 
@@ -887,6 +916,34 @@ mod tests {
         s.adjust_param(1.0);
         s.adjust_param(-1.0);
         assert_eq!(s.params.lfo.lfo_target, target);
+    }
+
+    #[test]
+    fn saved_presets_join_the_bank_and_replace_same_named_ones() {
+        let mut s = state();
+        let builtins = s.patches.len();
+        let first = s.patches[0].name.clone();
+        let tweaked = Patch::new(first.clone(), s.patches[3].params.clone());
+        let mine = Patch::new("Mine", s.patches[2].params.clone());
+        s.load_user_presets(Ok(vec![tweaked.clone(), mine.clone()]));
+        assert_eq!(s.patches.len(), builtins + 1);
+        assert_eq!(s.patches[0], tweaked);
+        assert_eq!(s.patches[builtins], mine);
+    }
+
+    #[test]
+    fn unreadable_presets_turn_saving_off_instead_of_overwriting_them() {
+        let mut s = state();
+        s.load_user_presets(Err(anyhow::anyhow!("bad json")));
+        assert!(s.status_msg.contains("bad json"), "{}", s.status_msg);
+        // Must not reach the file: this would write next to the test binary.
+        s.save_current_as_preset("Mine");
+        assert!(
+            s.status_msg.contains("this session only"),
+            "{}",
+            s.status_msg
+        );
+        assert_eq!(s.patches.last().unwrap().name, "Mine");
     }
 
     #[test]
