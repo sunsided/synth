@@ -11,19 +11,22 @@ use xmrsplayer::prelude::XmrsPlayer;
 
 /// The original module, playing or silent on a second cpal stream.
 pub struct Reference {
+    /// Stored with `Release` after `restart`, so the audio thread, loading
+    /// it with `Acquire`, never starts playing before it sees the rewind.
     playing: Arc<AtomicBool>,
-    /// Set to have the audio thread rewind to the start.
+    /// Set to have the audio thread rewind to the start position.
     restart: Arc<AtomicBool>,
     _stream: cpal::Stream,
 }
 
 impl Reference {
-    /// Load `bytes` as a MOD and open a silent output stream for it.
+    /// Load `bytes` as a MOD and open a silent output stream for it; play
+    /// starts at order position `start`, where the grid's import began.
     ///
     /// # Errors
     ///
     /// Fails if the module does not load or no output stream opens.
-    pub fn new(bytes: &[u8]) -> Result<Self> {
+    pub fn new(bytes: &[u8], start: usize) -> Result<Self> {
         let module = Module::load_mod(bytes).map_err(|e| anyhow::anyhow!("{e:?}"))?;
         // shortcut: leaks the one module per run because the player borrows it;
         // own it alongside the player if modules ever get swapped at runtime.
@@ -48,16 +51,17 @@ impl Reference {
             .build_output_stream(
                 config.into(),
                 move |data: &mut [f32], _: &cpal::OutputCallbackInfo| {
-                    if restart_cb.swap(false, Ordering::Relaxed) {
-                        player.goto(0, 0, 0);
+                    let playing = playing_cb.load(Ordering::Acquire);
+                    if restart_cb.swap(false, Ordering::Acquire) {
+                        player.goto(start, 0, 0);
                     }
-                    if !playing_cb.load(Ordering::Relaxed) {
+                    if !playing {
                         data.fill(0.0);
                         return;
                     }
                     for frame in data.chunks_mut(channels) {
-                        let l = f32::from(player.next().unwrap_or(0)) / 32_768.0;
-                        let r = f32::from(player.next().unwrap_or(0)) / 32_768.0;
+                        let (l, r) = player.sample(true).unwrap_or((0, 0));
+                        let (l, r) = (f32::from(l) / 32_768.0, f32::from(r) / 32_768.0);
                         match frame {
                             [mono] => *mono = f32::midpoint(l, r),
                             [fl, fr, rest @ ..] => {
@@ -84,18 +88,18 @@ impl Reference {
     /// Whether the original is sounding.
     #[must_use]
     pub fn is_playing(&self) -> bool {
-        self.playing.load(Ordering::Relaxed)
+        self.playing.load(Ordering::Acquire)
     }
 
-    /// Play from the start of the song.
+    /// Play from the start position.
     pub fn play(&self) {
         self.restart.store(true, Ordering::Relaxed);
-        self.playing.store(true, Ordering::Relaxed);
+        self.playing.store(true, Ordering::Release);
     }
 
     /// Fall silent.
     pub fn stop(&self) {
-        self.playing.store(false, Ordering::Relaxed);
+        self.playing.store(false, Ordering::Release);
     }
 }
 

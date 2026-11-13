@@ -73,12 +73,14 @@ pub fn main() -> Result<()> {
     let mut state = TrackerState::new(event_tx, player, audio_ok);
     #[cfg(feature = "mod-import")]
     if let Some((title, song, reference)) = module {
-        state.status_msg = format!(
-            "{title}: {} rows imported · Space plays synths, F2 the original",
-            song.pattern.len
-        );
+        let rows = song.pattern.len;
+        state.status_msg = match &reference {
+            Ok(_) => format!("{title}: {rows} rows imported · Space plays synths, F2 the original"),
+            // The grid still works without the original; only F2 is lost.
+            Err(e) => format!("{title}: {rows} rows imported · no original (F2): {e:#}"),
+        };
         state.song = song;
-        state.reference = Some(reference);
+        state.reference = reference.ok();
     }
     let mut scope = ScopeBuf::new(scope_rx, SCOPE_CAPACITY);
 
@@ -105,7 +107,7 @@ fn reject_file_args() -> Result<()> {
 /// `synthie-tracker [song.mod [order-position]]`: import the MOD into the
 /// grid and open its original sound for reference playback.
 #[cfg(feature = "mod-import")]
-fn load_mod_args() -> Result<Option<(String, Song, Reference)>> {
+fn load_mod_args() -> Result<Option<(String, Song, Result<Reference>)>> {
     let mut args = std::env::args_os().skip(1);
     let Some(path) = args.next() else {
         return Ok(None);
@@ -119,7 +121,8 @@ fn load_mod_args() -> Result<Option<(String, Song, Reference)>> {
     let bytes = std::fs::read(&path).with_context(|| format!("cannot read {}", path.display()))?;
     let (title, song) = modfile::import(&bytes, start)
         .with_context(|| format!("cannot import {}", path.display()))?;
-    let reference = Reference::new(&bytes)?;
+    let reference =
+        Reference::new(&bytes, start).with_context(|| format!("cannot play {}", path.display()));
     Ok(Some((title, song, reference)))
 }
 
