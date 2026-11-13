@@ -147,6 +147,7 @@ fn base_patch() -> SynthParams {
         },
         #[cfg(feature = "arp")]
         arp: synthie::params::ArpParams::default(),
+        sfx: synthie::params::SfxParams::default(),
     }
 }
 

@@ -17,6 +17,9 @@ A Rust synthesizer engine library with polyphonic voices, ADSR envelopes, state-
 - **State-variable filter** - Low-pass, Band-pass, and High-pass with cutoff, resonance, and drive
 - **LFO** targeting pitch, pulse width, filter cutoff, or volume
 - **Reverb FX** with room size and damping controls
+- **Sound-effect modulation:** pitch slide with acceleration and a cutoff frequency, one-shot pitch jump, pulse-width sweep, and repeat
+- **Sound-effect generators** by category, plus randomize and mutate (`sfx` module)
+- **Offline rendering** of a note to samples, and 16-bit WAV export (`render` module)
 - **Multi-timbral channels** via `ChannelNo` newtypes
 - **Drum machine** beside the voice pools: kick, snare, hi-hats, crash, toms and clap
 - **Sample-accurate sequencing** on any host via `Sequencer` and `SequencedProcessor`

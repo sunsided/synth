@@ -31,6 +31,9 @@ A polyphonic DSP engine library for Rust. Ships with a terminal synthesizer as i
 - **State-variable filter** — Low-pass, Band-pass, and High-pass modes with cutoff, resonance, and pre-filter drive
 - **LFO** with selectable targets: pitch (vibrato), pulse width, filter cutoff, or volume (tremolo)
 - **Reverb FX** with room size and high-frequency damping controls
+- **Sound-effect modulation:** pitch slide with acceleration and a cutoff frequency, one-shot pitch jump, pulse-width sweep, and repeat
+- **Sound-effect generators** (pickup, laser, explosion, power-up, hit, jump, blip) plus randomize and mutate, in `synthie::sfx`
+- **Offline rendering and WAV export** in `synthie::render` (`Ctrl+E` in the TUI)
 - **Global controls:** master volume and portamento (glide) time
 - **Preset system** with built-in SID-style patches (typed as `Preset`) and save/load support
 - **Optional `serde` support** for patch serialisation (enabled by default)

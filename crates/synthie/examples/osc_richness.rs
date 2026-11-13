@@ -197,6 +197,7 @@ fn base_patch() -> SynthParams {
             volume: 0.7,
             glide_time: 0.0,
         },
+        sfx: synthie::params::SfxParams::default(),
     }
 }
 

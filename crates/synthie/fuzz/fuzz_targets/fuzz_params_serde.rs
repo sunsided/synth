@@ -23,7 +23,9 @@
 #![no_main]
 
 use libfuzzer_sys::fuzz_target;
-use synthie::params::{FxParams, GlobalParams, LfoParams, Osc2Params, OscParams, SynthParams};
+use synthie::params::{
+    FxParams, GlobalParams, LfoParams, Osc2Params, OscParams, SfxParams, SynthParams,
+};
 
 fuzz_target!(|data: &[u8]| {
     // --- Part 1: deserialisation must not panic ---
@@ -155,6 +157,27 @@ fn assert_float_fields_finite(p: &SynthParams) {
         glide_time.is_finite(),
         "global.glide_time is not finite: {glide_time}"
     );
+    // Exhaustive on purpose: a new `sfx` field must be added here.
+    let SfxParams {
+        slide,
+        slide_accel,
+        min_freq,
+        jump_semitones,
+        jump_time,
+        pw_sweep,
+        repeat_rate,
+    } = &p.sfx;
+    for (name, v) in [
+        ("slide", slide),
+        ("slide_accel", slide_accel),
+        ("min_freq", min_freq),
+        ("jump_semitones", jump_semitones),
+        ("jump_time", jump_time),
+        ("pw_sweep", pw_sweep),
+        ("repeat_rate", repeat_rate),
+    ] {
+        assert!(v.is_finite(), "sfx.{name} is not finite: {v}");
+    }
 }
 
 /// Assert structural equality of two `SynthParams` snapshots.
@@ -273,5 +296,5 @@ fn assert_params_equal(a: &SynthParams, b: &SynthParams) {
     assert_eq!(
         a.global.glide_time, b.global.glide_time,
         "global.glide_time diverged after round-trip"
-    );
+    );    assert_eq!(a.sfx, b.sfx, "sfx diverged after round-trip");
 }

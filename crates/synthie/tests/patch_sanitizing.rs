@@ -2,58 +2,22 @@
 //! crash the engine nor leave it unable to play the next one.
 
 use proptest::prelude::*;
+use synthie::param::{Param, ParamKind};
 use synthie::prelude::*;
 use synthie::presets::sid::default_patches;
 
 const SR: f32 = 44_100.0;
 
-/// Every float field of a patch, by name, for range checks.
+/// Every float parameter of a patch, by path, with its value and range.
+/// Built from `Param::ALL`, so new parameters are checked automatically.
 fn floats(p: &SynthParams) -> Vec<(&'static str, f32, f32, f32)> {
-    let mut v = vec![
-        ("osc.pulse_width", p.osc.pulse_width, 0.05, 0.95),
-        ("osc.detune", p.osc.detune, -100.0, 100.0),
-        ("osc.noise_mix", p.osc.noise_mix, 0.0, 1.0),
-        ("osc2.detune", p.osc2.detune, -100.0, 100.0),
-        ("osc2.semitones", p.osc2.semitones, -24.0, 24.0),
-        ("osc2.osc2_mix", p.osc2.osc2_mix, 0.0, 1.0),
-        ("env.attack", p.env.attack, 0.001, 10.0),
-        ("env.decay", p.env.decay, 0.001, 10.0),
-        ("env.sustain", p.env.sustain, 0.0, 1.0),
-        ("env.release", p.env.release, 0.001, 20.0),
-        ("filter.cutoff", p.filter.cutoff, 20.0, 18_000.0),
-        ("filter.resonance", p.filter.resonance, 0.0, 0.99),
-        ("filter.drive", p.filter.drive, 0.0, 1.0),
-        ("fx.reverb_mix", p.fx.reverb_mix, 0.0, 1.0),
-        ("fx.reverb_size", p.fx.reverb_size, 0.0, 1.0),
-        ("fx.reverb_damping", p.fx.reverb_damping, 0.0, 1.0),
-        ("crusher.bits", p.crusher.bits, 1.0, 16.0),
-        ("crusher.rate", p.crusher.rate, 1.0, 16.0),
-        ("delay.time_ms", p.delay.time_ms, 1.0, 2_000.0),
-        ("delay.feedback", p.delay.feedback, 0.0, 0.95),
-        ("delay.mix", p.delay.mix, 0.0, 1.0),
-        ("chorus.rate", p.chorus.rate, 0.1, 5.0),
-        ("chorus.depth_ms", p.chorus.depth_ms, 0.0, 10.0),
-        ("chorus.mix", p.chorus.mix, 0.0, 1.0),
-        ("global.volume", p.global.volume, 0.0, 1.0),
-        ("global.glide_time", p.global.glide_time, 0.0, 10.0),
-    ];
-    for (name, lfo) in [("lfo", &p.lfo), ("lfo2", &p.lfo2)] {
-        v.push((name, lfo.lfo_rate, 0.0, 50.0));
-        v.push((name, lfo.lfo_depth, 0.0, 1.0));
-    }
-    for (name, env) in [("filter_env", &p.filter_env), ("pitch_env", &p.pitch_env)] {
-        v.push((name, env.attack, 0.001, 10.0));
-        v.push((name, env.decay, 0.001, 10.0));
-        v.push((name, env.sustain, 0.0, 1.0));
-        v.push((name, env.release, 0.001, 20.0));
-        v.push((name, env.depth, -1.0, 1.0));
-    }
-    #[cfg(feature = "arp")]
-    {
-        v.push(("arp.rate", p.arp.rate, 0.0, 50.0));
-        v.push(("arp.gate", p.arp.gate, 0.0, 1.0));
-    }
-    v
+    Param::ALL
+        .iter()
+        .filter_map(|&param| match param.kind() {
+            ParamKind::Float { min, max } => Some((param.path(), param.get(p), min, max)),
+            _ => None,
+        })
+        .collect()
 }
 
 /// Overwrite every float field with values drawn from `values` (cycled).
@@ -101,6 +65,13 @@ fn scramble(p: &mut SynthParams, values: &[f32]) {
         &mut p.chorus.mix,
         &mut p.global.volume,
         &mut p.global.glide_time,
+        &mut p.sfx.slide,
+        &mut p.sfx.slide_accel,
+        &mut p.sfx.min_freq,
+        &mut p.sfx.jump_semitones,
+        &mut p.sfx.jump_time,
+        &mut p.sfx.pw_sweep,
+        &mut p.sfx.repeat_rate,
     ] {
         *f = next();
     }
@@ -166,6 +137,86 @@ fn plays_normally(proc: &mut SynthProcessor<NUM_CHANNELS>) -> bool {
     buf.iter()
         .map(|s| s.to_bits())
         .eq(reference.iter().map(|s| s.to_bits()))
+}
+
+/// `scramble` writes fields directly (so it can plant NaN and out-of-range
+/// values), which means it lists them by hand. This catches a new float
+/// parameter that the list is missing.
+#[test]
+fn scramble_reaches_every_float_parameter() {
+    let mut p = SynthParams::default();
+    scramble(&mut p, &[f32::NAN]);
+    for (path, v, _, _) in floats(&p) {
+        assert!(v.is_nan(), "scramble does not touch {path}");
+    }
+}
+
+/// The documented range of every float parameter, written out here so a
+/// wrong or drifted range in `Param::kind` is caught: the range checks
+/// above read `Param::kind`, the same source `sanitize` clamps with. Adding
+/// a parameter without listing it here fails too.
+#[test]
+fn param_ranges_match_the_documented_ranges() {
+    let mut documented = vec![
+        ("osc.pulse_width", 0.05, 0.95),
+        ("osc.detune", -100.0, 100.0),
+        ("osc.noise_mix", 0.0, 1.0),
+        ("env.attack", 0.001, 10.0),
+        ("env.decay", 0.001, 10.0),
+        ("env.sustain", 0.0, 1.0),
+        ("env.release", 0.001, 20.0),
+        ("filter.cutoff", 20.0, 18_000.0),
+        ("filter.resonance", 0.0, 0.99),
+        ("filter.drive", 0.0, 1.0),
+        ("lfo.lfo_rate", 0.0, 50.0),
+        ("lfo.lfo_depth", 0.0, 1.0),
+        ("fx.reverb_mix", 0.0, 1.0),
+        ("fx.reverb_size", 0.0, 1.0),
+        ("fx.reverb_damping", 0.0, 1.0),
+        ("crusher.bits", 1.0, 16.0),
+        ("crusher.rate", 1.0, 16.0),
+        ("chorus.rate", 0.1, 5.0),
+        ("chorus.depth_ms", 0.0, 10.0),
+        ("chorus.mix", 0.0, 1.0),
+        ("delay.time_ms", 1.0, 2_000.0),
+        ("delay.feedback", 0.0, 0.95),
+        ("delay.mix", 0.0, 1.0),
+        ("osc2.detune", -100.0, 100.0),
+        ("osc2.semitones", -24.0, 24.0),
+        ("osc2.osc2_mix", 0.0, 1.0),
+        ("lfo2.lfo_rate", 0.0, 50.0),
+        ("lfo2.lfo_depth", 0.0, 1.0),
+        ("global.volume", 0.0, 1.0),
+        ("global.glide_time", 0.0, 10.0),
+        ("sfx.slide", -20.0, 20.0),
+        ("sfx.slide_accel", -100.0, 100.0),
+        ("sfx.min_freq", 0.0, 2_000.0),
+        ("sfx.jump_semitones", -24.0, 24.0),
+        ("sfx.jump_time", 0.0, 2.0),
+        ("sfx.pw_sweep", -4.0, 4.0),
+        ("sfx.repeat_rate", 0.0, 50.0),
+    ];
+    for env in ["filter_env", "pitch_env"] {
+        for (field, lo, hi) in [
+            ("attack", 0.001, 10.0),
+            ("decay", 0.001, 10.0),
+            ("sustain", 0.0, 1.0),
+            ("release", 0.001, 20.0),
+            ("depth", -1.0, 1.0),
+        ] {
+            documented.push((Box::leak(format!("{env}.{field}").into_boxed_str()), lo, hi));
+        }
+    }
+    #[cfg(feature = "arp")]
+    documented.extend([("arp.rate", 0.0, 50.0), ("arp.gate", 0.0, 1.0)]);
+
+    let mut actual: Vec<_> = floats(&SynthParams::default())
+        .into_iter()
+        .map(|(path, _, lo, hi)| (path, lo, hi))
+        .collect();
+    documented.sort_by(|a, b| a.0.cmp(b.0));
+    actual.sort_by(|a, b| a.0.cmp(b.0));
+    assert_eq!(actual, documented);
 }
 
 #[test]
