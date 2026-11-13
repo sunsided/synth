@@ -14,10 +14,10 @@
   "author": "Markus Mayer",
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/sunsided/synth.git",
+    "url": "git+https://github.com/sunsided/synthie.git",
     "directory": "crates/synthie-wasm"
   },
-  "homepage": "https://sunsided.github.io/synth/",
+  "homepage": "https://sunsided.github.io/synthie/",
   "files": [
     "web/",
     "node/",

@@ -6,7 +6,7 @@ resolver = "3"
 version    = "0.8.0"
 edition    = "2024"
 authors    = ["Markus Mayer <widemeadows@gmail.com>"]
-repository = "https://github.com/sunsided/synth"
+repository = "https://github.com/sunsided/synthie"
 license    = "EUPL-1.2"
 
 [workspace.dependencies]

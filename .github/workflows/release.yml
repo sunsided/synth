@@ -154,7 +154,7 @@ jobs:
     needs: [build, release]
     runs-on: ubuntu-latest
     # Trusted publishing: npm exchanges the workflow's OIDC token, no secret needed. Configure it
-    # on npmjs.com under the package's settings (repository sunsided/synth, workflow
+    # on npmjs.com under the package's settings (repository sunsided/synthie, workflow
     # release.yml). Publishes from the tarball built above; lifecycle scripts are skipped.
     permissions:
       id-token: write

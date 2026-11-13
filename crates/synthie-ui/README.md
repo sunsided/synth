@@ -1,6 +1,6 @@
 # synthie-ui
 
-The shared neon look of the [synthie](https://github.com/sunsided/synth)
+The shared neon look of the [synthie](https://github.com/sunsided/synthie)
 terminal front-ends, for [ratatui](https://ratatui.rs/): the palette and
 gradients, rounded panels, the animated wordmark, key-cap hints, meters and
 a level meter, a scope buffer, a quit/command modal, and a backend-neutral
