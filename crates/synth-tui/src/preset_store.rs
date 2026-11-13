@@ -20,7 +20,7 @@ pub fn save(patches: &[Patch]) -> Result<()> {
 /// Fails if the saved patches exist but cannot be read or parsed.
 pub fn load() -> Result<Vec<Patch>> {
     match read()? {
-        Some(json) => serde_json::from_str(&json).context("deserialise patches"),
+        Some(json) => serde_json::from_str(&json).with_context(|| format!("parse {}", location())),
         None => Ok(Vec::new()),
     }
 }
@@ -35,6 +35,12 @@ fn read() -> Result<Option<String>> {
     native::read(&native::user_presets_path())
 }
 
+/// Where the presets live, for error messages.
+#[cfg(not(target_arch = "wasm32"))]
+fn location() -> String {
+    native::user_presets_path().display().to_string()
+}
+
 #[cfg(target_arch = "wasm32")]
 fn write(json: &str) -> Result<()> {
     web::storage()?
@@ -47,6 +53,12 @@ fn read() -> Result<Option<String>> {
     web::storage()?
         .get_item(web::STORAGE_KEY)
         .map_err(|_| anyhow::anyhow!("localStorage is blocked"))
+}
+
+/// Where the presets live, for error messages.
+#[cfg(target_arch = "wasm32")]
+fn location() -> String {
+    format!("localStorage[{:?}]", web::STORAGE_KEY)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -65,6 +77,7 @@ mod web {
 
 #[cfg(not(target_arch = "wasm32"))]
 mod native {
+    use std::io::Write;
     use std::path::{Path, PathBuf};
 
     use anyhow::{Context, Result};
@@ -80,8 +93,18 @@ mod native {
         PathBuf::from("synth_presets.json")
     }
 
+    /// Replace the file in one step: write a temporary file next to it and
+    /// rename it over the old one, so an interrupted save leaves the previous
+    /// presets intact instead of a truncated file.
     pub fn write(path: &Path, json: &str) -> Result<()> {
-        std::fs::write(path, json).with_context(|| format!("write {}", path.display()))
+        let tmp = path.with_extension("json.tmp");
+        (|| {
+            let mut file = std::fs::File::create(&tmp)?;
+            file.write_all(json.as_bytes())?;
+            file.sync_all()?;
+            std::fs::rename(&tmp, path)
+        })()
+        .with_context(|| format!("write {}", path.display()))
     }
 
     /// The file's contents, or `None` if it does not exist.
@@ -111,6 +134,12 @@ mod native {
             std::fs::remove_file(&path).unwrap();
             let loaded: Vec<Patch> = serde_json::from_str(&json).unwrap();
             assert_eq!(loaded, patches);
+
+            // A second save replaces the first and leaves no temporary file.
+            write(&path, "[]").unwrap();
+            assert_eq!(read(&path).unwrap().as_deref(), Some("[]"));
+            assert!(!path.with_extension("json.tmp").exists());
+            std::fs::remove_file(&path).unwrap();
         }
     }
 }

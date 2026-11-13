@@ -317,6 +317,14 @@ impl AppState {
                 for patch in saved {
                     self.upsert_patch(patch);
                 }
+                // A saved patch may have replaced the one already playing;
+                // play what the list now shows.
+                if let Some(patch) = self.patches.get(self.selected_preset)
+                    && patch.params != self.params
+                {
+                    self.params = patch.params.clone();
+                    self.push_params();
+                }
             }
             Err(e) => {
                 let why = format!("saved presets unreadable ({e:#})");
@@ -929,6 +937,24 @@ mod tests {
         assert_eq!(s.patches.len(), builtins + 1);
         assert_eq!(s.patches[0], tweaked);
         assert_eq!(s.patches[builtins], mine);
+        // The replaced first preset is the one playing: what is heard and
+        // edited must follow the list.
+        assert_eq!(s.params, tweaked.params);
+    }
+
+    #[test]
+    fn a_saved_preset_replacing_the_playing_one_reaches_the_engine() {
+        let (tx, rx) = crossbeam_channel::unbounded();
+        let mut s = AppState::new(tx);
+        let first = s.patches[0].name.clone();
+        let tweaked = Patch::new(first, s.patches[3].params.clone());
+        rx.try_iter().for_each(drop); // the built-in seed
+        s.load_user_presets(Ok(vec![tweaked.clone()]));
+        let sent: Vec<_> = rx.try_iter().collect();
+        assert!(
+            matches!(sent.as_slice(), [AudioEvent::LoadPatch(p)] if **p == tweaked.params),
+            "{sent:?}"
+        );
     }
 
     #[test]
