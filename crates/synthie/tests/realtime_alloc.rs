@@ -80,12 +80,15 @@ impl Sequencer for Busy {
             Param::FilterCutoff,
             f32::from(self.step) * 50.0,
         ));
-        out.push(AudioEvent::ArpEnabled(ChannelNo(3), self.step % 32 < 16));
-        out.push(AudioEvent::ArpSetNotes(
-            ChannelNo(3),
-            [MidiNote(60), MidiNote(64), MidiNote(67), MidiNote(72)],
-            3,
-        ));
+        #[cfg(feature = "arp")]
+        {
+            out.push(AudioEvent::ArpEnabled(ChannelNo(3), self.step % 32 < 16));
+            out.push(AudioEvent::ArpSetNotes(
+                ChannelNo(3),
+                [MidiNote(60), MidiNote(64), MidiNote(67), MidiNote(72)],
+                3,
+            ));
+        }
         if self.step.is_multiple_of(64) {
             out.push(AudioEvent::Panic);
         }
