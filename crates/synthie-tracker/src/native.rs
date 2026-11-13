@@ -16,7 +16,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use ratatui::{Terminal, backend::CrosstermBackend};
-use synthie::audio::engine::setup_audio_silenced_with_sequencer;
+use synthie::audio::engine::{ScopeBatch, setup_audio_silenced_with_sequencer};
 use synthie_ui::ScopeBuf;
 
 use crate::SCOPE_CAPACITY;
@@ -130,7 +130,7 @@ fn load_mod_args() -> Result<Option<(String, Song, Result<Reference>)>> {
 fn run(
     terminal: &mut Terminal<CrosstermBackend<std::io::Stdout>>,
     state: &mut TrackerState,
-    scope: &mut ScopeBuf,
+    scope: &mut ScopeBuf<ScopeBatch>,
 ) -> Result<()> {
     loop {
         scope.update();

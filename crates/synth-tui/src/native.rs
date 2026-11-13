@@ -15,7 +15,7 @@ use std::{
     panic,
     time::{Duration, Instant},
 };
-use synthie::audio::engine::setup_audio_silenced;
+use synthie::audio::engine::{ScopeBatch, setup_audio_silenced};
 use synthie_ui::{Key, KeyKind, ScopeBuf};
 
 use crate::SCOPE_CAPACITY;
@@ -89,7 +89,7 @@ pub fn run_tui() -> Result<()> {
 fn run_loop(
     terminal: &mut Terminal<CrosstermBackend<Stdout>>,
     state: &mut AppState,
-    scope: &mut ScopeBuf,
+    scope: &mut ScopeBuf<ScopeBatch>,
     mut fallback: Option<ReleaseFallback>,
 ) -> Result<()> {
     let tick = Duration::from_millis(16); // ~60 fps

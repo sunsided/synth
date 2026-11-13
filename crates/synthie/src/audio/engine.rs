@@ -20,8 +20,8 @@ use crate::params::AudioEvent;
 pub use crate::audio::processor::NUM_CHANNELS;
 pub use crate::audio::sequencer::Sequencer;
 
-/// Capacity of the scope channel (batches of `Vec<f32>` that can be queued
-/// before the audio thread starts dropping them).
+/// Capacity of the scope channel (batches that can be queued before the
+/// audio thread starts dropping them).
 const SCOPE_CHANNEL_CAPACITY: usize = 32;
 
 /// Capacity of the event channel and the per-callback drain buffer.
@@ -33,7 +33,49 @@ const EVENT_CHANNEL_CAPACITY: usize = 1024;
 const SCOPE_DECIMATION: usize = 4;
 
 /// Number of decimated samples accumulated before flushing to the scope channel.
-const SCOPE_BATCH: usize = 128;
+pub const SCOPE_BATCH: usize = 128;
+
+/// One batch of decimated scope samples. A plain array, so handing it to the
+/// UI never allocates or frees memory on the audio thread.
+pub type ScopeBatch = [f32; SCOPE_BATCH];
+
+/// Collects every [`SCOPE_DECIMATION`]th frame's first channel into
+/// [`ScopeBatch`]es for the scope display.
+struct ScopeTap {
+    batch: ScopeBatch,
+    len: usize,
+    counter: usize,
+}
+
+impl ScopeTap {
+    fn new() -> Self {
+        Self {
+            batch: [0.0; SCOPE_BATCH],
+            len: 0,
+            counter: 0,
+        }
+    }
+
+    /// Take the decimated samples of the interleaved `data`, sending each full
+    /// batch to `tx` (dropped if the UI is not keeping up).
+    fn push(&mut self, data: &[f32], hw_channels: usize, tx: &Sender<ScopeBatch>) {
+        for frame in data.chunks(hw_channels) {
+            self.counter += 1;
+            if self.counter < SCOPE_DECIMATION {
+                continue;
+            }
+            self.counter = 0;
+            if let Some(&sample) = frame.first() {
+                self.batch[self.len] = sample;
+                self.len += 1;
+            }
+            if self.len == SCOPE_BATCH {
+                self.len = 0;
+                let _ = tx.try_send(self.batch);
+            }
+        }
+    }
+}
 
 /// Initialise CPAL audio output with a configurable channel count, buffer size,
 /// and stream-error handler.
@@ -53,7 +95,7 @@ const SCOPE_BATCH: usize = 128;
 /// Returns:
 /// * `cpal::Stream` – keep alive for the duration of the program.
 /// * `Sender<AudioEvent>` – send note on/off and param changes from the UI thread.
-/// * `Receiver<Vec<f32>>` – decimated waveform batches for scope display.
+/// * `Receiver<ScopeBatch>` – decimated waveform batches for scope display.
 ///
 /// [`ChannelNo`]: crate::params::ChannelNo
 ///
@@ -64,7 +106,7 @@ const SCOPE_BATCH: usize = 128;
 pub fn setup_audio_n_with_error_handler<const N: usize, F>(
     buffer_size: cpal::BufferSize,
     on_error: F,
-) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
+) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<ScopeBatch>)>
 where
     F: Fn(cpal::Error) + Send + 'static,
 {
@@ -87,13 +129,13 @@ pub fn setup_audio_n_with_sequencer<const N: usize, S, F>(
     buffer_size: cpal::BufferSize,
     sequencer: S,
     on_error: F,
-) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
+) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<ScopeBatch>)>
 where
     S: Sequencer + Send + 'static,
     F: Fn(cpal::Error) + Send + 'static,
 {
     let (event_tx, event_rx) = bounded::<AudioEvent>(EVENT_CHANNEL_CAPACITY);
-    let (scope_tx, scope_rx) = bounded::<Vec<f32>>(SCOPE_CHANNEL_CAPACITY);
+    let (scope_tx, scope_rx) = bounded::<ScopeBatch>(SCOPE_CHANNEL_CAPACITY);
 
     let host = cpal::default_host();
     let device = host
@@ -117,8 +159,7 @@ where
 
     let mut processor = SequencedProcessor::new(SynthProcessor::<N>::new(sample_rate), sequencer);
     let mut events_buf: Vec<AudioEvent> = Vec::with_capacity(EVENT_CHANNEL_CAPACITY);
-    let mut scope_accum: Vec<f32> = Vec::with_capacity(SCOPE_BATCH * 2);
-    let mut scope_dec_counter: usize = 0;
+    let mut scope = ScopeTap::new();
 
     let stream = device
         .build_output_stream(
@@ -134,22 +175,7 @@ where
                 processor.process_block(&events_buf, data, hw_channels);
 
                 // Forward decimated samples to the scope display.
-                for frame in data.chunks(hw_channels) {
-                    scope_dec_counter += 1;
-                    if scope_dec_counter >= SCOPE_DECIMATION {
-                        scope_dec_counter = 0;
-                        if let Some(&sample) = frame.first() {
-                            scope_accum.push(sample);
-                        }
-                        if scope_accum.len() >= SCOPE_BATCH {
-                            let batch = std::mem::replace(
-                                &mut scope_accum,
-                                Vec::with_capacity(SCOPE_BATCH * 2),
-                            );
-                            let _ = scope_tx.try_send(batch);
-                        }
-                    }
-                }
+                scope.push(data, hw_channels, &scope_tx);
             },
             on_error,
             None,
@@ -172,7 +198,7 @@ where
 /// Returns an error if no default audio output device is available or if the
 /// stream configuration cannot be determined or opened.
 pub fn setup_audio_n<const N: usize>()
--> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
+-> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<ScopeBatch>)> {
     setup_audio_n_with_error_handler::<N, _>(cpal::BufferSize::Default, |err| {
         eprintln!("audio stream error: {err}");
     })
@@ -187,7 +213,7 @@ pub fn setup_audio_n<const N: usize>()
 ///
 /// Returns an error if no default audio output device is available or if the
 /// stream configuration cannot be determined or opened.
-pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
+pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<ScopeBatch>)> {
     setup_audio_n::<NUM_CHANNELS>()
 }
 
@@ -205,7 +231,7 @@ pub fn setup_audio() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f
 ///
 /// Returns an error if no default audio output device is available or if the
 /// stream configuration cannot be determined or opened.
-pub fn setup_audio_silenced() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)> {
+pub fn setup_audio_silenced() -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<ScopeBatch>)> {
     setup_audio_silenced_with_error_handler(|_| {})
 }
 
@@ -222,7 +248,7 @@ pub fn setup_audio_silenced() -> Result<(cpal::Stream, Sender<AudioEvent>, Recei
 /// stream configuration cannot be determined or opened.
 pub fn setup_audio_silenced_with_error_handler<F>(
     on_error: F,
-) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
+) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<ScopeBatch>)>
 where
     F: Fn(cpal::Error) + Send + 'static,
 {
@@ -239,7 +265,7 @@ where
 pub fn setup_audio_silenced_with_sequencer<S, F>(
     sequencer: S,
     on_error: F,
-) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<Vec<f32>>)>
+) -> Result<(cpal::Stream, Sender<AudioEvent>, Receiver<ScopeBatch>)>
 where
     S: Sequencer + Send + 'static,
     F: Fn(cpal::Error) + Send + 'static,
@@ -254,4 +280,30 @@ where
         sequencer,
         on_error,
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_scope_gets_every_fourth_frame_in_full_batches() {
+        let (tx, rx) = bounded(4);
+        let mut tap = ScopeTap::new();
+        #[allow(clippy::cast_precision_loss)] // small frame numbers
+        let stereo: Vec<f32> = (0..SCOPE_BATCH * SCOPE_DECIMATION)
+            .flat_map(|i| [i as f32, -1.0])
+            .collect();
+        // Split mid-way: the decimation phase carries across callbacks.
+        let (a, b) = stereo.split_at(2 * 301);
+        tap.push(a, 2, &tx);
+        assert!(rx.try_recv().is_err(), "no full batch yet");
+        tap.push(b, 2, &tx);
+        let batch = rx.try_recv().expect("one full batch");
+        #[allow(clippy::cast_precision_loss)]
+        let expected: Vec<f32> = (0..SCOPE_BATCH)
+            .map(|i| (i * SCOPE_DECIMATION + SCOPE_DECIMATION - 1) as f32)
+            .collect();
+        assert_eq!(batch.as_slice(), expected.as_slice());
+    }
 }

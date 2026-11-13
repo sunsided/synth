@@ -22,9 +22,13 @@ const SILENCE_FLOOR: f32 = 1e-5;
 /// The audio thread sends batches of decimated samples via a bounded channel.
 /// The UI calls `update()` each frame to drain new batches, then reads
 /// `samples()` or `as_chart_data()` for display.
-pub struct ScopeBuf {
+///
+/// `B` is the batch type the audio thread sends: a `Vec<f32>`, or a plain
+/// array such as `synthie`'s `ScopeBatch`, which keeps the audio thread
+/// allocation-free.
+pub struct ScopeBuf<B = Vec<f32>> {
     /// Channel receiver for incoming sample batches from the audio thread.
-    rx: Receiver<Vec<f32>>,
+    rx: Receiver<B>,
     /// Ring buffer holding the most recent `capacity` samples.
     buf: VecDeque<f32>,
     /// Maximum number of samples retained in the ring buffer.
@@ -33,10 +37,10 @@ pub struct ScopeBuf {
     level: f32,
 }
 
-impl ScopeBuf {
+impl<B: AsRef<[f32]>> ScopeBuf<B> {
     /// Create a new scope buffer with the given channel receiver and sample capacity.
     #[must_use]
-    pub fn new(rx: Receiver<Vec<f32>>, capacity: usize) -> Self {
+    pub fn new(rx: Receiver<B>, capacity: usize) -> Self {
         Self {
             rx,
             buf: VecDeque::with_capacity(capacity),
@@ -52,7 +56,7 @@ impl ScopeBuf {
     pub fn update(&mut self) {
         let mut peak = 0.0_f32;
         while let Ok(batch) = self.rx.try_recv() {
-            for s in batch {
+            for &s in batch.as_ref() {
                 peak = peak.max(s.abs());
                 if self.buf.len() >= self.capacity {
                     self.buf.pop_front();
