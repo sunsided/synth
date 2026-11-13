@@ -21,7 +21,6 @@ pub enum EnvStage {
 
 impl EnvStage {
     /// Short display name for the current stage.
-    #[allow(dead_code)]
     #[must_use]
     pub fn name(self) -> &'static str {
         match self {
