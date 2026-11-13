@@ -126,6 +126,11 @@ tasks:
     cmds:
       - cargo test {{.CLI_ARGS}}
 
+  bench:
+    desc: Benchmark the audio path (criterion; pass a filter after --, e.g. `task bench -- block/`)
+    cmds:
+      - cargo bench -p synthie --bench audio {{.CLI_ARGS}}
+
   test:docs:
     desc: Run doctests only
     env:

@@ -12,6 +12,7 @@ license    = "EUPL-1.2"
 [workspace.dependencies]
 anyhow            = "1"
 cpal              = "0.18"
+criterion         = { version = "0.8", default-features = false, features = ["cargo_bench_support"] }
 crossbeam-channel = "0.5"
 crossterm         = "0.29"
 kira              = { version = "0.12", default-features = false }

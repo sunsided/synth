@@ -225,6 +225,18 @@ Run all hooks manually without committing:
 prek run --all-files
 ```
 
+### Benchmarks
+
+`crates/synthie/benches/audio.rs` measures the audio path the way a game uses it: one block in typical situations (idle, one note, all 16 voices, with and without FX, drums), callback sizes from 64 to 2048 frames, every built-in preset, a sequenced song, and offline sound-effect rendering. Throughput is in frames, so `elem/s ÷ 48 000` is the real-time factor.
+
+```bash
+task bench                                         # or: cargo bench -p synthie
+cargo bench -p synthie -- --save-baseline main     # before a change
+cargo bench -p synthie -- --baseline main          # after it: compare
+```
+
+`crates/synthie/tests/realtime_alloc.rs` checks that rendering, sequencing and live events never allocate or free memory on the audio thread.
+
 ### Fuzzing
 
 The DSP core (`SvFilter`, `Oscillator`) and `SynthParams` serialisation paths are covered by

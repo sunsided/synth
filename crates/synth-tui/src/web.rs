@@ -28,7 +28,9 @@ pub fn main() {
     let (stream, event_tx, scope_rx) =
         setup_audio_silenced().expect("failed to open Web Audio output");
 
-    let state = Rc::new(RefCell::new(AppState::new(event_tx)));
+    let mut state = AppState::new(event_tx);
+    state.load_user_presets(crate::preset_store::load());
+    let state = Rc::new(RefCell::new(state));
     let started = Rc::new(Cell::new(false));
 
     // Ctrl+S saves the patch here instead of opening the browser's save dialog.
