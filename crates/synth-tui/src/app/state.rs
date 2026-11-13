@@ -800,6 +800,9 @@ enum Step {
 impl Step {
     /// `value` moved one step in the direction of `d`, before clamping.
     fn apply(self, param: Param, value: f32, d: f32) -> f32 {
+        if d == 0.0 {
+            return value;
+        }
         match self {
             Step::Add(step) => value + d * step,
             // Rates may be 0 in a loaded patch; a floor keeps them movable.
@@ -900,6 +903,21 @@ mod tests {
                     !section.is_display_row(row) && !selector,
                     "{section:?} row {row}"
                 );
+            }
+        }
+    }
+
+    #[test]
+    fn a_zero_step_changes_nothing() {
+        let params = SynthParams::default();
+        for &section in Section::ALL {
+            for row in 0..section.param_count() {
+                if let Some((param, step)) = row_param(section, row) {
+                    let value = param.get(&params);
+                    #[allow(clippy::float_cmp)] // must be exactly unchanged
+                    let same = step.apply(param, value, 0.0) == value;
+                    assert!(same, "{section:?} row {row}");
+                }
             }
         }
     }
