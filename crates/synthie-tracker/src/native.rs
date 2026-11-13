@@ -4,6 +4,8 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
+#[cfg(feature = "mod-import")]
+use anyhow::Context;
 use anyhow::Result;
 use crossterm::{
     event::{
@@ -20,7 +22,11 @@ use synthie_ui::ScopeBuf;
 use crate::SCOPE_CAPACITY;
 use crate::app::input::{handle_click, handle_key};
 use crate::app::{state::TrackerState, ui::draw};
+#[cfg(feature = "mod-import")]
+use crate::reference::Reference;
 use crate::tracker::player::Player;
+#[cfg(feature = "mod-import")]
+use crate::tracker::{Song, modfile};
 
 pub fn main() -> Result<()> {
     // ── Set up panic hook so the terminal is always restored ─────────────────
@@ -44,6 +50,12 @@ pub fn main() -> Result<()> {
             }
         })?;
 
+    // ── Load a MOD given on the command line, before taking the terminal ─────
+    #[cfg(feature = "mod-import")]
+    let module = load_mod_args()?;
+    #[cfg(not(feature = "mod-import"))]
+    reject_file_args()?;
+
     // ── Set up the ratatui terminal ──────────────────────────────────────────
     enable_raw_mode()?;
     let mut stdout = std::io::stdout();
@@ -59,6 +71,17 @@ pub fn main() -> Result<()> {
 
     // ── Build application state ───────────────────────────────────────────────
     let mut state = TrackerState::new(event_tx, player, audio_ok);
+    #[cfg(feature = "mod-import")]
+    if let Some((title, song, reference)) = module {
+        let rows = song.pattern.len;
+        state.status_msg = match &reference {
+            Ok(_) => format!("{title}: {rows} rows imported · Space plays synths, F2 the original"),
+            // The grid still works without the original; only F2 is lost.
+            Err(e) => format!("{title}: {rows} rows imported · no original (F2): {e:#}"),
+        };
+        state.song = song;
+        state.reference = reference.ok();
+    }
     let mut scope = ScopeBuf::new(scope_rx, SCOPE_CAPACITY);
 
     // ── Main event loop ───────────────────────────────────────────────────────
@@ -69,6 +92,38 @@ pub fn main() -> Result<()> {
 
     // Propagate any error from the event loop.
     result
+}
+
+/// Without the `mod-import` feature a file argument can't be used; say so
+/// instead of ignoring it.
+#[cfg(not(feature = "mod-import"))]
+fn reject_file_args() -> Result<()> {
+    if std::env::args_os().len() > 1 {
+        anyhow::bail!("loading a MOD needs the `mod-import` feature");
+    }
+    Ok(())
+}
+
+/// `synthie-tracker [song.mod [order-position]]`: import the MOD into the
+/// grid and open its original sound for reference playback.
+#[cfg(feature = "mod-import")]
+fn load_mod_args() -> Result<Option<(String, Song, Result<Reference>)>> {
+    let mut args = std::env::args_os().skip(1);
+    let Some(path) = args.next() else {
+        return Ok(None);
+    };
+    let start = args
+        .next()
+        .map(|pos| pos.to_string_lossy().parse::<usize>())
+        .transpose()
+        .context("order position must be a number")?
+        .unwrap_or(0);
+    let bytes = std::fs::read(&path).with_context(|| format!("cannot read {}", path.display()))?;
+    let (title, song) = modfile::import(&bytes, start)
+        .with_context(|| format!("cannot import {}", path.display()))?;
+    let reference =
+        Reference::new(&bytes, start).with_context(|| format!("cannot play {}", path.display()));
+    Ok(Some((title, song, reference)))
 }
 
 /// Run the main event loop; returns when the user quits.

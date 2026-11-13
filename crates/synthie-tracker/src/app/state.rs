@@ -56,6 +56,10 @@ pub struct TrackerState {
     /// `false` once the CPAL stream reports a fatal error.
     audio_ok: Arc<AtomicBool>,
 
+    /// The loaded MOD's original sound, for A/B against the grid.
+    #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
+    pub reference: Option<crate::reference::Reference>,
+
     /// Background playback thread.
     player: Player,
     /// Channel for direct audio events (patch loads, panics).
@@ -91,6 +95,8 @@ impl TrackerState {
             activity: [0.0; TOTAL_TRACKS],
             last_step: None,
             audio_ok,
+            #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
+            reference: None,
             player,
             event_tx,
         }
@@ -157,15 +163,37 @@ impl TrackerState {
 
     /// Load each track's preset, then start playback from the first step.
     pub fn play(&self) {
+        #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
+        if let Some(reference) = &self.reference {
+            reference.stop();
+        }
         for track in 0..SYNTH_TRACKS {
             self.reload_track_patch(track);
         }
         self.player.play(self.song.clone());
     }
 
-    /// Stop playback.
+    /// Stop playback, of the grid and of the original MOD.
     pub fn stop(&self) {
         self.player.stop();
+        #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
+        if let Some(reference) = &self.reference {
+            reference.stop();
+        }
+    }
+
+    /// Play or stop the loaded MOD's original sound instead of the grid.
+    #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
+    pub fn toggle_reference(&mut self) {
+        match &self.reference {
+            None => "no MOD loaded; start with `synthie-tracker song.mod`"
+                .clone_into(&mut self.status_msg),
+            Some(reference) if reference.is_playing() => reference.stop(),
+            Some(reference) => {
+                self.player.stop();
+                reference.play();
+            }
+        }
     }
 
     /// Toggle playback state.

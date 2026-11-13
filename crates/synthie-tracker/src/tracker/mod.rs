@@ -4,6 +4,8 @@
 //! parallel [`DrumStep`] column.  The [`Song`] bundles one pattern with a BPM
 //! setting and per-track preset assignments.
 
+#[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
+pub mod modfile;
 pub mod player;
 
 use synthie::params::{DrumHit, MidiNote, Patch};

@@ -12,6 +12,12 @@ publish           = false
 name = "synthie-tracker"
 path = "src/main.rs"
 
+[features]
+default    = ["mod-import"]
+## Import 4-channel ProTracker `.mod` files from the command line and play
+## the original for A/B comparison (terminal build only). Pulls in `xmrs`.
+mod-import = ["dep:xmrs", "dep:xmrsplayer"]
+
 [dependencies]
 anyhow            = { workspace = true }
 cpal              = { workspace = true }
@@ -25,6 +31,9 @@ synthie-ui        = { path = "../synthie-ui", default-features = false }
 crossterm  = { workspace = true }
 ratatui    = { workspace = true, features = ["crossterm"] }
 synthie-ui = { path = "../synthie-ui", features = ["crossterm"] }
+# Reference playback of loaded MOD files (original samples), for A/B testing.
+xmrs       = { version = "0.15", default-features = false, features = ["std", "import_mod"], optional = true }
+xmrsplayer = { version = "0.15", default-features = false, features = ["std", "import_mod"], optional = true }
 
 # Browser build (`trunk build`): Ratzilla renders, cpal plays through WebAudio.
 [target.'cfg(target_arch = "wasm32")'.dependencies]

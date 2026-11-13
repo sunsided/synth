@@ -126,6 +126,8 @@ pub fn handle_key(key: Key, state: &mut TrackerState) -> bool {
         }
         KeyCode::Char(':') if CAN_QUIT => state.modal.open_command(),
         KeyCode::Char(' ') => state.toggle_play(),
+        #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
+        KeyCode::F(2) => state.toggle_reference(),
         KeyCode::Up => state.cursor_up(),
         KeyCode::Down => state.cursor_down(),
         KeyCode::Left => state.cursor_left(),
