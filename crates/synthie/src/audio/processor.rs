@@ -57,6 +57,15 @@ pub const NUM_CHANNELS: usize = 4;
 /// [`SynthProcessor::set_voice_normalization`] to trade headroom for level.
 pub const DEFAULT_MASTER_GAIN: f32 = 0.5;
 
+/// Output at or below this level (-100 dB, under 16-bit resolution) counts
+/// as silence for putting the FX chain to sleep.
+const SILENCE: f32 = 1e-5;
+
+/// How long the output must stay silent while idle before the FX chain
+/// sleeps. Longer than the longest delay echo (2 s), so a quiet gap between
+/// two audible echoes never counts as the end of the tail.
+const SLEEP_AFTER_SECONDS: f32 = 2.5;
+
 #[derive(Clone, Copy, Default)]
 struct VoiceSlot {
     note: Option<MidiNote>,
@@ -213,6 +222,13 @@ pub struct SynthProcessor<const N: usize> {
     sample_rate: f32,
     master_gain: f32,
     voice_normalization: VoiceNormalization,
+    /// Trailing frames rendered while idle and silent; see [`SILENCE`].
+    quiet_frames: u64,
+    /// Quiet frames after which the FX chain sleeps.
+    sleep_after: u64,
+    /// Whether the FX chain is asleep: reset, and skipped until the
+    /// processor stops being idle.
+    asleep: bool,
 }
 
 impl<const N: usize> SynthProcessor<N> {
@@ -240,6 +256,10 @@ impl<const N: usize> SynthProcessor<N> {
             sample_rate,
             master_gain: DEFAULT_MASTER_GAIN,
             voice_normalization: VoiceNormalization::default(),
+            quiet_frames: 0,
+            #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)] // a few seconds
+            sleep_after: (sample_rate * SLEEP_AFTER_SECONDS) as u64,
+            asleep: false,
         }
     }
 
@@ -332,6 +352,8 @@ impl<const N: usize> SynthProcessor<N> {
         self.chorus.reset();
         self.delay.reset();
         self.reverb.reset();
+        // Nothing is left to ring out: the FX chain may sleep right away.
+        self.quiet_frames = self.sleep_after;
     }
 
     pub(crate) fn apply_events(&mut self, events: &[AudioEvent]) {
@@ -391,6 +413,11 @@ impl<const N: usize> SynthProcessor<N> {
     /// processor through a
     /// [`SequencedProcessor`](crate::audio::sequencer::SequencedProcessor).
     ///
+    /// Once the processor [is idle](Self::is_idle) and its output has stayed
+    /// below -100 dB for 2.5 s, the FX tails are cleared and blocks are
+    /// written as silence without running the FX chain, until the next note,
+    /// drum hit or arpeggio makes it busy again.
+    ///
     /// # Panics
     ///
     /// Panics if `hw_channels` is zero or if `buf.len()` is not a multiple of
@@ -404,12 +431,28 @@ impl<const N: usize> SynthProcessor<N> {
         );
         self.apply_events(events);
 
+        if self.quiet_frames >= self.sleep_after && self.is_idle() {
+            if !self.asleep {
+                // The tails are inaudible; drop them so waking up starts
+                // from clean FX state.
+                self.chorus.reset();
+                self.delay.reset();
+                self.reverb.reset();
+                self.asleep = true;
+            }
+            buf.fill(0.0);
+            return;
+        }
+        self.asleep = false;
+
         let sample_rate = self.sample_rate;
         let master_gain = self.master_gain;
         let voice_scale = self.voice_normalization.scale();
         let reverb_mix = self.channels[0].params.fx.reverb_mix;
         let chorus_params = self.channels[0].params.chorus.clone();
         let delay_params = self.channels[0].params.delay.clone();
+        // Silent frames at the end of `buf` so far.
+        let mut quiet_run: u64 = 0;
 
         for frame in buf.chunks_mut(hw_channels) {
             let mix: f32 = self
@@ -435,10 +478,26 @@ impl<const N: usize> SynthProcessor<N> {
                 0.0
             };
 
+            if sample.abs() <= SILENCE {
+                quiet_run += 1;
+            } else {
+                quiet_run = 0;
+            }
+
             for ch in frame.iter_mut() {
                 *ch = sample;
             }
         }
+
+        // Count quiet frames only while nothing new can start sounding.
+        let frames = (buf.len() / hw_channels) as u64;
+        self.quiet_frames = if !self.is_idle() {
+            0
+        } else if quiet_run == frames {
+            self.quiet_frames.saturating_add(frames)
+        } else {
+            quiet_run
+        };
     }
 }
 
@@ -832,6 +891,108 @@ mod tests {
         );
         assert_eq!(proc.params(ChannelNo::DEFAULT).unwrap().arp.count, 1);
         assert!(!proc.is_idle(), "the arpeggiator should still be running");
+    }
+
+    /// A patch with long reverb and delay tails.
+    fn wet() -> AudioEvent {
+        let mut p = SynthParams::default();
+        p.fx.reverb_mix = 0.8;
+        p.fx.reverb_size = 0.95;
+        p.delay.mix = 0.5;
+        p.delay.feedback = 0.5;
+        p.delay.time_ms = 600.0;
+        AudioEvent::LoadPatch(Box::new(p))
+    }
+
+    /// Play a short note on `proc`, then render `seconds` more in 64-frame
+    /// blocks; returns everything rendered.
+    fn note_then_silence(proc: &mut SynthProcessor<NUM_CHANNELS>, seconds: f32) -> Vec<f32> {
+        let mut out = run(proc, &[wet(), AudioEvent::NoteOn(NOTE)], 4410);
+        out.extend(run(proc, &[AudioEvent::NoteOff(NOTE)], 64));
+        #[allow(clippy::cast_possible_truncation, clippy::cast_sign_loss)]
+        for _ in 0..(seconds * SR / 64.0) as usize {
+            out.extend(run(proc, &[], 64));
+        }
+        out
+    }
+
+    #[test]
+    fn the_fx_chain_sleeps_only_after_the_tail_is_silent() {
+        let mut proc = make();
+        let out = note_then_silence(&mut proc, 30.0);
+        assert!(proc.asleep, "should sleep after 30 s of fading tail");
+        let last_audible = out.iter().rposition(|s| s.abs() > SILENCE).unwrap();
+        let hold = usize::try_from(proc.sleep_after).unwrap();
+        assert!(
+            out.len() - last_audible > hold,
+            "slept {} frames after the tail, before the {hold}-frame hold",
+            out.len() - last_audible
+        );
+        assert!(run(&mut proc, &[], 256).iter().all(|s| *s == 0.0));
+    }
+
+    #[test]
+    fn a_note_wakes_the_fx_chain_in_the_same_block() {
+        let mut proc = make();
+        note_then_silence(&mut proc, 30.0);
+        assert!(proc.asleep);
+        let out = run(&mut proc, &[AudioEvent::NoteOn(NOTE)], 256);
+        assert!(!proc.asleep);
+        assert!(
+            out.iter().any(|s| s.abs() > 1e-3),
+            "the note sounds at once"
+        );
+    }
+
+    #[test]
+    fn sleeping_only_drops_inaudible_tails() {
+        // The same song with and without the FX chain sleeping in the pause.
+        let render = |sleeps: bool| {
+            let mut proc = make();
+            if !sleeps {
+                proc.sleep_after = u64::MAX;
+            }
+            let mut out = note_then_silence(&mut proc, 30.0);
+            assert_eq!(proc.asleep, sleeps);
+            out.extend(run(&mut proc, &[AudioEvent::NoteOn(MidiNote::A4)], 22_050));
+            out.extend(run(&mut proc, &[AudioEvent::NoteOff(MidiNote::A4)], 44_100));
+            out
+        };
+        let (slept, awake) = (render(true), render(false));
+        let worst = slept
+            .iter()
+            .zip(&awake)
+            .map(|(a, b)| (a - b).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(worst < 1e-4, "outputs differ by {worst} (above -80 dB)");
+    }
+
+    #[test]
+    fn a_held_note_keeps_the_fx_chain_awake_even_when_silent() {
+        let mut proc = make();
+        let mut quiet = SynthParams::default();
+        quiet.global.volume = 0.0;
+        run(
+            &mut proc,
+            &[
+                AudioEvent::LoadPatch(Box::new(quiet)),
+                AudioEvent::NoteOn(NOTE),
+            ],
+            64,
+        );
+        for _ in 0..(5 * 44_100 / 64) {
+            run(&mut proc, &[], 64);
+        }
+        assert!(!proc.asleep, "a held note is not idle, however quiet");
+    }
+
+    #[test]
+    fn a_panic_lets_the_fx_chain_sleep_at_once() {
+        let mut proc = make();
+        run(&mut proc, &[wet(), AudioEvent::NoteOn(NOTE)], 4096);
+        let out = run(&mut proc, &[AudioEvent::Panic], 64);
+        assert!(proc.asleep);
+        assert!(out.iter().all(|s| *s == 0.0));
     }
 
     #[test]
