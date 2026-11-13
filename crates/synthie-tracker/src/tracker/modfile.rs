@@ -665,6 +665,27 @@ mod tests {
         assert_eq!(song.pattern.synth[0][0], Step::Note(MidiNote(60)));
     }
 
+    proptest::proptest! {
+        /// MODs come from disk: any bytes behind a valid signature must
+        /// import or fail cleanly, never panic. Small pattern numbers keep
+        /// most cases past `pattern_count` and into the row walk.
+        #[test]
+        fn arbitrary_modules_never_panic(
+            header in proptest::collection::vec(proptest::prelude::any::<u8>(), HEADER_LEN),
+            order in proptest::collection::vec(0_u8..4, 128),
+            song_len: u8,
+            body in proptest::collection::vec(proptest::prelude::any::<u8>(), 0..5 * PATTERN_LEN),
+            start in 0_usize..130,
+        ) {
+            let mut b = header;
+            b[950] = song_len;
+            b[952..1080].copy_from_slice(&order);
+            b[1080..1084].copy_from_slice(b"M.K.");
+            b.extend(body);
+            let _ = import(&b, start);
+        }
+    }
+
     #[test]
     fn stray_order_entries_past_the_song_are_tolerated() {
         // One played pattern, a stray 9 in the unplayed order tail, and only

@@ -2189,6 +2189,7 @@ dependencies = [
  "cpal",
  "crossbeam-channel",
  "crossterm",
+ "proptest",
  "ratatui",
  "ratzilla",
  "synthie",

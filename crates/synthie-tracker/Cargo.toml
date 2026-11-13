@@ -41,6 +41,9 @@ cpal       = { workspace = true, features = ["wasm-bindgen"] }
 ratzilla   = "0.3.1"
 synthie-ui = { path = "../synthie-ui", default-features = false, features = ["web"] }
 
+[dev-dependencies]
+proptest = { workspace = true }
+
 [lints]
 workspace = true
 
