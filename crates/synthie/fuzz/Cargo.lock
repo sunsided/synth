@@ -177,7 +177,7 @@ dependencies = [
 
 [[package]]
 name = "synthie"
-version = "0.9.0"
+version = "0.10.0"
 dependencies = [
  "serde",
 ]
