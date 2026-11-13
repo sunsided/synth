@@ -75,7 +75,7 @@ impl TrackerState {
         for (ch_idx, patch) in presets.iter().take(SYNTH_TRACKS).enumerate() {
             #[allow(clippy::cast_possible_truncation)] // ch_idx < SYNTH_TRACKS ≤ 255
             let ch = ChannelNo(ch_idx as u8);
-            let _ = event_tx.send(AudioEvent::LoadPatchChannel(
+            let _ = event_tx.try_send(AudioEvent::LoadPatchChannel(
                 ch,
                 Box::new(patch.params.clone()),
             ));
@@ -344,7 +344,7 @@ impl TrackerState {
 
     /// Silence all voices immediately.
     pub fn panic_all(&self) {
-        let _ = self.event_tx.send(AudioEvent::Panic);
+        let _ = self.event_tx.try_send(AudioEvent::Panic);
     }
 
     // ─── Pattern length ──────────────────────────────────────────────────────
@@ -376,7 +376,7 @@ impl TrackerState {
         if let Some(patch) = self.presets.get(patch_idx) {
             #[allow(clippy::cast_possible_truncation)] // track < SYNTH_TRACKS ≤ 255
             let ch = ChannelNo(track as u8);
-            let _ = self.event_tx.send(AudioEvent::LoadPatchChannel(
+            let _ = self.event_tx.try_send(AudioEvent::LoadPatchChannel(
                 ch,
                 Box::new(patch.params.clone()),
             ));

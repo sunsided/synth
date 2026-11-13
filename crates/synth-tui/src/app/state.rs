@@ -182,7 +182,7 @@ impl AppState {
 
         // Seed the audio thread with the first preset.
         if let Some(p) = patches.first() {
-            let _ = audio_tx.send(AudioEvent::LoadPatch(Box::new(p.params.clone())));
+            let _ = audio_tx.try_send(AudioEvent::LoadPatch(Box::new(p.params.clone())));
         }
 
         Self {
@@ -209,9 +209,10 @@ impl AppState {
         }
     }
 
-    /// Send an `AudioEvent` to the audio thread (best-effort; drops if channel full).
+    /// Send an `AudioEvent` to the audio thread (best-effort; drops if channel
+    /// full, which only happens once the audio stream has stopped).
     fn send(&self, event: AudioEvent) {
-        let _ = self.audio_tx.send(event);
+        let _ = self.audio_tx.try_send(event);
     }
 
     /// The most recently pressed note still held, for the header and the
