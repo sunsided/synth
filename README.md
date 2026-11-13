@@ -84,7 +84,7 @@ task tracker          # or: cargo run -p synthie-tracker --release
 task tracker:web      # browser build with live reload (needs trunk)
 ```
 
-For testing against real music, pass a 4-channel ProTracker module: `cargo run -p synthie-tracker --release -- song.mod [order-position]`. Its notes are imported onto the four synth tracks (up to 128 rows, from the given order position; samples, effects and drums are dropped), and `F2` plays the original module with its samples for A/B comparison. Terminal build only.
+For testing against real music, pass a 4-channel ProTracker module: `cargo run -p synthie-tracker --release -- song.mod [order-position]`. Its notes are imported onto the four synth tracks (up to 128 rows, from the given order position), drum samples go to the drum track, and each track gets a bass, pad or lead preset matching what it plays. Samples, volumes and most effects are dropped, so it only approximates the original; `F2` plays the original module with its samples for A/B comparison. Terminal build only.
 
 ### Controls
 
