@@ -501,7 +501,7 @@ fn draw_help(frame: &mut Frame, area: Rect) {
         help_heading("TRANSPORT"),
         help_entry("Space", KW, "play / stop"),
     ];
-    if CAN_QUIT {
+    if cfg!(feature = "mod-import") && CAN_QUIT {
         lines.push(help_entry(
             "F2",
             KW,

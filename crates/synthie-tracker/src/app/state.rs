@@ -57,7 +57,7 @@ pub struct TrackerState {
     audio_ok: Arc<AtomicBool>,
 
     /// The loaded MOD's original sound, for A/B against the grid.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
     pub reference: Option<crate::reference::Reference>,
 
     /// Background playback thread.
@@ -95,7 +95,7 @@ impl TrackerState {
             activity: [0.0; TOTAL_TRACKS],
             last_step: None,
             audio_ok,
-            #[cfg(not(target_arch = "wasm32"))]
+            #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
             reference: None,
             player,
             event_tx,
@@ -163,7 +163,7 @@ impl TrackerState {
 
     /// Load each track's preset, then start playback from the first step.
     pub fn play(&self) {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
         if let Some(reference) = &self.reference {
             reference.stop();
         }
@@ -176,14 +176,14 @@ impl TrackerState {
     /// Stop playback, of the grid and of the original MOD.
     pub fn stop(&self) {
         self.player.stop();
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
         if let Some(reference) = &self.reference {
             reference.stop();
         }
     }
 
     /// Play or stop the loaded MOD's original sound instead of the grid.
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
     pub fn toggle_reference(&mut self) {
         match &self.reference {
             None => "no MOD loaded; start with `synthie-tracker song.mod`"

@@ -4,7 +4,9 @@ use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+#[cfg(feature = "mod-import")]
+use anyhow::Context;
+use anyhow::Result;
 use crossterm::{
     event::{
         self, DisableMouseCapture, EnableMouseCapture, Event, KeyboardEnhancementFlags,
@@ -20,10 +22,11 @@ use synthie_ui::ScopeBuf;
 use crate::SCOPE_CAPACITY;
 use crate::app::input::{handle_click, handle_key};
 use crate::app::{state::TrackerState, ui::draw};
+#[cfg(feature = "mod-import")]
 use crate::reference::Reference;
-use crate::tracker::Song;
-use crate::tracker::modfile;
 use crate::tracker::player::Player;
+#[cfg(feature = "mod-import")]
+use crate::tracker::{Song, modfile};
 
 pub fn main() -> Result<()> {
     // ── Set up panic hook so the terminal is always restored ─────────────────
@@ -48,7 +51,10 @@ pub fn main() -> Result<()> {
         })?;
 
     // ── Load a MOD given on the command line, before taking the terminal ─────
+    #[cfg(feature = "mod-import")]
     let module = load_mod_args()?;
+    #[cfg(not(feature = "mod-import"))]
+    reject_file_args()?;
 
     // ── Set up the ratatui terminal ──────────────────────────────────────────
     enable_raw_mode()?;
@@ -65,6 +71,7 @@ pub fn main() -> Result<()> {
 
     // ── Build application state ───────────────────────────────────────────────
     let mut state = TrackerState::new(event_tx, player, audio_ok);
+    #[cfg(feature = "mod-import")]
     if let Some((title, song, reference)) = module {
         state.status_msg = format!(
             "{title}: {} rows imported · Space plays synths, F2 the original",
@@ -85,8 +92,19 @@ pub fn main() -> Result<()> {
     result
 }
 
+/// Without the `mod-import` feature a file argument can't be used; say so
+/// instead of ignoring it.
+#[cfg(not(feature = "mod-import"))]
+fn reject_file_args() -> Result<()> {
+    if std::env::args_os().len() > 1 {
+        anyhow::bail!("loading a MOD needs the `mod-import` feature");
+    }
+    Ok(())
+}
+
 /// `synthie-tracker [song.mod [order-position]]`: import the MOD into the
 /// grid and open its original sound for reference playback.
+#[cfg(feature = "mod-import")]
 fn load_mod_args() -> Result<Option<(String, Song, Reference)>> {
     let mut args = std::env::args_os().skip(1);
     let Some(path) = args.next() else {

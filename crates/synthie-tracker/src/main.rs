@@ -1,7 +1,7 @@
 mod app;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(all(feature = "mod-import", not(target_arch = "wasm32")))]
 mod reference;
 mod tracker;
 #[cfg(target_arch = "wasm32")]
